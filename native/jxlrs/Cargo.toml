@@ -1,0 +1,26 @@
+[package]
+name = "jxlrs"
+version = "0.1.0"
+edition = "2024"
+license = "BSD-3-Clause"
+description = "C-API bindings for jxl-rs JPEG XL decoder"
+repository = "https://github.com/user/jpegxl-net"
+
+[lib]
+name = "jxlrs"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+jxl = { path = "../../jxl-rs/jxl" }
+
+[build-dependencies]
+cbindgen = "0.29"
+
+[features]
+default = []
+# SIMD features passthrough
+all-simd = ["jxl/all-simd"]
+sse42 = ["jxl/sse42"]
+avx = ["jxl/avx"]
+avx512 = ["jxl/avx512"]
+neon = ["jxl/neon"]

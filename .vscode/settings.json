@@ -1,0 +1,7 @@
+{
+  "chat.tools.terminal.autoApprove": {
+    "cargo fix": true,
+    "cbindgen": true,
+    "cargo install": true
+  }
+}

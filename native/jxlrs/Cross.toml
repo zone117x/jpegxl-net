@@ -1,0 +1,17 @@
+# Cross-compilation configuration
+# See: https://github.com/cross-rs/cross
+
+[build.env]
+passthrough = [
+    "RUSTFLAGS",
+]
+
+# Linux targets use default cross images
+[target.x86_64-unknown-linux-gnu]
+
+[target.aarch64-unknown-linux-gnu]
+
+# Windows targets use cross images with mingw
+[target.x86_64-pc-windows-gnu]
+
+[target.aarch64-pc-windows-gnullvm]

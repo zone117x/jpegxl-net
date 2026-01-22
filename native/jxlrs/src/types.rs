@@ -1,0 +1,238 @@
+// Copyright (c) the JPEG XL Project Authors. All rights reserved.
+//
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+//! C-compatible type definitions.
+
+/// Opaque decoder handle.
+#[repr(C)]
+pub struct JxlrsDecoder {
+    _private: [u8; 0],
+}
+
+/// Status codes returned by decoder functions.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlrsStatus {
+    /// Operation completed successfully.
+    Success = 0,
+    /// An error occurred. Call `jxlrs_get_last_error` for details.
+    Error = 1,
+    /// The decoder needs more input data.
+    NeedMoreInput = 2,
+    /// Invalid argument passed to function.
+    InvalidArgument = 3,
+    /// Buffer too small for output.
+    BufferTooSmall = 4,
+    /// Decoder is in an invalid state for this operation.
+    InvalidState = 5,
+}
+
+/// Pixel data format.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlrsDataFormat {
+    /// 8-bit unsigned integer per channel.
+    Uint8 = 0,
+    /// 16-bit unsigned integer per channel.
+    Uint16 = 1,
+    /// 16-bit float per channel.
+    Float16 = 2,
+    /// 32-bit float per channel.
+    Float32 = 3,
+}
+
+/// Color channel layout.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlrsColorType {
+    /// Single grayscale channel.
+    Grayscale = 0,
+    /// Grayscale + alpha.
+    GrayscaleAlpha = 1,
+    /// Red, green, blue.
+    Rgb = 2,
+    /// Red, green, blue, alpha.
+    Rgba = 3,
+    /// Blue, green, red (Windows bitmap order).
+    Bgr = 4,
+    /// Blue, green, red, alpha.
+    Bgra = 5,
+}
+
+/// Endianness for multi-byte pixel formats.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlrsEndianness {
+    /// Use native endianness of the platform.
+    Native = 0,
+    /// Little endian byte order.
+    LittleEndian = 1,
+    /// Big endian byte order.
+    BigEndian = 2,
+}
+
+/// Pixel format specification.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct JxlrsPixelFormat {
+    /// Data format for each channel.
+    pub data_format: JxlrsDataFormat,
+    /// Color channel layout.
+    pub color_type: JxlrsColorType,
+    /// Endianness for formats > 8 bits.
+    pub endianness: JxlrsEndianness,
+}
+
+/// Image orientation (EXIF-style).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlrsOrientation {
+    /// Normal orientation.
+    Identity = 1,
+    /// Flipped horizontally.
+    FlipHorizontal = 2,
+    /// Rotated 180 degrees.
+    Rotate180 = 3,
+    /// Flipped vertically.
+    FlipVertical = 4,
+    /// Transposed (swap x/y) then flipped horizontally.
+    Transpose = 5,
+    /// Rotated 90 degrees clockwise.
+    Rotate90Cw = 6,
+    /// Transposed then flipped vertically.
+    AntiTranspose = 7,
+    /// Rotated 90 degrees counter-clockwise.
+    Rotate90Ccw = 8,
+}
+
+/// Basic image information.
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct JxlrsBasicInfo {
+    /// Image width in pixels.
+    pub width: u32,
+    /// Image height in pixels.
+    pub height: u32,
+    /// Bits per sample for integer formats.
+    pub bits_per_sample: u32,
+    /// Exponent bits (0 for integer formats, >0 for float).
+    pub exponent_bits_per_sample: u32,
+    /// Number of color channels (1 for grayscale, 3 for RGB).
+    pub num_color_channels: u32,
+    /// Number of extra channels (alpha, depth, etc.).
+    pub num_extra_channels: u32,
+    /// Whether alpha is premultiplied (0 = no, 1 = yes).
+    pub alpha_premultiplied: i32,
+    /// Image orientation.
+    pub orientation: JxlrsOrientation,
+    /// Whether the image has animation (0 = no, 1 = yes).
+    pub have_animation: i32,
+    /// Animation ticks per second numerator (0 if no animation).
+    pub animation_tps_numerator: u32,
+    /// Animation ticks per second denominator (0 if no animation).
+    pub animation_tps_denominator: u32,
+    /// Number of animation loops (0 = infinite).
+    pub animation_num_loops: u32,
+    /// Whether original color profile is used (0 = no, 1 = yes).
+    pub uses_original_profile: i32,
+    /// Preview image width (0 if no preview).
+    pub preview_width: u32,
+    /// Preview image height (0 if no preview).
+    pub preview_height: u32,
+    /// Intensity target for HDR (nits).
+    pub intensity_target: f32,
+    /// Minimum nits for tone mapping.
+    pub min_nits: f32,
+}
+
+/// Extra channel type.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlrsExtraChannelType {
+    /// Alpha/transparency channel.
+    Alpha = 0,
+    /// Depth map.
+    Depth = 1,
+    /// Spot color.
+    SpotColor = 2,
+    /// Selection mask.
+    SelectionMask = 3,
+    /// CFA (color filter array) for raw sensor data.
+    Cfa = 4,
+    /// Thermal data.
+    Thermal = 5,
+    /// Non-optional extra channel.
+    NonOptional = 6,
+    /// Optional extra channel.
+    Optional = 7,
+    /// Unknown channel type.
+    Unknown = 255,
+}
+
+/// Information about an extra channel.
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct JxlrsExtraChannelInfo {
+    /// Type of extra channel.
+    pub channel_type: JxlrsExtraChannelType,
+    /// Bits per sample.
+    pub bits_per_sample: u32,
+    /// Exponent bits (for float channels).
+    pub exponent_bits_per_sample: u32,
+    /// Whether alpha is premultiplied (only for alpha channels).
+    pub alpha_premultiplied: i32,
+    /// Spot color values (RGBA, only for spot color channels).
+    pub spot_color: [f32; 4],
+    /// Channel name length in bytes (excluding null terminator).
+    pub name_length: u32,
+}
+
+/// Frame header information.
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct JxlrsFrameHeader {
+    /// Frame duration in animation ticks.
+    pub duration: u32,
+    /// Timecode (for video).
+    pub timecode: u32,
+    /// Frame name length in bytes (excluding null terminator).
+    pub name_length: u32,
+    /// Whether this is the last frame (0 = no, 1 = yes).
+    pub is_last: i32,
+}
+
+impl Default for JxlrsBasicInfo {
+    fn default() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            bits_per_sample: 8,
+            exponent_bits_per_sample: 0,
+            num_color_channels: 3,
+            num_extra_channels: 0,
+            alpha_premultiplied: 0,
+            orientation: JxlrsOrientation::Identity,
+            have_animation: 0,
+            animation_tps_numerator: 0,
+            animation_tps_denominator: 0,
+            animation_num_loops: 0,
+            uses_original_profile: 0,
+            preview_width: 0,
+            preview_height: 0,
+            intensity_target: 255.0,
+            min_nits: 0.0,
+        }
+    }
+}
+
+impl Default for JxlrsPixelFormat {
+    fn default() -> Self {
+        Self {
+            data_format: JxlrsDataFormat::Uint8,
+            color_type: JxlrsColorType::Rgba,
+            endianness: JxlrsEndianness::Native,
+        }
+    }
+}

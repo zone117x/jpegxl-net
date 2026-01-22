@@ -1,0 +1,194 @@
+name: Build Native Libraries
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'native/**'
+      - 'jxl-rs/**'
+      - '.github/workflows/build-native.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'native/**'
+      - 'jxl-rs/**'
+      - '.github/workflows/build-native.yml'
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      artifact-name:
+        description: 'Name of the uploaded artifact'
+        value: ${{ jobs.package.outputs.artifact-name }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - rid: linux-x64
+            target: x86_64-unknown-linux-gnu
+          - rid: linux-arm64
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.rid == 'linux-arm64'
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build (native)
+        if: matrix.rid == 'linux-x64'
+        working-directory: native/jxlrs
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build (cross)
+        if: matrix.rid == 'linux-arm64'
+        working-directory: native/jxlrs
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Package artifact
+        run: |
+          mkdir -p artifacts/runtimes/${{ matrix.rid }}/native
+          cp native/jxlrs/target/${{ matrix.target }}/release/libjxlrs.so artifacts/runtimes/${{ matrix.rid }}/native/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: artifacts/
+
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - rid: win-x64
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        working-directory: native/jxlrs
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          mkdir -p artifacts/runtimes/${{ matrix.rid }}/native
+          cp native/jxlrs/target/${{ matrix.target }}/release/jxlrs.dll artifacts/runtimes/${{ matrix.rid }}/native/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: artifacts/
+
+  build-windows-arm64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      - name: Build
+        working-directory: native/jxlrs
+        run: cargo build --release --target aarch64-pc-windows-msvc
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          mkdir -p artifacts/runtimes/win-arm64/native
+          cp native/jxlrs/target/aarch64-pc-windows-msvc/release/jxlrs.dll artifacts/runtimes/win-arm64/native/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-win-arm64
+          path: artifacts/
+
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - rid: osx-x64
+            target: x86_64-apple-darwin
+          - rid: osx-arm64
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        working-directory: native/jxlrs
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package artifact
+        run: |
+          mkdir -p artifacts/runtimes/${{ matrix.rid }}/native
+          cp native/jxlrs/target/${{ matrix.target }}/release/libjxlrs.dylib artifacts/runtimes/${{ matrix.rid }}/native/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: artifacts/
+
+  package:
+    needs: [build-linux, build-windows, build-windows-arm64, build-macos]
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: native-all
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: merged-artifacts
+          pattern: native-*
+          merge-multiple: true
+
+      - name: Copy header file
+        run: |
+          mkdir -p merged-artifacts/include
+          cp native/jxlrs/include/jxlrs.h merged-artifacts/include/ || echo "Header will be generated"
+
+      - name: Display structure
+        run: find merged-artifacts -type f | head -50
+
+      - name: Upload combined artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-all
+          path: merged-artifacts/
+          retention-days: 30
