@@ -1,17 +1,120 @@
 using JpegXL.Net;
+using JpegXL.Net.Native;
 
 namespace JpegXL.Net.Tests;
 
 [TestClass]
-public class JpegXLDecoderTests
+public class JxlDecoderTests
 {
+    // JXL codestream signature (0xFF 0x0A)
+    private static readonly byte[] JxlCodestreamSignature = { 0xFF, 0x0A };
+    
+    // JXL container signature (ISOBMFF box)
+    private static readonly byte[] JxlContainerSignature = 
+    { 
+        0x00, 0x00, 0x00, 0x0C, // Box size
+        0x4A, 0x58, 0x4C, 0x20, // "JXL "
+        0x0D, 0x0A, 0x87, 0x0A  // Magic
+    };
+
     [TestMethod]
-    public void Constructor_ShouldCreateInstance()
+    public void CheckSignature_WithCodestreamData_ReturnsCodestream()
     {
-        // Arrange & Act
-        var decoder = new JpegXLDecoder();
+        // Arrange
+        var data = JxlCodestreamSignature;
+
+        // Act
+        var result = JxlImage.CheckSignature(data);
 
         // Assert
-        Assert.IsNotNull(decoder);
+        Assert.AreEqual(JxlrsSignature.Codestream, result);
+    }
+
+    [TestMethod]
+    public void CheckSignature_WithContainerData_ReturnsContainer()
+    {
+        // Arrange
+        var data = JxlContainerSignature;
+
+        // Act
+        var result = JxlImage.CheckSignature(data);
+
+        // Assert
+        Assert.AreEqual(JxlrsSignature.Container, result);
+    }
+
+    [TestMethod]
+    public void CheckSignature_WithInvalidData_ReturnsNotEnoughBytesOrInvalid()
+    {
+        // Arrange
+        var data = new byte[] { 0x00, 0x00, 0x00, 0x00 };
+
+        // Act
+        var result = JxlImage.CheckSignature(data);
+
+        // Assert
+        Assert.IsTrue(result == JxlrsSignature.NotEnoughBytes || result == JxlrsSignature.Invalid);
+    }
+
+    [TestMethod]
+    public void IsJxl_WithCodestreamData_ReturnsTrue()
+    {
+        // Arrange
+        var data = JxlCodestreamSignature;
+
+        // Act
+        var result = JxlImage.IsJxl(data);
+
+        // Assert
+        Assert.IsTrue(result);
+    }
+
+    [TestMethod]
+    public void IsJxl_WithContainerData_ReturnsTrue()
+    {
+        // Arrange
+        var data = JxlContainerSignature;
+
+        // Act
+        var result = JxlImage.IsJxl(data);
+
+        // Assert
+        Assert.IsTrue(result);
+    }
+
+    [TestMethod]
+    public void IsJxl_WithInvalidData_ReturnsFalse()
+    {
+        // Arrange
+        var data = new byte[] { 0x89, 0x50, 0x4E, 0x47 }; // PNG header
+
+        // Act
+        var result = JxlImage.IsJxl(data);
+
+        // Assert
+        Assert.IsFalse(result);
+    }
+
+    [TestMethod]
+    public void JxlrsPixelFormat_Default_HasExpectedValues()
+    {
+        // Arrange & Act
+        var format = JxlrsPixelFormat.Default;
+
+        // Assert
+        Assert.AreEqual(JxlrsColorType.Rgba, format.ColorType);
+        Assert.AreEqual(JxlrsDataFormat.Uint8, format.DataFormat);
+        Assert.AreEqual(JxlrsEndianness.Native, format.Endianness);
+    }
+
+    [TestMethod]
+    public void JxlException_ContainsStatusCode()
+    {
+        // Arrange & Act
+        var exception = new JxlException(JxlrsStatus.Error, "Test error");
+
+        // Assert
+        Assert.AreEqual(JxlrsStatus.Error, exception.Status);
+        Assert.AreEqual("Test error", exception.Message);
     }
 }

@@ -4,9 +4,21 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (without v prefix)'
+        required: true
+        type: string
 
 jobs:
+  # First build all native libraries
+  build-native:
+    uses: ./.github/workflows/build-native.yml
+
+  # Then build and publish the NuGet package
   publish:
+    needs: build-native
     runs-on: ubuntu-latest
 
     steps:
@@ -18,9 +30,25 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Extract version from tag
+      - name: Extract version
         id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: native-all
+          path: native-artifacts
+
+      - name: Copy native libraries to runtimes folder
+        run: |
+          cp -r native-artifacts/runtimes/* src/JpegXL.Net/runtimes/
+          find src/JpegXL.Net/runtimes -type f
 
       - name: Restore dependencies
         run: dotnet restore
@@ -34,6 +62,9 @@ jobs:
       - name: Pack
         run: dotnet pack src/JpegXL.Net.csproj --no-build --configuration Release -p:Version=${{ steps.version.outputs.VERSION }} --output ./nupkg
 
+      - name: Display package contents
+        run: unzip -l ./nupkg/*.nupkg
+
       - name: Upload NuGet package artifact
         uses: actions/upload-artifact@v4
         with:
@@ -41,4 +72,5 @@ jobs:
           path: ./nupkg/*.nupkg
 
       - name: Publish to NuGet
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

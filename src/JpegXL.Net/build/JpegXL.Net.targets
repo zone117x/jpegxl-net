@@ -1,0 +1,39 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    This targets file handles copying native libraries to the output directory.
+    It's used both during local development and when consumed as a NuGet package.
+  -->
+
+  <PropertyGroup>
+    <!-- Determine the RID-specific native library name and path -->
+    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Windows'))">jxlrs.dll</JxlrsNativeLibraryName>
+    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libjxlrs.so</JxlrsNativeLibraryName>
+    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libjxlrs.dylib</JxlrsNativeLibraryName>
+
+    <!-- Determine the RID -->
+    <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">win-x64</JxlrsRuntimeIdentifier>
+    <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">win-arm64</JxlrsRuntimeIdentifier>
+    <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">linux-x64</JxlrsRuntimeIdentifier>
+    <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">linux-arm64</JxlrsRuntimeIdentifier>
+    <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">osx-x64</JxlrsRuntimeIdentifier>
+    <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">osx-arm64</JxlrsRuntimeIdentifier>
+  </PropertyGroup>
+
+  <!-- Copy native library to output directory -->
+  <Target Name="CopyJxlrsNativeLibrary" AfterTargets="Build">
+    <PropertyGroup>
+      <!-- NuGet package path (when consumed as a package) -->
+      <JxlrsNuGetNativePath>$(MSBuildThisFileDirectory)..\runtimes\$(JxlrsRuntimeIdentifier)\native\$(JxlrsNativeLibraryName)</JxlrsNuGetNativePath>
+    </PropertyGroup>
+
+    <!-- Copy from NuGet package runtimes folder if it exists -->
+    <Copy SourceFiles="$(JxlrsNuGetNativePath)"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(JxlrsNuGetNativePath)')" />
+
+    <Message Importance="high" 
+             Text="Copied native library from $(JxlrsNuGetNativePath) to $(OutputPath)"
+             Condition="Exists('$(JxlrsNuGetNativePath)')" />
+  </Target>
+</Project>

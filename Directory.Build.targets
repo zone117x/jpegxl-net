@@ -1,0 +1,41 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    Local development targets for copying native libraries from the Rust build output.
+    This is imported by Directory.Build.targets for development builds.
+  -->
+
+  <PropertyGroup>
+    <!-- Base path to native Rust build output (relative to solution root) -->
+    <JxlrsNativeBuildRoot>$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildProjectDirectory), 'Directory.Build.targets'))/native/jxlrs/target</JxlrsNativeBuildRoot>
+
+    <!-- Determine the Rust target triple based on current platform -->
+    <JxlrsRustTarget Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">x86_64-pc-windows-msvc</JxlrsRustTarget>
+    <JxlrsRustTarget Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">aarch64-pc-windows-msvc</JxlrsRustTarget>
+    <JxlrsRustTarget Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">x86_64-unknown-linux-gnu</JxlrsRustTarget>
+    <JxlrsRustTarget Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">aarch64-unknown-linux-gnu</JxlrsRustTarget>
+    <JxlrsRustTarget Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">x86_64-apple-darwin</JxlrsRustTarget>
+    <JxlrsRustTarget Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">aarch64-apple-darwin</JxlrsRustTarget>
+
+    <!-- Determine native library file name -->
+    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Windows'))">jxlrs.dll</JxlrsNativeLibraryName>
+    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libjxlrs.so</JxlrsNativeLibraryName>
+    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libjxlrs.dylib</JxlrsNativeLibraryName>
+
+    <!-- Full path to native library in Rust build output -->
+    <JxlrsLocalNativePath>$(JxlrsNativeBuildRoot)\$(JxlrsRustTarget)\release\$(JxlrsNativeLibraryName)</JxlrsLocalNativePath>
+  </PropertyGroup>
+
+  <!-- Copy native library from local Rust build to output directory -->
+  <Target Name="CopyJxlrsLocalNativeLibrary" AfterTargets="Build" Condition="Exists('$(JxlrsLocalNativePath)')">
+    <Copy SourceFiles="$(JxlrsLocalNativePath)"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true" />
+
+    <Message Importance="high" 
+             Text="Copied native library from $(JxlrsLocalNativePath) to $(OutputPath)" />
+  </Target>
+
+  <Target Name="WarnJxlrsNativeLibraryMissing" AfterTargets="Build" Condition="!Exists('$(JxlrsLocalNativePath)')">
+    <Warning Text="Native library not found at $(JxlrsLocalNativePath). Run 'native/jxlrs/build-native.sh' to build native libraries." />
+  </Target>
+</Project>
