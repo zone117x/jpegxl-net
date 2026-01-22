@@ -208,10 +208,12 @@ pub struct JxlExtraChannelInfo {
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct JxlFrameHeader {
-    /// Frame duration in animation ticks.
-    pub duration: u32,
-    /// Timecode (for video).
-    pub timecode: u32,
+    /// Frame duration in milliseconds (for animation).
+    pub duration_ms: f32,
+    /// Frame width in pixels.
+    pub frame_width: u32,
+    /// Frame height in pixels.
+    pub frame_height: u32,
     /// Frame name length in bytes (excluding null terminator).
     pub name_length: u32,
     /// Whether this is the last frame.

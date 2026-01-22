@@ -131,6 +131,18 @@ namespace JpegXL.Net.Native
         internal static extern JxlStatus jxl_decoder_get_basic_info(NativeDecoderHandle* decoder, JxlBasicInfo* info);
 
         /// <summary>
+        ///  Gets the current frame header (streaming API).
+        ///
+        ///  Only valid after `jxl_decoder_process` returns `HaveFrameHeader`.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        ///  - `header` must point to a writable `JxlFrameHeader`.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_frame_header", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_get_frame_header(NativeDecoderHandle* decoder, JxlFrameHeader* header);
+
+        /// <summary>
         ///  Decodes pixels into the provided buffer (streaming API).
         ///
         ///  Call this after `jxl_decoder_process` returns `NeedOutputBuffer`.
@@ -394,6 +406,35 @@ namespace JpegXL.Net.Native
         ///  Whether alpha is premultiplied (only for alpha channels).
         /// </summary>
         [MarshalAs(UnmanagedType.U1)] public bool alpha_premultiplied;
+    }
+
+    /// <summary>
+    ///  Frame header information.
+    ///  Fields are ordered by size (largest first) to minimize padding.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe partial struct JxlFrameHeader
+    {
+        /// <summary>
+        ///  Frame duration in milliseconds (for animation).
+        /// </summary>
+        public float duration_ms;
+        /// <summary>
+        ///  Frame width in pixels.
+        /// </summary>
+        public uint frame_width;
+        /// <summary>
+        ///  Frame height in pixels.
+        /// </summary>
+        public uint frame_height;
+        /// <summary>
+        ///  Frame name length in bytes (excluding null terminator).
+        /// </summary>
+        public uint name_length;
+        /// <summary>
+        ///  Whether this is the last frame.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool is_last;
     }
 
     /// <summary>

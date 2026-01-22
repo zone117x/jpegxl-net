@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using Avalonia;
@@ -7,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using JpegXL.Net;
 
 namespace JpegXL.Viewer;
@@ -15,6 +17,14 @@ public partial class MainWindow : Window
 {
     private double _zoom = 1.0;
     private JxlImage? _currentImage;
+    
+    // Animation support
+    private List<AnimationFrame>? _frames;
+    private int _currentFrameIndex;
+    private DispatcherTimer? _animationTimer;
+    private bool _isPlaying;
+
+    private record AnimationFrame(WriteableBitmap Bitmap, float DurationMs);
 
     public MainWindow()
     {
@@ -91,35 +101,208 @@ public partial class MainWindow : Window
     {
         try
         {
+            StopAnimation();
             StatusText!.Text = "Loading...";
             
             // Load on background thread
             var bytes = await File.ReadAllBytesAsync(path);
             
-            // Decode on background thread with premultiplied alpha for Avalonia
-            var options = new JxlDecodeOptions { PremultiplyAlpha = true };
+            // Check if animated
+            using var decoder = new JxlDecoder(new JxlDecodeOptions { PremultiplyAlpha = true });
+            decoder.SetInput(bytes);
+            var info = decoder.ReadInfo();
+            
             _currentImage?.Dispose();
-            _currentImage = await Task.Run(() => JxlImage.Decode(bytes, JxlPixelFormat.Bgra8, options));
+            ClearFrames();
             
-            // Convert to Avalonia bitmap
-            var bitmap = CreateBitmapFromJxlImage(_currentImage);
-            
-            ImageDisplay!.Source = bitmap;
-            DropHint!.IsVisible = false;
+            if (info.IsAnimated)
+            {
+                // Decode all frames
+                _frames = await Task.Run(() => DecodeAnimatedImage(bytes, info));
+                
+                if (_frames.Count > 0)
+                {
+                    _currentFrameIndex = 0;
+                    ImageDisplay!.Source = _frames[0].Bitmap;
+                    DropHint!.IsVisible = false;
+                    
+                    // Start playback if we have multiple frames
+                    if (_frames.Count > 1)
+                    {
+                        StartAnimation();
+                    }
+                    
+                    ImageInfoText!.Text = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {_frames.Count} frames | Animated";
+                    StatusText.Text = $"Loaded: {Path.GetFileName(path)}";
+                    UpdatePlayPauseButton();
+                }
+            }
+            else
+            {
+                // Static image - use simple decode
+                var options = new JxlDecodeOptions { PremultiplyAlpha = true };
+                _currentImage = await Task.Run(() => JxlImage.Decode(bytes, JxlPixelFormat.Bgra8, options));
+                
+                var bitmap = CreateBitmapFromPixels(_currentImage.GetPixelArray(), _currentImage.Width, _currentImage.Height);
+                ImageDisplay!.Source = bitmap;
+                DropHint!.IsVisible = false;
+                
+                ImageInfoText!.Text = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {(info.HasAlpha ? "RGBA" : "RGB")}";
+                StatusText.Text = $"Loaded: {Path.GetFileName(path)}";
+                UpdatePlayPauseButton();
+            }
             
             // Update UI
             _zoom = 1.0;
             UpdateZoom();
-            
-            var info = _currentImage.BasicInfo;
-            ImageInfoText!.Text = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {(info.HasAlpha ? "RGBA" : "RGB")}";
-            StatusText.Text = $"Loaded: {Path.GetFileName(path)}";
         }
         catch (Exception ex)
         {
             StatusText!.Text = $"Error: {ex.Message}";
             ImageInfoText!.Text = "";
         }
+    }
+
+    private List<AnimationFrame> DecodeAnimatedImage(byte[] data, JxlBasicInfo info)
+    {
+        var frames = new List<AnimationFrame>();
+        var width = (int)info.Width;
+        var height = (int)info.Height;
+        var bufferSize = width * height * 4; // BGRA
+        var pixels = new byte[bufferSize];
+        
+        using var decoder = new JxlDecoder(new JxlDecodeOptions { PremultiplyAlpha = true });
+        decoder.SetInput(data);
+        decoder.SetPixelFormat(JxlPixelFormat.Bgra8);
+        decoder.ReadInfo(); // Advance past basic info
+        
+        while (decoder.HasMoreFrames())
+        {
+            var evt = decoder.Process();
+            
+            while (evt == JxlDecoderEvent.NeedMoreInput || evt == JxlDecoderEvent.HaveBasicInfo)
+            {
+                evt = decoder.Process();
+            }
+            
+            if (evt == JxlDecoderEvent.Complete)
+                break;
+            
+            float duration = 0;
+            if (evt == JxlDecoderEvent.HaveFrameHeader)
+            {
+                var header = decoder.GetFrameHeader();
+                duration = header.DurationMs;
+                evt = decoder.Process();
+            }
+            
+            if (evt == JxlDecoderEvent.NeedOutputBuffer)
+            {
+                evt = decoder.ReadPixels(pixels);
+                
+                if (evt == JxlDecoderEvent.FrameComplete)
+                {
+                    // Create bitmap on UI thread wouldn't work here, so we store raw data
+                    var framePixels = new byte[bufferSize];
+                    Array.Copy(pixels, framePixels, bufferSize);
+                    
+                    // Create bitmap (needs to be done carefully for thread safety)
+                    var bitmap = CreateBitmapFromPixels(framePixels, width, height);
+                    frames.Add(new AnimationFrame(bitmap, duration > 0 ? duration : 0.1f));
+                }
+            }
+            
+            if (frames.Count > 1000) break; // Safety limit
+        }
+        
+        return frames;
+    }
+
+    private static WriteableBitmap CreateBitmapFromPixels(byte[] pixels, int width, int height)
+    {
+        var bitmap = new WriteableBitmap(
+            new PixelSize(width, height),
+            new Vector(96, 96),
+            Avalonia.Platform.PixelFormat.Bgra8888,
+            Avalonia.Platform.AlphaFormat.Premul);
+
+        using var frameBuffer = bitmap.Lock();
+        Marshal.Copy(pixels, 0, frameBuffer.Address, pixels.Length);
+
+        return bitmap;
+    }
+
+    private void StartAnimation()
+    {
+        if (_frames == null || _frames.Count <= 1) return;
+        
+        StopAnimation();
+        
+        var interval = Math.Max(0.016, _frames[_currentFrameIndex].DurationMs / 1000.0);
+        
+        _animationTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(interval)
+        };
+        _animationTimer.Tick += OnAnimationTick;
+        _animationTimer.Start();
+        _isPlaying = true;
+    }
+
+    private void StopAnimation()
+    {
+        _animationTimer?.Stop();
+        _animationTimer = null;
+        _isPlaying = false;
+    }
+
+    private void OnAnimationTick(object? sender, EventArgs e)
+    {
+        if (_frames == null || _frames.Count == 0 || _animationTimer == null) return;
+        
+        _currentFrameIndex = (_currentFrameIndex + 1) % _frames.Count;
+        ImageDisplay!.Source = _frames[_currentFrameIndex].Bitmap;
+        FrameInfoText!.Text = $"Frame {_currentFrameIndex + 1}/{_frames.Count}";
+        
+        // Update timer interval for next frame - must stop/start for interval change to take effect
+        var nextDuration = _frames[_currentFrameIndex].DurationMs / 1000.0;
+        _animationTimer.Stop();
+        _animationTimer.Interval = TimeSpan.FromSeconds(Math.Max(0.016, nextDuration));
+        _animationTimer.Start();
+    }
+
+    private void OnPlayPauseClick(object? sender, RoutedEventArgs e)
+    {
+        if (_frames == null || _frames.Count <= 1) return;
+        
+        if (_isPlaying)
+        {
+            StopAnimation();
+        }
+        else
+        {
+            StartAnimation();
+        }
+        UpdatePlayPauseButton();
+    }
+
+    private void UpdatePlayPauseButton()
+    {
+        var hasAnimation = _frames != null && _frames.Count > 1;
+        PlayPauseButton!.IsVisible = hasAnimation;
+        FrameInfoText!.IsVisible = hasAnimation;
+        
+        if (hasAnimation)
+        {
+            PlayPauseButton!.Content = _isPlaying ? "⏸ Pause" : "▶ Play";
+            FrameInfoText!.Text = $"Frame {_currentFrameIndex + 1}/{_frames!.Count}";
+        }
+    }
+
+    private void ClearFrames()
+    {
+        _frames = null;
+        _currentFrameIndex = 0;
     }
 
     private static WriteableBitmap CreateBitmapFromJxlImage(JxlImage image)
@@ -170,6 +353,8 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        StopAnimation();
+        ClearFrames();
         _currentImage?.Dispose();
         base.OnClosed(e);
     }

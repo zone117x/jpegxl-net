@@ -12,6 +12,7 @@
             <Button Name="ZoomInButton" Content="Zoom In" Click="OnZoomInClick" />
             <Button Name="ZoomOutButton" Content="Zoom Out" Click="OnZoomOutClick" />
             <Button Name="ResetZoomButton" Content="Reset Zoom" Click="OnResetZoomClick" />
+            <Button Name="PlayPauseButton" Content="▶ Play" Click="OnPlayPauseClick" IsVisible="False" />
         </StackPanel>
         
         <!-- Image Display -->
@@ -45,6 +46,7 @@
             <StackPanel Orientation="Horizontal" Spacing="16">
                 <TextBlock Name="StatusText" Foreground="White" Text="Ready" />
                 <TextBlock Name="ImageInfoText" Foreground="Gray" />
+                <TextBlock Name="FrameInfoText" Foreground="LightGreen" IsVisible="False" />
             </StackPanel>
         </Border>
     </Grid>

@@ -43,6 +43,8 @@ struct DecoderInner {
     data_offset: usize,
     /// Cached basic info.
     basic_info: Option<JxlBasicInfo>,
+    /// Cached frame header.
+    frame_header: Option<JxlFrameHeader>,
     /// Cached extra channel info.
     extra_channels: Vec<JxlExtraChannelInfo>,
     /// Desired output pixel format.
@@ -138,6 +140,7 @@ impl DecoderInner {
             data: Vec::new(),
             data_offset: 0,
             basic_info: None,
+            frame_header: None,
             extra_channels: Vec::new(),
             pixel_format: JxlPixelFormat::default(),
             options,
@@ -149,6 +152,7 @@ impl DecoderInner {
         self.data.clear();
         self.data_offset = 0;
         self.basic_info = None;
+        self.frame_header = None;
         self.extra_channels.clear();
     }
 }
@@ -389,6 +393,9 @@ pub unsafe extern "C" fn jxl_decoder_process(
 
             match result {
                 Ok(ProcessingResult::Complete { result: decoder_with_frame }) => {
+                    // Cache the frame header
+                    let frame_header = decoder_with_frame.frame_header();
+                    inner.frame_header = Some(convert_frame_header(&frame_header));
                     inner.state = DecoderState::WithFrameInfo(decoder_with_frame);
                     JxlDecoderEvent::HaveFrameHeader
                 }
@@ -439,6 +446,35 @@ pub unsafe extern "C" fn jxl_decoder_get_basic_info(
 
     if let Some(out_info) = unsafe { info.as_mut() } {
         *out_info = cached_info.clone();
+    }
+
+    JxlStatus::Success
+}
+
+/// Gets the current frame header (streaming API).
+///
+/// Only valid after `jxl_decoder_process` returns `HaveFrameHeader`.
+///
+/// # Safety
+/// - `decoder` must be valid.
+/// - `header` must point to a writable `JxlFrameHeader`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_get_frame_header(
+    decoder: *const NativeDecoderHandle,
+    header: *mut JxlFrameHeader,
+) -> JxlStatus {
+    let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
+        set_last_error("Null decoder pointer");
+        return JxlStatus::InvalidArgument;
+    };
+
+    let Some(ref cached_header) = inner.frame_header else {
+        set_last_error("Frame header not yet available - call jxl_decoder_process until HaveFrameHeader");
+        return JxlStatus::InvalidState;
+    };
+
+    if let Some(out_header) = unsafe { header.as_mut() } {
+        *out_header = cached_header.clone();
     }
 
     JxlStatus::Success
@@ -512,6 +548,10 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels(
 
     match result {
         Ok(ProcessingResult::Complete { result }) => {
+            // Update is_last in cached frame header based on whether there are more frames
+            if let Some(ref mut header) = inner.frame_header {
+                header.is_last = !result.has_more_frames();
+            }
             inner.state = DecoderState::WithImageInfo(result);
             JxlDecoderEvent::FrameComplete
         }
@@ -1034,6 +1074,16 @@ fn convert_orientation(orientation: Orientation) -> JxlOrientation {
         Orientation::Rotate90Cw => JxlOrientation::Rotate90Cw,
         Orientation::AntiTranspose => JxlOrientation::AntiTranspose,
         Orientation::Rotate90Ccw => JxlOrientation::Rotate90Ccw,
+    }
+}
+
+fn convert_frame_header(header: &jxl::api::JxlFrameHeader) -> JxlFrameHeader {
+    JxlFrameHeader {
+        duration_ms: header.duration.unwrap_or(0.0) as f32,
+        frame_width: header.size.0 as u32,
+        frame_height: header.size.1 as u32,
+        name_length: header.name.len() as u32,
+        is_last: false, // Will be updated when we know if there are more frames
     }
 }
 

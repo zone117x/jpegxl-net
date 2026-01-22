@@ -9,6 +9,7 @@ namespace JpegXL.Net;
 
 // Type aliases for clarity between internal and public types
 using NativeBasicInfo = Native.JxlBasicInfo;
+using NativeFrameHeader = Native.JxlFrameHeader;
 using NativePixelFormat = Native.JxlPixelFormat;
 using NativeExtraChannelInfo = Native.JxlExtraChannelInfo;
 using NativeStatus = Native.JxlStatus;
@@ -358,6 +359,23 @@ public sealed unsafe class JxlDecoder : IDisposable
 
         _basicInfo = info;
         return new JxlBasicInfo(info);
+    }
+
+    /// <summary>
+    /// Gets the current frame header after <see cref="Process"/> returns 
+    /// <see cref="JxlDecoderEvent.HaveFrameHeader"/>.
+    /// </summary>
+    /// <returns>The frame header information.</returns>
+    /// <exception cref="JxlException">Thrown if frame header is not yet available.</exception>
+    public JxlFrameHeader GetFrameHeader()
+    {
+        ThrowIfDisposed();
+
+        NativeFrameHeader header;
+        var status = NativeMethods.jxl_decoder_get_frame_header(_handle, &header);
+        ThrowIfFailed(status);
+
+        return new JxlFrameHeader(header);
     }
 
     /// <summary>

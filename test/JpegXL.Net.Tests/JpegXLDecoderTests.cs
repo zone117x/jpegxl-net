@@ -363,4 +363,66 @@ public class JxlDecoderTests
         // After decoding a static (non-animated) image, should have no more frames
         Assert.IsFalse(decoder.HasMoreFrames(), "Should have no more frames after decoding static image");
     }
+
+    [TestMethod]
+    public void AnimatedDecode_DecodesMultipleFrames()
+    {
+        // Arrange - use animated test file
+        var data = File.ReadAllBytes("TestData/animation_spline.jxl");
+        
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        
+        // Get image info first
+        var info = decoder.ReadInfo();
+        Assert.IsTrue(info.IsAnimated, "Test file should be animated");
+        Assert.IsTrue(info.AnimationTpsNumerator > 0, "Should have animation TPS");
+        
+        // Decode frames
+        var frameCount = 0;
+        var frameDurations = new List<float>();
+        var bytesPerPixel = 4; // RGBA
+        var bufferSize = (int)(info.Width * info.Height) * bytesPerPixel;
+        var pixels = new byte[bufferSize];
+        
+        while (decoder.HasMoreFrames())
+        {
+            // Process until we get frame header
+            var evt = decoder.Process();
+            while (evt == JxlDecoderEvent.NeedMoreInput || evt == JxlDecoderEvent.HaveBasicInfo)
+            {
+                evt = decoder.Process();
+            }
+            
+            if (evt == JxlDecoderEvent.Complete)
+                break;
+                
+            Assert.AreEqual(JxlDecoderEvent.HaveFrameHeader, evt, $"Expected HaveFrameHeader, got {evt}");
+            
+            // Get frame header
+            var frameHeader = decoder.GetFrameHeader();
+            frameDurations.Add(frameHeader.DurationMs);
+            
+            // Process until we need output buffer
+            evt = decoder.Process();
+            Assert.AreEqual(JxlDecoderEvent.NeedOutputBuffer, evt, $"Expected NeedOutputBuffer, got {evt}");
+            
+            // Decode pixels
+            evt = decoder.ReadPixels(pixels);
+            Assert.AreEqual(JxlDecoderEvent.FrameComplete, evt, $"Expected FrameComplete, got {evt}");
+            
+            frameCount++;
+            
+            // Safety check to prevent infinite loops
+            if (frameCount > 1000)
+            {
+                Assert.Fail("Too many frames - possible infinite loop");
+            }
+        }
+        
+        // Assert - animation_spline.jxl should have multiple frames
+        Assert.IsTrue(frameCount > 1, $"Expected multiple frames, got {frameCount}");
+        Assert.AreEqual(frameCount, frameDurations.Count, "Should have duration for each frame");
+        Console.WriteLine($"Decoded {frameCount} frames with durations: [{string.Join(", ", frameDurations.Select(d => $"{d:F3}s"))}]");
+    }
 }
