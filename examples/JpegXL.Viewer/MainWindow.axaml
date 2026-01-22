@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="JpegXL.Viewer.MainWindow"
+        Title="JPEG XL Viewer"
+        Width="800" Height="600"
+        DragDrop.AllowDrop="True">
+    
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Toolbar -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="8" Spacing="8">
+            <Button Name="OpenButton" Content="Open File..." Click="OnOpenClick" />
+            <Button Name="ZoomInButton" Content="Zoom In" Click="OnZoomInClick" />
+            <Button Name="ZoomOutButton" Content="Zoom Out" Click="OnZoomOutClick" />
+            <Button Name="ResetZoomButton" Content="Reset Zoom" Click="OnResetZoomClick" />
+        </StackPanel>
+        
+        <!-- Image Display -->
+        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="1" Margin="8"
+                Background="#1E1E1E" ClipToBounds="True">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                <Panel Name="ImagePanel">
+                    <Image Name="ImageDisplay" 
+                           Stretch="None"
+                           HorizontalAlignment="Center" 
+                           VerticalAlignment="Center" />
+                    
+                    <!-- Drop hint overlay -->
+                    <Border Name="DropHint" 
+                            Background="#80000000" 
+                            IsVisible="True"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch">
+                        <TextBlock Text="Drop a JPEG XL file here or click 'Open File...'"
+                                   Foreground="White"
+                                   FontSize="18"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+                </Panel>
+            </ScrollViewer>
+        </Border>
+        
+        <!-- Status Bar -->
+        <Border Grid.Row="2" Background="#2D2D2D" Padding="8,4">
+            <StackPanel Orientation="Horizontal" Spacing="16">
+                <TextBlock Name="StatusText" Foreground="White" Text="Ready" />
+                <TextBlock Name="ImageInfoText" Foreground="Gray" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

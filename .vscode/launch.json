@@ -1,0 +1,50 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "JPEG XL Viewer",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-viewer",
+            "program": "${workspaceFolder}/examples/JpegXL.Viewer/bin/Debug/net10.0/JpegXL.Viewer.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/examples/JpegXL.Viewer",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        },
+        {
+            "name": "JPEG XL Viewer (with file)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-viewer",
+            "program": "${workspaceFolder}/examples/JpegXL.Viewer/bin/Debug/net10.0/JpegXL.Viewer.dll",
+            "args": ["${input:jxlFile}"],
+            "cwd": "${workspaceFolder}/examples/JpegXL.Viewer",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Debug Tests",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-tests",
+            "program": "dotnet",
+            "args": [
+                "test",
+                "${workspaceFolder}/test/JpegXL.Net.Tests/JpegXL.Net.Tests.csproj",
+                "--no-build"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        }
+    ],
+    "inputs": [
+        {
+            "id": "jxlFile",
+            "type": "promptString",
+            "description": "Path to .jxl file to open",
+            "default": ""
+        }
+    ]
+}

@@ -127,6 +127,32 @@ public sealed unsafe class JxlDecoder : IDisposable
     }
 
     /// <summary>
+    /// Applies decode options to the decoder.
+    /// </summary>
+    /// <param name="options">The decode options to apply.</param>
+    /// <exception cref="JxlException">Thrown if applying options fails.</exception>
+    public void ApplyOptions(JxlDecodeOptions options)
+    {
+#if NETSTANDARD2_0
+        if (options == null) throw new ArgumentNullException(nameof(options));
+#else
+        ArgumentNullException.ThrowIfNull(options);
+#endif
+        ThrowIfDisposed();
+
+        ThrowIfFailed(NativeMethods.jxl_decoder_set_adjust_orientation(_handle, options.AdjustOrientation ? 1 : 0));
+        ThrowIfFailed(NativeMethods.jxl_decoder_set_render_spot_colors(_handle, options.RenderSpotColors ? 1 : 0));
+        ThrowIfFailed(NativeMethods.jxl_decoder_set_coalescing(_handle, options.Coalescing ? 1 : 0));
+        ThrowIfFailed(NativeMethods.jxl_decoder_set_desired_intensity_target(_handle, options.DesiredIntensityTarget ?? 0f));
+        ThrowIfFailed(NativeMethods.jxl_decoder_set_skip_preview(_handle, options.SkipPreview ? 1 : 0));
+        ThrowIfFailed(NativeMethods.jxl_decoder_set_progressive_mode(_handle, (Native.JxlProgressiveMode)options.ProgressiveMode));
+        ThrowIfFailed(NativeMethods.jxl_decoder_set_enable_output(_handle, options.EnableOutput ? 1 : 0));
+        ThrowIfFailed(NativeMethods.jxl_decoder_set_pixel_limit(_handle, (UIntPtr)(options.PixelLimit ?? 0)));
+        ThrowIfFailed(NativeMethods.jxl_decoder_set_high_precision(_handle, options.HighPrecision ? 1 : 0));
+        ThrowIfFailed(NativeMethods.jxl_decoder_set_premultiply_alpha(_handle, options.PremultiplyAlpha ? 1 : 0));
+    }
+
+    /// <summary>
     /// Reads the image header and basic info.
     /// </summary>
     /// <returns>The basic image information.</returns>

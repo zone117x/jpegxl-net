@@ -194,4 +194,62 @@ public class JxlDecoderTests
         // Assert
         Assert.IsTrue(result);
     }
+
+    [TestMethod]
+    public void Decode_WithPremultiplyAlpha_PremultipliesCorrectly()
+    {
+        // Arrange - dice.jxl has transparency
+        var data = File.ReadAllBytes("TestData/dice.jxl");
+        var format = JxlPixelFormat.Bgra8;
+        var optionsStraight = new JxlDecodeOptions { PremultiplyAlpha = false };
+        var optionsPremul = new JxlDecodeOptions { PremultiplyAlpha = true };
+
+        // Act
+        using var straightImage = JxlImage.Decode(data, format, optionsStraight);
+        using var premulImage = JxlImage.Decode(data, format, optionsPremul);
+
+        var straightPixels = straightImage.GetPixelArray();
+        var premulPixels = premulImage.GetPixelArray();
+
+        // Assert - find a semi-transparent pixel and verify premultiplication
+        bool foundSemiTransparent = false;
+        for (int i = 0; i < straightPixels.Length; i += 4)
+        {
+            byte b = straightPixels[i];
+            byte g = straightPixels[i + 1];
+            byte r = straightPixels[i + 2];
+            byte a = straightPixels[i + 3];
+
+            // Look for semi-transparent pixels (not fully opaque, not fully transparent)
+            if (a > 0 && a < 255 && (r > 0 || g > 0 || b > 0))
+            {
+                foundSemiTransparent = true;
+
+                byte premulB = premulPixels[i];
+                byte premulG = premulPixels[i + 1];
+                byte premulR = premulPixels[i + 2];
+                byte premulA = premulPixels[i + 3];
+
+                // Alpha should be unchanged
+                Assert.AreEqual(a, premulA, $"Alpha mismatch at pixel {i / 4}");
+
+                // Premultiplied values should be: color * alpha / 255
+                // Allow ±1 tolerance for rounding
+                byte expectedB = (byte)(b * a / 255);
+                byte expectedG = (byte)(g * a / 255);
+                byte expectedR = (byte)(r * a / 255);
+
+                Assert.IsTrue(Math.Abs(premulB - expectedB) <= 1,
+                    $"B mismatch at pixel {i / 4}: expected {expectedB}, got {premulB}");
+                Assert.IsTrue(Math.Abs(premulG - expectedG) <= 1,
+                    $"G mismatch at pixel {i / 4}: expected {expectedG}, got {premulG}");
+                Assert.IsTrue(Math.Abs(premulR - expectedR) <= 1,
+                    $"R mismatch at pixel {i / 4}: expected {expectedR}, got {premulR}");
+
+                break; // Found one, that's enough
+            }
+        }
+
+        Assert.IsTrue(foundSemiTransparent, "No semi-transparent pixels found in dice.jxl");
+    }
 }

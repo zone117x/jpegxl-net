@@ -25,14 +25,24 @@
     <JxlrsLocalNativePath>$(JxlrsNativeBuildRoot)\$(JxlrsRustTarget)\release\$(JxlrsNativeLibraryName)</JxlrsLocalNativePath>
   </PropertyGroup>
 
+  <!-- Determine runtime identifier for native library path -->
+  <PropertyGroup>
+    <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">win-x64</JxlrsRuntimeIdentifier>
+    <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">win-arm64</JxlrsRuntimeIdentifier>
+    <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">linux-x64</JxlrsRuntimeIdentifier>
+    <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Linux')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">linux-arm64</JxlrsRuntimeIdentifier>
+    <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">osx-x64</JxlrsRuntimeIdentifier>
+    <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">osx-arm64</JxlrsRuntimeIdentifier>
+  </PropertyGroup>
+
   <!-- Copy native library from local Rust build to output directory -->
   <Target Name="CopyJxlrsLocalNativeLibrary" AfterTargets="Build" Condition="Exists('$(JxlrsLocalNativePath)')">
     <Copy SourceFiles="$(JxlrsLocalNativePath)"
-          DestinationFolder="$(OutputPath)"
+          DestinationFolder="$(OutputPath)runtimes/$(JxlrsRuntimeIdentifier)/native"
           SkipUnchangedFiles="true" />
 
     <Message Importance="high" 
-             Text="Copied native library from $(JxlrsLocalNativePath) to $(OutputPath)" />
+             Text="Copied native library from $(JxlrsLocalNativePath) to $(OutputPath)runtimes/$(JxlrsRuntimeIdentifier)/native" />
   </Target>
 
   <Target Name="WarnJxlrsNativeLibraryMissing" AfterTargets="Build" Condition="!Exists('$(JxlrsLocalNativePath)')">

@@ -107,6 +107,18 @@ pub enum JxlOrientation {
     Rotate90Ccw = 8,
 }
 
+/// Progressive decoding mode.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlProgressiveMode {
+    /// Renders all pixels in every call to Process.
+    Eager = 0,
+    /// Renders pixels once passes are completed.
+    Pass = 1,
+    /// Renders pixels only once the final frame is ready.
+    FullFrame = 2,
+}
+
 /// Basic image information.
 #[repr(C)]
 #[derive(Debug, Clone)]

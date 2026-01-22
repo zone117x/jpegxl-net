@@ -9,6 +9,7 @@ use crate::error::{clear_last_error, set_last_error};
 use crate::types::*;
 // Use fully qualified paths for upstream jxl types to avoid conflicts with our types
 use jxl::api::{Endianness, JxlDecoderOptions, ProcessingResult};
+use jxl::api::JxlProgressiveMode as UpstreamProgressiveMode;
 use jxl::headers::extra_channels::ExtraChannel;
 use jxl::headers::image_metadata::Orientation;
 use jxl::image::JxlOutputBuffer;
@@ -46,24 +47,79 @@ struct DecoderInner {
     extra_channels: Vec<JxlExtraChannelInfo>,
     /// Desired output pixel format.
     pixel_format: JxlPixelFormat,
+    /// Decoder options (stored for reset).
+    options: DecoderOptions,
+}
+
+/// Decoder options mirroring JxlDecoderOptions from upstream.
+#[derive(Clone)]
+struct DecoderOptions {
+    adjust_orientation: bool,
+    render_spot_colors: bool,
+    coalescing: bool,
+    desired_intensity_target: Option<f32>,
+    skip_preview: bool,
+    progressive_mode: JxlProgressiveMode,
+    enable_output: bool,
+    pixel_limit: Option<usize>,
+    high_precision: bool,
+    premultiply_output: bool,
+}
+
+impl Default for DecoderOptions {
+    fn default() -> Self {
+        Self {
+            adjust_orientation: true,
+            render_spot_colors: true,
+            coalescing: true,
+            desired_intensity_target: None,
+            skip_preview: true,
+            progressive_mode: JxlProgressiveMode::Pass,
+            enable_output: true,
+            pixel_limit: None,
+            high_precision: false,
+            premultiply_output: false,
+        }
+    }
+}
+
+impl DecoderOptions {
+    fn to_upstream(&self) -> JxlDecoderOptions {
+        let mut options = JxlDecoderOptions::default();
+        options.adjust_orientation = self.adjust_orientation;
+        options.render_spot_colors = self.render_spot_colors;
+        options.coalescing = self.coalescing;
+        options.desired_intensity_target = self.desired_intensity_target;
+        options.skip_preview = self.skip_preview;
+        options.progressive_mode = match self.progressive_mode {
+            JxlProgressiveMode::Eager => UpstreamProgressiveMode::Eager,
+            JxlProgressiveMode::Pass => UpstreamProgressiveMode::Pass,
+            JxlProgressiveMode::FullFrame => UpstreamProgressiveMode::FullFrame,
+        };
+        options.enable_output = self.enable_output;
+        options.pixel_limit = self.pixel_limit;
+        options.high_precision = self.high_precision;
+        options.premultiply_output = self.premultiply_output;
+        options
+    }
 }
 
 impl DecoderInner {
     fn new() -> Self {
-        let options = JxlDecoderOptions::default();
+        let options = DecoderOptions::default();
         Self {
-            state: DecoderState::Initialized(UpstreamDecoder::new(options)),
+            state: DecoderState::Initialized(UpstreamDecoder::new(options.to_upstream())),
             data: Vec::new(),
             data_offset: 0,
             basic_info: None,
             extra_channels: Vec::new(),
             pixel_format: JxlPixelFormat::default(),
+            options,
         }
     }
 
     fn reset(&mut self) {
-        let options = JxlDecoderOptions::default();
-        self.state = DecoderState::Initialized(UpstreamDecoder::new(options));
+        self.state = DecoderState::Initialized(UpstreamDecoder::new(self.options.to_upstream()));
         self.data.clear();
         self.data_offset = 0;
         self.basic_info = None;
@@ -189,6 +245,245 @@ pub unsafe extern "C" fn jxl_decoder_set_pixel_format(
     JxlStatus::Success
 }
 
+/// Sets whether to adjust image orientation based on EXIF data.
+///
+/// Default: true
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_set_adjust_orientation(
+    decoder: *mut NativeDecoderHandle,
+    adjust: i32,
+) -> JxlStatus {
+    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
+        set_last_error("Null decoder pointer");
+        return JxlStatus::InvalidArgument;
+    };
+
+    clear_last_error();
+    inner.options.adjust_orientation = adjust != 0;
+    inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+
+    JxlStatus::Success
+}
+
+/// Sets whether to render spot colors.
+///
+/// Default: true
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_set_render_spot_colors(
+    decoder: *mut NativeDecoderHandle,
+    render: i32,
+) -> JxlStatus {
+    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
+        set_last_error("Null decoder pointer");
+        return JxlStatus::InvalidArgument;
+    };
+
+    clear_last_error();
+    inner.options.render_spot_colors = render != 0;
+    inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+
+    JxlStatus::Success
+}
+
+/// Sets whether to coalesce animation frames.
+///
+/// Default: true
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_set_coalescing(
+    decoder: *mut NativeDecoderHandle,
+    coalesce: i32,
+) -> JxlStatus {
+    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
+        set_last_error("Null decoder pointer");
+        return JxlStatus::InvalidArgument;
+    };
+
+    clear_last_error();
+    inner.options.coalescing = coalesce != 0;
+    inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+
+    JxlStatus::Success
+}
+
+/// Sets the desired intensity target for HDR content.
+///
+/// Pass 0 to use the default (image's native intensity target).
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_set_desired_intensity_target(
+    decoder: *mut NativeDecoderHandle,
+    intensity_target: f32,
+) -> JxlStatus {
+    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
+        set_last_error("Null decoder pointer");
+        return JxlStatus::InvalidArgument;
+    };
+
+    clear_last_error();
+    inner.options.desired_intensity_target = if intensity_target > 0.0 {
+        Some(intensity_target)
+    } else {
+        None
+    };
+    inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+
+    JxlStatus::Success
+}
+
+/// Sets whether to skip the preview image.
+///
+/// Default: true
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_set_skip_preview(
+    decoder: *mut NativeDecoderHandle,
+    skip: i32,
+) -> JxlStatus {
+    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
+        set_last_error("Null decoder pointer");
+        return JxlStatus::InvalidArgument;
+    };
+
+    clear_last_error();
+    inner.options.skip_preview = skip != 0;
+    inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+
+    JxlStatus::Success
+}
+
+/// Sets the progressive decoding mode.
+///
+/// - Eager (0): Renders all pixels in every call to Process.
+/// - Pass (1): Renders pixels once passes are completed. (default)
+/// - FullFrame (2): Renders pixels only once the final frame is ready.
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_set_progressive_mode(
+    decoder: *mut NativeDecoderHandle,
+    mode: JxlProgressiveMode,
+) -> JxlStatus {
+    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
+        set_last_error("Null decoder pointer");
+        return JxlStatus::InvalidArgument;
+    };
+
+    clear_last_error();
+    inner.options.progressive_mode = mode;
+    inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+
+    JxlStatus::Success
+}
+
+/// Sets whether to enable output rendering.
+///
+/// Default: true
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_set_enable_output(
+    decoder: *mut NativeDecoderHandle,
+    enable: i32,
+) -> JxlStatus {
+    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
+        set_last_error("Null decoder pointer");
+        return JxlStatus::InvalidArgument;
+    };
+
+    clear_last_error();
+    inner.options.enable_output = enable != 0;
+    inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+
+    JxlStatus::Success
+}
+
+/// Sets the maximum number of pixels to decode.
+///
+/// Pass 0 for no limit.
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_set_pixel_limit(
+    decoder: *mut NativeDecoderHandle,
+    limit: usize,
+) -> JxlStatus {
+    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
+        set_last_error("Null decoder pointer");
+        return JxlStatus::InvalidArgument;
+    };
+
+    clear_last_error();
+    inner.options.pixel_limit = if limit > 0 { Some(limit) } else { None };
+    inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+
+    JxlStatus::Success
+}
+
+/// Sets whether to use high precision mode for decoding.
+///
+/// When false (default), uses lower precision settings that match libjxl's default.
+/// When true, uses higher precision at the cost of performance.
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_set_high_precision(
+    decoder: *mut NativeDecoderHandle,
+    high_precision: i32,
+) -> JxlStatus {
+    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
+        set_last_error("Null decoder pointer");
+        return JxlStatus::InvalidArgument;
+    };
+
+    clear_last_error();
+    inner.options.high_precision = high_precision != 0;
+    inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+
+    JxlStatus::Success
+}
+
+/// Sets whether to premultiply alpha in the output.
+///
+/// When false (default), outputs straight (non-premultiplied) alpha.
+/// When true, multiplies RGB by alpha before writing to output buffer.
+/// This is useful for UI frameworks that expect premultiplied alpha.
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_set_premultiply_alpha(
+    decoder: *mut NativeDecoderHandle,
+    premultiply: i32,
+) -> JxlStatus {
+    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
+        set_last_error("Null decoder pointer");
+        return JxlStatus::InvalidArgument;
+    };
+
+    clear_last_error();
+    inner.options.premultiply_output = premultiply != 0;
+    inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+
+    JxlStatus::Success
+}
+
 // ============================================================================
 // Decoding - Basic Info
 // ============================================================================
@@ -296,7 +591,7 @@ pub unsafe extern "C" fn jxl_decoder_read_info(
         }
         Err(e) => {
             // Recreate decoder for next attempt
-            inner.state = DecoderState::Initialized(UpstreamDecoder::new(JxlDecoderOptions::default()));
+            inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
             set_last_error(format!("Failed to decode header: {}", e));
             JxlStatus::Error
         }
@@ -471,7 +766,7 @@ pub unsafe extern "C" fn jxl_decoder_get_pixels(
                 }
                 Err(e) => {
                     inner.state =
-                        DecoderState::Initialized(UpstreamDecoder::new(JxlDecoderOptions::default()));
+                        DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
                     set_last_error(format!("Pixel decode error: {}", e));
                     return JxlStatus::Error;
                 }
@@ -504,7 +799,7 @@ pub unsafe extern "C" fn jxl_decoder_get_pixels(
             return JxlStatus::NeedMoreInput;
         }
         Err(e) => {
-            inner.state = DecoderState::Initialized(UpstreamDecoder::new(JxlDecoderOptions::default()));
+            inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
             set_last_error(format!("Frame decode error: {}", e));
             return JxlStatus::Error;
         }
@@ -531,7 +826,7 @@ pub unsafe extern "C" fn jxl_decoder_get_pixels(
             JxlStatus::NeedMoreInput
         }
         Err(e) => {
-            inner.state = DecoderState::Initialized(UpstreamDecoder::new(JxlDecoderOptions::default()));
+            inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
             set_last_error(format!("Pixel decode error: {}", e));
             JxlStatus::Error
         }

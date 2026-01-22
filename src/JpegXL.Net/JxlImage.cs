@@ -121,7 +121,68 @@ public sealed class JxlImage : IDisposable
     /// <exception cref="JxlException">Thrown if decoding fails.</exception>
     public static JxlImage Decode(ReadOnlySpan<byte> data, JxlPixelFormat format)
     {
+        return Decode(data, format, null);
+    }
+
+    /// <summary>
+    /// Decodes a JPEG XL image from the specified byte array with options.
+    /// </summary>
+    /// <param name="data">The JXL-encoded image data.</param>
+    /// <param name="options">The decode options.</param>
+    /// <returns>A decoded image.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if data is null.</exception>
+    /// <exception cref="JxlException">Thrown if decoding fails.</exception>
+    public static JxlImage Decode(byte[] data, JxlDecodeOptions options)
+    {
+        return Decode(data, JxlPixelFormat.Default, options);
+    }
+
+    /// <summary>
+    /// Decodes a JPEG XL image from the specified byte array with format and options.
+    /// </summary>
+    /// <param name="data">The JXL-encoded image data.</param>
+    /// <param name="format">The desired output pixel format.</param>
+    /// <param name="options">The decode options.</param>
+    /// <returns>A decoded image.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if data is null.</exception>
+    /// <exception cref="JxlException">Thrown if decoding fails.</exception>
+    public static JxlImage Decode(byte[] data, JxlPixelFormat format, JxlDecodeOptions? options)
+    {
+        if (data == null)
+            throw new ArgumentNullException(nameof(data));
+
+        return Decode(data.AsSpan(), format, options);
+    }
+
+    /// <summary>
+    /// Decodes a JPEG XL image from the specified span with options.
+    /// </summary>
+    /// <param name="data">The JXL-encoded image data.</param>
+    /// <param name="options">The decode options.</param>
+    /// <returns>A decoded image.</returns>
+    /// <exception cref="JxlException">Thrown if decoding fails.</exception>
+    public static JxlImage Decode(ReadOnlySpan<byte> data, JxlDecodeOptions options)
+    {
+        return Decode(data, JxlPixelFormat.Default, options);
+    }
+
+    /// <summary>
+    /// Decodes a JPEG XL image from the specified span with format and options.
+    /// </summary>
+    /// <param name="data">The JXL-encoded image data.</param>
+    /// <param name="format">The desired output pixel format.</param>
+    /// <param name="options">The decode options, or null for defaults.</param>
+    /// <returns>A decoded image.</returns>
+    /// <exception cref="JxlException">Thrown if decoding fails.</exception>
+    public static JxlImage Decode(ReadOnlySpan<byte> data, JxlPixelFormat format, JxlDecodeOptions? options)
+    {
         using var decoder = new JxlDecoder();
+
+        if (options != null)
+        {
+            decoder.ApplyOptions(options);
+        }
+
         decoder.SetInput(data);
         decoder.SetPixelFormat(format);
 

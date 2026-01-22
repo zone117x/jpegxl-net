@@ -77,6 +77,121 @@ namespace JpegXL.Net.Native
         internal static extern JxlStatus jxl_decoder_set_pixel_format(NativeDecoderHandle* decoder, JxlPixelFormat* format);
 
         /// <summary>
+        ///  Sets whether to adjust image orientation based on EXIF data.
+        ///
+        ///  Default: true
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_adjust_orientation", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_set_adjust_orientation(NativeDecoderHandle* decoder, int adjust);
+
+        /// <summary>
+        ///  Sets whether to render spot colors.
+        ///
+        ///  Default: true
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_render_spot_colors", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_set_render_spot_colors(NativeDecoderHandle* decoder, int render);
+
+        /// <summary>
+        ///  Sets whether to coalesce animation frames.
+        ///
+        ///  Default: true
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_coalescing", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_set_coalescing(NativeDecoderHandle* decoder, int coalesce);
+
+        /// <summary>
+        ///  Sets the desired intensity target for HDR content.
+        ///
+        ///  Pass 0 to use the default (image's native intensity target).
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_desired_intensity_target", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_set_desired_intensity_target(NativeDecoderHandle* decoder, float intensity_target);
+
+        /// <summary>
+        ///  Sets whether to skip the preview image.
+        ///
+        ///  Default: true
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_skip_preview", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_set_skip_preview(NativeDecoderHandle* decoder, int skip);
+
+        /// <summary>
+        ///  Sets the progressive decoding mode.
+        ///
+        ///  - Eager (0): Renders all pixels in every call to Process.
+        ///  - Pass (1): Renders pixels once passes are completed. (default)
+        ///  - FullFrame (2): Renders pixels only once the final frame is ready.
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_progressive_mode", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_set_progressive_mode(NativeDecoderHandle* decoder, JxlProgressiveMode mode);
+
+        /// <summary>
+        ///  Sets whether to enable output rendering.
+        ///
+        ///  Default: true
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_enable_output", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_set_enable_output(NativeDecoderHandle* decoder, int enable);
+
+        /// <summary>
+        ///  Sets the maximum number of pixels to decode.
+        ///
+        ///  Pass 0 for no limit.
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_pixel_limit", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_set_pixel_limit(NativeDecoderHandle* decoder, System.UIntPtr limit);
+
+        /// <summary>
+        ///  Sets whether to use high precision mode for decoding.
+        ///
+        ///  When false (default), uses lower precision settings that match libjxl's default.
+        ///  When true, uses higher precision at the cost of performance.
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_high_precision", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_set_high_precision(NativeDecoderHandle* decoder, int high_precision);
+
+        /// <summary>
+        ///  Sets whether to premultiply alpha in the output.
+        ///
+        ///  When false (default), outputs straight (non-premultiplied) alpha.
+        ///  When true, multiplies RGB by alpha before writing to output buffer.
+        ///  This is useful for UI frameworks that expect premultiplied alpha.
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_premultiply_alpha", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_set_premultiply_alpha(NativeDecoderHandle* decoder, int premultiply);
+
+        /// <summary>
         ///  Decodes the image header and retrieves basic info.
         ///
         ///  This must be called before `jxl_decoder_get_pixels`.
@@ -472,6 +587,25 @@ namespace JpegXL.Net.Native
         ///  Rotated 90 degrees counter-clockwise.
         /// </summary>
         Rotate90Ccw = 8,
+    }
+
+    /// <summary>
+    ///  Progressive decoding mode.
+    /// </summary>
+    internal enum JxlProgressiveMode : uint
+    {
+        /// <summary>
+        ///  Renders all pixels in every call to Process.
+        /// </summary>
+        Eager = 0,
+        /// <summary>
+        ///  Renders pixels once passes are completed.
+        /// </summary>
+        Pass = 1,
+        /// <summary>
+        ///  Renders pixels only once the final frame is ready.
+        /// </summary>
+        FullFrame = 2,
     }
 
     /// <summary>
