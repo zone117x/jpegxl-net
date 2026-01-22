@@ -405,6 +405,91 @@ public sealed unsafe class JxlDecoder : IDisposable
     }
 
     /// <summary>
+    /// Gets the required buffer size for a specific extra channel.
+    /// </summary>
+    /// <param name="index">The extra channel index (0-based).</param>
+    /// <returns>The required buffer size in bytes, or 0 if invalid.</returns>
+    public nuint GetExtraChannelBufferSize(uint index)
+    {
+        ThrowIfDisposed();
+        return NativeMethods.jxl_decoder_get_extra_channel_buffer_size(_handle, index);
+    }
+
+    /// <summary>
+    /// Decodes pixels with extra channels into separate buffers.
+    /// </summary>
+    /// <param name="colorBuffer">Buffer for color data (RGB/RGBA/etc.).</param>
+    /// <param name="extraBuffers">Array of buffers for extra channels.</param>
+    /// <returns>The event indicating what happened during pixel decoding.</returns>
+    /// <remarks>
+    /// <para>
+    /// Set <see cref="JxlDecodeOptions.DecodeExtraChannels"/> to true when creating the decoder
+    /// to enable extra channel decoding.
+    /// </para>
+    /// <para>
+    /// Extra channels are decoded in order. Pass null for a buffer to skip that channel.
+    /// </para>
+    /// </remarks>
+    public JxlDecoderEvent ReadPixelsWithExtraChannels(Span<byte> colorBuffer, Span<byte[]?> extraBuffers)
+    {
+        ThrowIfDisposed();
+
+        var numExtra = extraBuffers.Length;
+        var extraPtrs = stackalloc byte*[numExtra];
+        var extraSizes = stackalloc nuint[numExtra];
+        
+        // Pin all the extra buffers and set up pointers
+        var handles = new GCHandle[numExtra];
+        try
+        {
+            for (int i = 0; i < numExtra; i++)
+            {
+                var buffer = extraBuffers[i];
+                if (buffer != null)
+                {
+                    handles[i] = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+                    extraPtrs[i] = (byte*)handles[i].AddrOfPinnedObject();
+                    extraSizes[i] = (nuint)buffer.Length;
+                }
+                else
+                {
+                    extraPtrs[i] = null;
+                    extraSizes[i] = 0;
+                }
+            }
+
+            fixed (byte* colorPtr = colorBuffer)
+            {
+                var evt = NativeMethods.jxl_decoder_read_pixels_with_extra_channels(
+                    _handle,
+                    colorPtr,
+                    (UIntPtr)colorBuffer.Length,
+                    extraPtrs,
+                    extraSizes,
+                    (UIntPtr)numExtra);
+                
+                if (evt == Native.JxlDecoderEvent.Error)
+                {
+                    var message = GetLastError();
+                    throw new JxlException(JxlStatus.Error, message);
+                }
+                return (JxlDecoderEvent)evt;
+            }
+        }
+        finally
+        {
+            // Free all pinned handles
+            for (int i = 0; i < numExtra; i++)
+            {
+                if (handles[i].IsAllocated)
+                {
+                    handles[i].Free();
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Gets whether there are more frames to decode in an animated image.
     /// </summary>
     /// <returns>True if more frames are available, false otherwise.</returns>

@@ -74,6 +74,13 @@ public sealed class JxlDecodeOptions
     public bool PremultiplyAlpha { get; set; }
 
     /// <summary>
+    /// Gets or sets whether to decode extra channels into separate buffers.
+    /// When false (default), extra channels are skipped (except alpha when using RGBA output).
+    /// When true, use <see cref="JxlDecoder.ReadPixelsWithExtraChannels"/> to decode them.
+    /// </summary>
+    public bool DecodeExtraChannels { get; set; }
+
+    /// <summary>
     /// Gets a default options instance.
     /// </summary>
     public static JxlDecodeOptions Default => new();
@@ -95,6 +102,7 @@ public sealed class JxlDecodeOptions
             enable_output = EnableOutput,
             high_precision = HighPrecision,
             premultiply_alpha = PremultiplyAlpha,
+            decode_extra_channels = DecodeExtraChannels,
         };
     }
 }

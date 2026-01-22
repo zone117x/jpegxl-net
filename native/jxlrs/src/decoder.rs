@@ -66,6 +66,7 @@ struct DecoderOptions {
     pixel_limit: Option<usize>,
     high_precision: bool,
     premultiply_output: bool,
+    decode_extra_channels: bool,
 }
 
 impl Default for DecoderOptions {
@@ -81,6 +82,7 @@ impl Default for DecoderOptions {
             pixel_limit: None,
             high_precision: false,
             premultiply_output: false,
+            decode_extra_channels: false,
         }
     }
 }
@@ -125,6 +127,7 @@ impl DecoderOptions {
             },
             high_precision: c_options.high_precision,
             premultiply_output: c_options.premultiply_alpha,
+            decode_extra_channels: c_options.decode_extra_channels,
         }
     }
 }
@@ -381,8 +384,9 @@ pub unsafe extern "C" fn jxl_decoder_process(
             }
 
             // Set pixel format before processing frame
-            let num_extra = inner.extra_channels.len();
-            let pixel_format = convert_to_jxl_pixel_format(&inner.pixel_format, num_extra, true);
+            // Skip extra channels unless decode_extra_channels is enabled
+            let skip_extra = !inner.options.decode_extra_channels;
+            let pixel_format = convert_to_jxl_pixel_format(&inner.pixel_format, &inner.extra_channels, skip_extra);
             decoder_with_info.set_pixel_format(pixel_format);
 
             // Try to get frame info
@@ -583,6 +587,183 @@ pub unsafe extern "C" fn jxl_decoder_has_more_frames(
         DecoderState::WithImageInfo(d) => d.has_more_frames(),
         DecoderState::WithFrameInfo(_) => true, // We have a frame, so there's at least one more
         _ => false,
+    }
+}
+
+// ============================================================================
+// Extra Channels
+// ============================================================================
+
+/// Calculates the required buffer size for a specific extra channel.
+///
+/// # Arguments
+/// * `decoder` - The decoder instance.
+/// * `index` - The extra channel index (0-based).
+///
+/// # Returns
+/// The required buffer size in bytes, or 0 if invalid.
+///
+/// # Safety
+/// `decoder` must be valid and `jxl_decoder_read_info` must have been called.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_get_extra_channel_buffer_size(
+    decoder: *const NativeDecoderHandle,
+    index: u32,
+) -> usize {
+    let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
+        return 0;
+    };
+
+    let Some(ref info) = inner.basic_info else {
+        return 0;
+    };
+
+    if index as usize >= inner.extra_channels.len() {
+        return 0;
+    }
+
+    // Extra channels are single-plane, so calculate based on width * height * bytes_per_sample
+    let width = info.width as usize;
+    let height = info.height as usize;
+    let bytes_per_sample = bytes_per_sample(inner.pixel_format.data_format);
+    
+    width * height * bytes_per_sample
+}
+
+/// Decodes pixels with extra channels into separate buffers.
+///
+/// The first buffer receives color data (RGB/RGBA/etc.), subsequent buffers
+/// receive extra channels in order. Set buffer to null to skip that channel.
+///
+/// # Arguments
+/// * `decoder` - The decoder instance.
+/// * `color_buffer` - Output buffer for color data.
+/// * `color_buffer_size` - Size of color buffer in bytes.
+/// * `extra_buffers` - Array of pointers to extra channel buffers (can contain nulls to skip).
+/// * `extra_buffer_sizes` - Array of buffer sizes for each extra channel.
+/// * `num_extra_buffers` - Number of extra buffers provided.
+///
+/// # Safety
+/// - `decoder` must be valid.
+/// - `color_buffer` must be valid for writes of `color_buffer_size` bytes.
+/// - `extra_buffers` must point to `num_extra_buffers` pointers.
+/// - Each non-null buffer must be valid for writes of its corresponding size.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_read_pixels_with_extra_channels(
+    decoder: *mut NativeDecoderHandle,
+    color_buffer: *mut u8,
+    color_buffer_size: usize,
+    extra_buffers: *const *mut u8,
+    extra_buffer_sizes: *const usize,
+    num_extra_buffers: usize,
+) -> JxlDecoderEvent {
+    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
+        set_last_error("Null decoder pointer");
+        return JxlDecoderEvent::Error;
+    };
+
+    if color_buffer.is_null() {
+        set_last_error("Null color buffer pointer");
+        return JxlDecoderEvent::Error;
+    }
+
+    let Some(ref info) = inner.basic_info else {
+        set_last_error("Basic info not available");
+        return JxlDecoderEvent::Error;
+    };
+
+    let required_color_size = calculate_buffer_size(info, &inner.pixel_format);
+    if color_buffer_size < required_color_size {
+        set_last_error(format!(
+            "Color buffer too small: {} bytes provided, {} required",
+            color_buffer_size, required_color_size
+        ));
+        return JxlDecoderEvent::Error;
+    }
+
+    clear_last_error();
+
+    let height = info.height as usize;
+    let width = info.width as usize;
+    let color_bytes_per_row = calculate_bytes_per_row(info, &inner.pixel_format);
+    let num_extra = inner.extra_channels.len();
+
+    // Take ownership of decoder state
+    let state = std::mem::replace(&mut inner.state, DecoderState::Processing);
+
+    let decoder_with_frame = match state {
+        DecoderState::WithFrameInfo(d) => d,
+        other => {
+            inner.state = other;
+            set_last_error("Must call jxl_decoder_process until NeedOutputBuffer first");
+            return JxlDecoderEvent::Error;
+        }
+    };
+
+    // Build output buffers - one for color, one for each extra channel
+    let color_slice = unsafe { slice::from_raw_parts_mut(color_buffer, color_buffer_size) };
+    let color_output = JxlOutputBuffer::new(color_slice, height, color_bytes_per_row);
+    
+    // Build extra channel buffers
+    let extra_bytes_per_sample = bytes_per_sample(inner.pixel_format.data_format);
+    let extra_bytes_per_row = width * extra_bytes_per_sample;
+    
+    let extra_buffer_ptrs = if !extra_buffers.is_null() && num_extra_buffers > 0 {
+        unsafe { slice::from_raw_parts(extra_buffers, num_extra_buffers) }
+    } else {
+        &[]
+    };
+    
+    let extra_sizes = if !extra_buffer_sizes.is_null() && num_extra_buffers > 0 {
+        unsafe { slice::from_raw_parts(extra_buffer_sizes, num_extra_buffers) }
+    } else {
+        &[]
+    };
+    
+    // Create a vector of output buffers - color first, then extras
+    // Note: We need to handle the case where not all extra channels have buffers
+    let mut all_buffers: Vec<JxlOutputBuffer> = Vec::with_capacity(1 + num_extra.min(num_extra_buffers));
+    all_buffers.push(color_output);
+    
+    for i in 0..num_extra.min(num_extra_buffers) {
+        let ptr = extra_buffer_ptrs.get(i).copied().unwrap_or(std::ptr::null_mut());
+        let size = extra_sizes.get(i).copied().unwrap_or(0);
+        
+        if !ptr.is_null() && size >= height * extra_bytes_per_row {
+            let slice = unsafe { slice::from_raw_parts_mut(ptr, size) };
+            all_buffers.push(JxlOutputBuffer::new(slice, height, extra_bytes_per_row));
+        }
+    }
+
+    // Note: The pixel format (including extra channel format) was already set when
+    // jxl_decoder_process transitioned to WithFrameInfo. The decode_extra_channels
+    // flag must be set before that transition.
+
+    // Decode pixels
+    let mut input_slice: &[u8] = &inner.data[inner.data_offset..];
+    let len_before = input_slice.len();
+    
+    // We need to use a mutable borrow of all_buffers
+    let result = decoder_with_frame.process(&mut input_slice, &mut all_buffers);
+    inner.data_offset += len_before - input_slice.len();
+
+    match result {
+        Ok(ProcessingResult::Complete { result }) => {
+            if let Some(ref mut header) = inner.frame_header {
+                header.is_last = !result.has_more_frames();
+            }
+            inner.state = DecoderState::WithImageInfo(result);
+            JxlDecoderEvent::FrameComplete
+        }
+        Ok(ProcessingResult::NeedsMoreInput { fallback, .. }) => {
+            inner.state = DecoderState::WithFrameInfo(fallback);
+            JxlDecoderEvent::NeedMoreInput
+        }
+        Err(e) => {
+            inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+            set_last_error(format!("Pixel decode error: {}", e));
+            JxlDecoderEvent::Error
+        }
     }
 }
 
@@ -837,7 +1018,6 @@ pub unsafe extern "C" fn jxl_decoder_get_pixels(
     clear_last_error();
 
     let height = info.height as usize;
-    let num_extra = inner.extra_channels.len();
     let bytes_per_row = calculate_bytes_per_row(info, &inner.pixel_format);
 
     // Take ownership of decoder state
@@ -883,7 +1063,7 @@ pub unsafe extern "C" fn jxl_decoder_get_pixels(
 
     // Set pixel format - skip extra channels for simple one-shot decode
     // This means we only need one output buffer (for the main color data)
-    let pixel_format = convert_to_jxl_pixel_format(&inner.pixel_format, num_extra, true);
+    let pixel_format = convert_to_jxl_pixel_format(&inner.pixel_format, &inner.extra_channels, true);
     decoder_with_info.set_pixel_format(pixel_format);
 
     // Process to get frame info - continue from current offset
@@ -1109,7 +1289,11 @@ fn convert_extra_channel_info(channel: &jxl::api::JxlExtraChannel) -> JxlExtraCh
     }
 }
 
-fn convert_to_jxl_pixel_format(format: &JxlPixelFormat, num_extra_channels: usize, skip_extra_channels: bool) -> UpstreamPixelFormat {
+fn convert_to_jxl_pixel_format(
+    format: &JxlPixelFormat, 
+    extra_channels: &[JxlExtraChannelInfo], 
+    skip_extra_channels: bool
+) -> UpstreamPixelFormat {
     let color_type = match format.color_type {
         JxlColorType::Grayscale => UpstreamColorType::Grayscale,
         JxlColorType::GrayscaleAlpha => UpstreamColorType::GrayscaleAlpha,
@@ -1135,9 +1319,15 @@ fn convert_to_jxl_pixel_format(format: &JxlPixelFormat, num_extra_channels: usiz
         JxlDataFormat::Float32 => Some(UpstreamDataFormat::F32 { endianness }),
     };
 
+    // Determine if the color type already includes alpha
+    let color_includes_alpha = matches!(
+        format.color_type,
+        JxlColorType::Rgba | JxlColorType::Bgra | JxlColorType::GrayscaleAlpha
+    );
+
     // If skipping extra channels, set them all to None so they won't be decoded
     let extra_channel_format = if skip_extra_channels {
-        vec![None; num_extra_channels]
+        vec![None; extra_channels.len()]
     } else {
         let extra_format = match format.data_format {
             JxlDataFormat::Uint8 => Some(UpstreamDataFormat::U8 { bit_depth: 8 }),
@@ -1148,12 +1338,82 @@ fn convert_to_jxl_pixel_format(format: &JxlPixelFormat, num_extra_channels: usiz
             JxlDataFormat::Float16 => Some(UpstreamDataFormat::F16 { endianness }),
             JxlDataFormat::Float32 => Some(UpstreamDataFormat::F32 { endianness }),
         };
-        vec![extra_format; num_extra_channels]
+        
+        // Track whether we've skipped the first alpha channel (when color includes alpha)
+        let mut first_alpha_skipped = false;
+        
+        extra_channels.iter().map(|ec| {
+            // If color type includes alpha and this is the first alpha channel, skip it
+            // (it's already part of the color output)
+            if color_includes_alpha && ec.channel_type == JxlExtraChannelType::Alpha && !first_alpha_skipped {
+                first_alpha_skipped = true;
+                None
+            } else {
+                extra_format
+            }
+        }).collect()
     };
 
     UpstreamPixelFormat {
         color_type,
         color_data_format: data_format,
         extra_channel_format,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert_to_jxl_pixel_format_rgba_with_alpha() {
+        let format = JxlPixelFormat {
+            color_type: JxlColorType::Rgba,
+            data_format: JxlDataFormat::Uint8,
+            endianness: JxlEndianness::Native,
+        };
+        
+        let extra_channels = vec![JxlExtraChannelInfo {
+            channel_type: JxlExtraChannelType::Alpha,
+            bits_per_sample: 8,
+            exponent_bits_per_sample: 0,
+            name_length: 0,
+            spot_color: [0.0; 4],
+            alpha_premultiplied: false,
+        }];
+        
+        // When using RGBA with alpha as extra channel, alpha should be None
+        // (alpha is already in the RGBA color output)
+        let pixel_format = convert_to_jxl_pixel_format(&format, &extra_channels, false);
+        
+        assert_eq!(pixel_format.extra_channel_format.len(), 1);
+        assert!(pixel_format.extra_channel_format[0].is_none(), 
+            "Alpha should be None when using RGBA");
+    }
+    
+    #[test]
+    fn test_convert_to_jxl_pixel_format_rgb_with_alpha() {
+        let format = JxlPixelFormat {
+            color_type: JxlColorType::Rgb,
+            data_format: JxlDataFormat::Uint8,
+            endianness: JxlEndianness::Native,
+        };
+        
+        let extra_channels = vec![JxlExtraChannelInfo {
+            channel_type: JxlExtraChannelType::Alpha,
+            bits_per_sample: 8,
+            exponent_bits_per_sample: 0,
+            name_length: 0,
+            spot_color: [0.0; 4],
+            alpha_premultiplied: false,
+        }];
+        
+        // When using RGB (no alpha in color), alpha should be Some
+        // (alpha needs to go to a separate buffer)
+        let pixel_format = convert_to_jxl_pixel_format(&format, &extra_channels, false);
+        
+        assert_eq!(pixel_format.extra_channel_format.len(), 1);
+        assert!(pixel_format.extra_channel_format[0].is_some(), 
+            "Alpha should be Some when using RGB");
     }
 }

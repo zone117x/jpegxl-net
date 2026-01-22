@@ -425,4 +425,104 @@ public class JxlDecoderTests
         Assert.AreEqual(frameCount, frameDurations.Count, "Should have duration for each frame");
         Console.WriteLine($"Decoded {frameCount} frames with durations: [{string.Join(", ", frameDurations.Select(d => $"{d:F3}s"))}]");
     }
+
+    [TestMethod]
+    public void ExtraChannelDecode_ReadsExtraChannelsInfo()
+    {
+        // Arrange - use file with extra channels
+        var data = File.ReadAllBytes("TestData/extra_channels.jxl");
+        
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        
+        // Get image info
+        var info = decoder.ReadInfo();
+        
+        // Assert - file should have extra channels
+        Assert.IsTrue(info.NumExtraChannels > 0, $"Expected extra channels, got {info.NumExtraChannels}");
+        
+        // Get extra channel info
+        for (int i = 0; i < (int)info.NumExtraChannels; i++)
+        {
+            var channelInfo = decoder.GetExtraChannelInfo(i);
+            Console.WriteLine($"Extra channel {i}: Type={channelInfo.ChannelType}, BitsPerSample={channelInfo.BitsPerSample}");
+            Assert.IsTrue(channelInfo.BitsPerSample > 0, $"Channel {i} should have valid bits per sample");
+        }
+    }
+
+    [TestMethod]
+    public void ExtraChannelDecode_DecodesExtraChannelsToSeparateBuffers()
+    {
+        // Arrange - use file with extra channels (alpha)
+        // Note: When using RGBA color format (the default), alpha is included in the 
+        // 4-channel color output. Any additional extra channels (depth, spot color, etc.)
+        // would go to separate buffers. For a file with only alpha as extra channel,
+        // when using RGBA there are no channels that need separate buffers.
+        var data = File.ReadAllBytes("TestData/extra_channels.jxl");
+        
+        // Create decoder with extra channel decoding enabled
+        var options = new JxlDecodeOptions { DecodeExtraChannels = true };
+        using var decoder = new JxlDecoder(options);
+        decoder.SetInput(data);
+        
+        // Get image info
+        var info = decoder.ReadInfo();
+        Assert.IsTrue(info.NumExtraChannels > 0, "Test file should have extra channels");
+        
+        // Get extra channel info to understand what we have
+        var extraChannelTypes = new List<JxlExtraChannelType>();
+        for (int i = 0; i < (int)info.NumExtraChannels; i++)
+        {
+            var channelInfo = decoder.GetExtraChannelInfo(i);
+            extraChannelTypes.Add(channelInfo.ChannelType);
+            Console.WriteLine($"Extra channel {i}: Type={channelInfo.ChannelType}");
+        }
+        
+        // Process until we need output buffer
+        var evt = decoder.Process();
+        while (evt != JxlDecoderEvent.NeedOutputBuffer && evt != JxlDecoderEvent.Complete)
+        {
+            evt = decoder.Process();
+        }
+        
+        Assert.AreEqual(JxlDecoderEvent.NeedOutputBuffer, evt, "Should need output buffer");
+        
+        // Prepare color buffer
+        var colorBufferSize = decoder.GetBufferSize();
+        var colorBuffer = new byte[colorBufferSize];
+        
+        // When using RGBA, the first alpha extra channel is included in the color buffer.
+        // Only non-alpha extra channels (or additional alpha channels beyond the first)
+        // would need separate buffers.
+        // For this test file with only 1 alpha channel, we don't need extra buffers.
+        var numNonAlphaExtras = extraChannelTypes.Count(t => t != JxlExtraChannelType.Alpha);
+        var numAlphaExtras = extraChannelTypes.Count(t => t == JxlExtraChannelType.Alpha);
+        
+        Console.WriteLine($"Extra channels: {extraChannelTypes.Count} total, {numAlphaExtras} alpha, {numNonAlphaExtras} non-alpha");
+        
+        // For images with only alpha extra channels (which are included in RGBA output),
+        // we can call ReadPixelsWithExtraChannels with an empty extra buffer array
+        var emptyExtraBuffers = Array.Empty<byte[]>();
+        Span<byte[]?> extraBuffersSpan = emptyExtraBuffers!;
+        evt = decoder.ReadPixelsWithExtraChannels(colorBuffer, extraBuffersSpan);
+        Assert.AreEqual(JxlDecoderEvent.FrameComplete, evt, $"Expected FrameComplete, got {evt}");
+        
+        // Verify color buffer has data (should be RGBA with alpha included)
+        bool hasColorData = false;
+        for (int i = 0; i < colorBuffer.Length; i++)
+        {
+            if (colorBuffer[i] != 0)
+            {
+                hasColorData = true;
+                break;
+            }
+        }
+        Assert.IsTrue(hasColorData, "Color buffer should contain non-zero pixel data");
+        
+        // Verify that the color buffer has 4 channels (RGBA)
+        // The alpha data should be in the color buffer's 4th channel
+        Assert.AreEqual((int)(info.Width * info.Height * 4), colorBuffer.Length, "Color buffer should be RGBA (4 bytes per pixel)");
+        
+        Console.WriteLine($"Decoded image {info.Width}x{info.Height} with alpha in RGBA color buffer");
+    }
 }

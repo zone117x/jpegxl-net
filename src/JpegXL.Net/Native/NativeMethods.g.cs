@@ -167,6 +167,45 @@ namespace JpegXL.Net.Native
         internal static extern bool jxl_decoder_has_more_frames(NativeDecoderHandle* decoder);
 
         /// <summary>
+        ///  Calculates the required buffer size for a specific extra channel.
+        ///
+        ///  # Arguments
+        ///  * `decoder` - The decoder instance.
+        ///  * `index` - The extra channel index (0-based).
+        ///
+        ///  # Returns
+        ///  The required buffer size in bytes, or 0 if invalid.
+        ///
+        ///  # Safety
+        ///  `decoder` must be valid and `jxl_decoder_read_info` must have been called.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_extra_channel_buffer_size", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern System.UIntPtr jxl_decoder_get_extra_channel_buffer_size(NativeDecoderHandle* decoder, uint index);
+
+        /// <summary>
+        ///  Decodes pixels with extra channels into separate buffers.
+        ///
+        ///  The first buffer receives color data (RGB/RGBA/etc.), subsequent buffers
+        ///  receive extra channels in order. Set buffer to null to skip that channel.
+        ///
+        ///  # Arguments
+        ///  * `decoder` - The decoder instance.
+        ///  * `color_buffer` - Output buffer for color data.
+        ///  * `color_buffer_size` - Size of color buffer in bytes.
+        ///  * `extra_buffers` - Array of pointers to extra channel buffers (can contain nulls to skip).
+        ///  * `extra_buffer_sizes` - Array of buffer sizes for each extra channel.
+        ///  * `num_extra_buffers` - Number of extra buffers provided.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        ///  - `color_buffer` must be valid for writes of `color_buffer_size` bytes.
+        ///  - `extra_buffers` must point to `num_extra_buffers` pointers.
+        ///  - Each non-null buffer must be valid for writes of its corresponding size.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_read_pixels_with_extra_channels", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlDecoderEvent jxl_decoder_read_pixels_with_extra_channels(NativeDecoderHandle* decoder, byte* color_buffer, System.UIntPtr color_buffer_size, byte** extra_buffers, System.UIntPtr* extra_buffer_sizes, System.UIntPtr num_extra_buffers);
+
+        /// <summary>
         ///  Sets the desired output pixel format.
         ///
         ///  # Safety
@@ -487,6 +526,10 @@ namespace JpegXL.Net.Native
         ///  Whether to premultiply alpha in the output.
         /// </summary>
         [MarshalAs(UnmanagedType.U1)] public bool premultiply_alpha;
+        /// <summary>
+        ///  Whether to decode extra channels into separate buffers.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool decode_extra_channels;
     }
 
 

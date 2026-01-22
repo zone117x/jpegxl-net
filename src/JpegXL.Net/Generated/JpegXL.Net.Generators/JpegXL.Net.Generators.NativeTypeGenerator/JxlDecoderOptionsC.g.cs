@@ -29,6 +29,8 @@ public readonly partial struct JxlDecoderOptionsC
 
     public bool PremultiplyAlpha => _native.premultiply_alpha;
 
+    public bool DecodeExtraChannels => _native.decode_extra_channels;
+
     /// <summary>Gets the underlying native struct for advanced interop.</summary>
     internal JpegXL.Net.Native.JxlDecoderOptionsC Native => _native;
 }

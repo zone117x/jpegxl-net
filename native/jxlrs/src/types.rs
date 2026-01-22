@@ -282,6 +282,8 @@ pub struct JxlDecoderOptionsC {
     pub high_precision: bool,
     /// Whether to premultiply alpha in the output.
     pub premultiply_alpha: bool,
+    /// Whether to decode extra channels into separate buffers.
+    pub decode_extra_channels: bool,
 }
 
 impl Default for JxlDecoderOptionsC {
@@ -297,6 +299,7 @@ impl Default for JxlDecoderOptionsC {
             enable_output: true,
             high_precision: false,
             premultiply_alpha: false,
+            decode_extra_channels: false,
         }
     }
 }
