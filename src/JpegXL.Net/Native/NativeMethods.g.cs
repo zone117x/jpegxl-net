@@ -26,7 +26,7 @@ namespace JpegXL.Net.Native
         internal static extern uint jxl_version();
 
         /// <summary>
-        ///  Creates a new decoder instance.
+        ///  Creates a new decoder instance with default options.
         ///
         ///  # Returns
         ///  A pointer to the decoder, or null on allocation failure.
@@ -34,6 +34,25 @@ namespace JpegXL.Net.Native
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_create", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         internal static extern NativeDecoderHandle* jxl_decoder_create();
+
+        /// <summary>
+        ///  Creates a new decoder instance with the specified options.
+        ///
+        ///  This is the preferred way to create a decoder with custom options.
+        ///  Options are immutable after creation for efficiency.
+        ///
+        ///  # Arguments
+        ///  * `options` - Pointer to decoder options, or null to use defaults.
+        ///
+        ///  # Returns
+        ///  A pointer to the decoder, or null on allocation failure.
+        ///  The decoder must be destroyed with `jxl_decoder_destroy`.
+        ///
+        ///  # Safety
+        ///  If `options` is not null, it must point to a valid `JxlDecoderOptionsC` struct.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_create_with_options", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern NativeDecoderHandle* jxl_decoder_create_with_options(JxlDecoderOptionsC* options);
 
         /// <summary>
         ///  Destroys a decoder instance and frees its resources.
@@ -75,121 +94,6 @@ namespace JpegXL.Net.Native
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_set_pixel_format", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         internal static extern JxlStatus jxl_decoder_set_pixel_format(NativeDecoderHandle* decoder, JxlPixelFormat* format);
-
-        /// <summary>
-        ///  Sets whether to adjust image orientation based on EXIF data.
-        ///
-        ///  Default: true
-        ///
-        ///  # Safety
-        ///  The decoder pointer must be valid.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_adjust_orientation", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_set_adjust_orientation(NativeDecoderHandle* decoder, int adjust);
-
-        /// <summary>
-        ///  Sets whether to render spot colors.
-        ///
-        ///  Default: true
-        ///
-        ///  # Safety
-        ///  The decoder pointer must be valid.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_render_spot_colors", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_set_render_spot_colors(NativeDecoderHandle* decoder, int render);
-
-        /// <summary>
-        ///  Sets whether to coalesce animation frames.
-        ///
-        ///  Default: true
-        ///
-        ///  # Safety
-        ///  The decoder pointer must be valid.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_coalescing", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_set_coalescing(NativeDecoderHandle* decoder, int coalesce);
-
-        /// <summary>
-        ///  Sets the desired intensity target for HDR content.
-        ///
-        ///  Pass 0 to use the default (image's native intensity target).
-        ///
-        ///  # Safety
-        ///  The decoder pointer must be valid.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_desired_intensity_target", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_set_desired_intensity_target(NativeDecoderHandle* decoder, float intensity_target);
-
-        /// <summary>
-        ///  Sets whether to skip the preview image.
-        ///
-        ///  Default: true
-        ///
-        ///  # Safety
-        ///  The decoder pointer must be valid.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_skip_preview", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_set_skip_preview(NativeDecoderHandle* decoder, int skip);
-
-        /// <summary>
-        ///  Sets the progressive decoding mode.
-        ///
-        ///  - Eager (0): Renders all pixels in every call to Process.
-        ///  - Pass (1): Renders pixels once passes are completed. (default)
-        ///  - FullFrame (2): Renders pixels only once the final frame is ready.
-        ///
-        ///  # Safety
-        ///  The decoder pointer must be valid.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_progressive_mode", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_set_progressive_mode(NativeDecoderHandle* decoder, JxlProgressiveMode mode);
-
-        /// <summary>
-        ///  Sets whether to enable output rendering.
-        ///
-        ///  Default: true
-        ///
-        ///  # Safety
-        ///  The decoder pointer must be valid.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_enable_output", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_set_enable_output(NativeDecoderHandle* decoder, int enable);
-
-        /// <summary>
-        ///  Sets the maximum number of pixels to decode.
-        ///
-        ///  Pass 0 for no limit.
-        ///
-        ///  # Safety
-        ///  The decoder pointer must be valid.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_pixel_limit", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_set_pixel_limit(NativeDecoderHandle* decoder, System.UIntPtr limit);
-
-        /// <summary>
-        ///  Sets whether to use high precision mode for decoding.
-        ///
-        ///  When false (default), uses lower precision settings that match libjxl's default.
-        ///  When true, uses higher precision at the cost of performance.
-        ///
-        ///  # Safety
-        ///  The decoder pointer must be valid.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_high_precision", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_set_high_precision(NativeDecoderHandle* decoder, int high_precision);
-
-        /// <summary>
-        ///  Sets whether to premultiply alpha in the output.
-        ///
-        ///  When false (default), outputs straight (non-premultiplied) alpha.
-        ///  When true, multiplies RGB by alpha before writing to output buffer.
-        ///  This is useful for UI frameworks that expect premultiplied alpha.
-        ///
-        ///  # Safety
-        ///  The decoder pointer must be valid.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_premultiply_alpha", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_set_premultiply_alpha(NativeDecoderHandle* decoder, int premultiply);
 
         /// <summary>
         ///  Decodes the image header and retrieves basic info.
@@ -420,6 +324,58 @@ namespace JpegXL.Net.Native
         ///  Channel name length in bytes (excluding null terminator).
         /// </summary>
         public uint name_length;
+    }
+
+    /// <summary>
+    ///  Decoder options (C-compatible struct).
+    ///  All options should be set before decoding begins.
+    ///  Fields are ordered by size (largest first) to minimize padding.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe partial struct JxlDecoderOptionsC
+    {
+        /// <summary>
+        ///  Maximum number of pixels to decode.
+        ///  0 = no limit.
+        /// </summary>
+        public System.UIntPtr pixel_limit;
+        /// <summary>
+        ///  Desired intensity target for HDR content.
+        ///  0 = use default (image's native intensity target).
+        /// </summary>
+        public float desired_intensity_target;
+        /// <summary>
+        ///  Progressive decoding mode.
+        /// </summary>
+        public JxlProgressiveMode progressive_mode;
+        /// <summary>
+        ///  Whether to adjust image orientation based on EXIF data.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool adjust_orientation;
+        /// <summary>
+        ///  Whether to render spot colors.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool render_spot_colors;
+        /// <summary>
+        ///  Whether to coalesce animation frames.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool coalescing;
+        /// <summary>
+        ///  Whether to skip the preview image.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool skip_preview;
+        /// <summary>
+        ///  Whether to enable output rendering.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool enable_output;
+        /// <summary>
+        ///  Whether to use high precision mode for decoding.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool high_precision;
+        /// <summary>
+        ///  Whether to premultiply alpha in the output.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool premultiply_alpha;
     }
 
 

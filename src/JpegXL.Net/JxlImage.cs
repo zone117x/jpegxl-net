@@ -176,12 +176,7 @@ public sealed class JxlImage : IDisposable
     /// <exception cref="JxlException">Thrown if decoding fails.</exception>
     public static JxlImage Decode(ReadOnlySpan<byte> data, JxlPixelFormat format, JxlDecodeOptions? options)
     {
-        using var decoder = new JxlDecoder();
-
-        if (options != null)
-        {
-            decoder.ApplyOptions(options);
-        }
+        using var decoder = new JxlDecoder(options);
 
         decoder.SetInput(data);
         decoder.SetPixelFormat(format);

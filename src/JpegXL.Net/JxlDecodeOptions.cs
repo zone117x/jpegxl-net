@@ -77,4 +77,24 @@ public sealed class JxlDecodeOptions
     /// Gets a default options instance.
     /// </summary>
     public static JxlDecodeOptions Default => new();
+
+    /// <summary>
+    /// Converts to native options struct.
+    /// </summary>
+    internal Native.JxlDecoderOptionsC ToNative()
+    {
+        return new Native.JxlDecoderOptionsC
+        {
+            pixel_limit = (UIntPtr)(PixelLimit ?? 0),
+            desired_intensity_target = DesiredIntensityTarget ?? 0f,
+            progressive_mode = (Native.JxlProgressiveMode)ProgressiveMode,
+            adjust_orientation = AdjustOrientation,
+            render_spot_colors = RenderSpotColors,
+            coalescing = Coalescing,
+            skip_preview = SkipPreview,
+            enable_output = EnableOutput,
+            high_precision = HighPrecision,
+            premultiply_alpha = PremultiplyAlpha,
+        };
+    }
 }

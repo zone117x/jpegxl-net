@@ -248,3 +248,50 @@ impl Default for JxlPixelFormat {
         }
     }
 }
+
+/// Decoder options (C-compatible struct).
+/// All options should be set before decoding begins.
+/// Fields are ordered by size (largest first) to minimize padding.
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct JxlDecoderOptionsC {
+    /// Maximum number of pixels to decode.
+    /// 0 = no limit.
+    pub pixel_limit: usize,
+    /// Desired intensity target for HDR content.
+    /// 0 = use default (image's native intensity target).
+    pub desired_intensity_target: f32,
+    /// Progressive decoding mode.
+    pub progressive_mode: JxlProgressiveMode,
+    /// Whether to adjust image orientation based on EXIF data.
+    pub adjust_orientation: bool,
+    /// Whether to render spot colors.
+    pub render_spot_colors: bool,
+    /// Whether to coalesce animation frames.
+    pub coalescing: bool,
+    /// Whether to skip the preview image.
+    pub skip_preview: bool,
+    /// Whether to enable output rendering.
+    pub enable_output: bool,
+    /// Whether to use high precision mode for decoding.
+    pub high_precision: bool,
+    /// Whether to premultiply alpha in the output.
+    pub premultiply_alpha: bool,
+}
+
+impl Default for JxlDecoderOptionsC {
+    fn default() -> Self {
+        Self {
+            pixel_limit: 0,
+            desired_intensity_target: 0.0,
+            progressive_mode: JxlProgressiveMode::Pass,
+            adjust_orientation: true,
+            render_spot_colors: true,
+            coalescing: true,
+            skip_preview: true,
+            enable_output: true,
+            high_precision: false,
+            premultiply_alpha: false,
+        }
+    }
+}

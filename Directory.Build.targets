@@ -21,8 +21,16 @@
     <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libjxlrs.so</JxlrsNativeLibraryName>
     <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libjxlrs.dylib</JxlrsNativeLibraryName>
 
-    <!-- Full path to native library in Rust build output -->
-    <JxlrsLocalNativePath>$(JxlrsNativeBuildRoot)\$(JxlrsRustTarget)\release\$(JxlrsNativeLibraryName)</JxlrsLocalNativePath>
+    <!-- Full path to native library in Rust build output (with target triple) -->
+    <JxlrsTargetNativePath>$(JxlrsNativeBuildRoot)/$(JxlrsRustTarget)/release/$(JxlrsNativeLibraryName)</JxlrsTargetNativePath>
+    
+    <!-- Fallback path for simple 'cargo build' without target flag -->
+    <JxlrsDefaultNativePath>$(JxlrsNativeBuildRoot)/release/$(JxlrsNativeLibraryName)</JxlrsDefaultNativePath>
+    
+    <!-- Use target-specific path if it exists, otherwise use default -->
+    <JxlrsLocalNativePath Condition="Exists('$(JxlrsTargetNativePath)')">$(JxlrsTargetNativePath)</JxlrsLocalNativePath>
+    <JxlrsLocalNativePath Condition="!Exists('$(JxlrsTargetNativePath)') And Exists('$(JxlrsDefaultNativePath)')">$(JxlrsDefaultNativePath)</JxlrsLocalNativePath>
+    <JxlrsLocalNativePath Condition="'$(JxlrsLocalNativePath)' == ''">$(JxlrsTargetNativePath)</JxlrsLocalNativePath>
   </PropertyGroup>
 
   <!-- Determine runtime identifier for native library path -->
