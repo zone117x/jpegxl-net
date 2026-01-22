@@ -7,23 +7,27 @@
 
 use crate::error::{clear_last_error, set_last_error};
 use crate::types::*;
-use jxl::api::{
-    Endianness, JxlColorType, JxlDataFormat, JxlDecoder, JxlDecoderOptions, JxlPixelFormat,
-    ProcessingResult,
-};
+// Use fully qualified paths for upstream jxl types to avoid conflicts with our types
+use jxl::api::{Endianness, JxlDecoderOptions, ProcessingResult};
 use jxl::headers::extra_channels::ExtraChannel;
 use jxl::headers::image_metadata::Orientation;
 use jxl::image::JxlOutputBuffer;
 use std::slice;
 
+// Type aliases for upstream jxl types to distinguish from our C API types
+type UpstreamDecoder<S> = jxl::api::JxlDecoder<S>;
+type UpstreamPixelFormat = jxl::api::JxlPixelFormat;
+type UpstreamColorType = jxl::api::JxlColorType;
+type UpstreamDataFormat = jxl::api::JxlDataFormat;
+
 /// Internal decoder state machine.
 enum DecoderState {
     /// Initial state, ready to accept input.
-    Initialized(JxlDecoder<jxl::api::states::Initialized>),
+    Initialized(UpstreamDecoder<jxl::api::states::Initialized>),
     /// Has image info, can read pixels.
-    WithImageInfo(JxlDecoder<jxl::api::states::WithImageInfo>),
+    WithImageInfo(UpstreamDecoder<jxl::api::states::WithImageInfo>),
     /// Has frame info, ready to decode pixels.
-    WithFrameInfo(JxlDecoder<jxl::api::states::WithFrameInfo>),
+    WithFrameInfo(UpstreamDecoder<jxl::api::states::WithFrameInfo>),
     /// Transitional state during processing.
     Processing,
 }
@@ -37,29 +41,29 @@ struct DecoderInner {
     /// Current read offset in data (tracks position between process calls).
     data_offset: usize,
     /// Cached basic info.
-    basic_info: Option<JxlrsBasicInfo>,
+    basic_info: Option<JxlBasicInfo>,
     /// Cached extra channel info.
-    extra_channels: Vec<JxlrsExtraChannelInfo>,
+    extra_channels: Vec<JxlExtraChannelInfo>,
     /// Desired output pixel format.
-    pixel_format: JxlrsPixelFormat,
+    pixel_format: JxlPixelFormat,
 }
 
 impl DecoderInner {
     fn new() -> Self {
         let options = JxlDecoderOptions::default();
         Self {
-            state: DecoderState::Initialized(JxlDecoder::new(options)),
+            state: DecoderState::Initialized(UpstreamDecoder::new(options)),
             data: Vec::new(),
             data_offset: 0,
             basic_info: None,
             extra_channels: Vec::new(),
-            pixel_format: JxlrsPixelFormat::default(),
+            pixel_format: JxlPixelFormat::default(),
         }
     }
 
     fn reset(&mut self) {
         let options = JxlDecoderOptions::default();
-        self.state = DecoderState::Initialized(JxlDecoder::new(options));
+        self.state = DecoderState::Initialized(UpstreamDecoder::new(options));
         self.data.clear();
         self.data_offset = 0;
         self.basic_info = None;
@@ -75,22 +79,22 @@ impl DecoderInner {
 ///
 /// # Returns
 /// A pointer to the decoder, or null on allocation failure.
-/// The decoder must be destroyed with `jxlrs_decoder_destroy`.
+/// The decoder must be destroyed with `jxl_decoder_destroy`.
 #[unsafe(no_mangle)]
-pub extern "C" fn jxlrs_decoder_create() -> *mut JxlrsDecoder {
+pub extern "C" fn jxl_decoder_create() -> *mut NativeDecoderHandle {
     clear_last_error();
 
     let decoder = Box::new(DecoderInner::new());
-    Box::into_raw(decoder) as *mut JxlrsDecoder
+    Box::into_raw(decoder) as *mut NativeDecoderHandle
 }
 
 /// Destroys a decoder instance and frees its resources.
 ///
 /// # Safety
-/// The decoder pointer must have been created by `jxlrs_decoder_create`.
+/// The decoder pointer must have been created by `jxl_decoder_create`.
 /// After calling this function, the decoder pointer is invalid.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxlrs_decoder_destroy(decoder: *mut JxlrsDecoder) {
+pub unsafe extern "C" fn jxl_decoder_destroy(decoder: *mut NativeDecoderHandle) {
     if !decoder.is_null() {
         unsafe {
             drop(Box::from_raw(decoder as *mut DecoderInner));
@@ -103,16 +107,16 @@ pub unsafe extern "C" fn jxlrs_decoder_destroy(decoder: *mut JxlrsDecoder) {
 /// # Safety
 /// The decoder pointer must be valid.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxlrs_decoder_reset(decoder: *mut JxlrsDecoder) -> JxlrsStatus {
+pub unsafe extern "C" fn jxl_decoder_reset(decoder: *mut NativeDecoderHandle) -> JxlStatus {
     let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
         set_last_error("Null decoder pointer");
-        return JxlrsStatus::InvalidArgument;
+        return JxlStatus::InvalidArgument;
     };
 
     clear_last_error();
     inner.reset();
 
-    JxlrsStatus::Success
+    JxlStatus::Success
 }
 
 // ============================================================================
@@ -128,19 +132,19 @@ pub unsafe extern "C" fn jxlrs_decoder_reset(decoder: *mut JxlrsDecoder) -> Jxlr
 /// - `decoder` must be a valid decoder pointer.
 /// - `data` must point to `size` readable bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxlrs_decoder_set_input(
-    decoder: *mut JxlrsDecoder,
+pub unsafe extern "C" fn jxl_decoder_set_input(
+    decoder: *mut NativeDecoderHandle,
     data: *const u8,
     size: usize,
-) -> JxlrsStatus {
+) -> JxlStatus {
     let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
         set_last_error("Null decoder pointer");
-        return JxlrsStatus::InvalidArgument;
+        return JxlStatus::InvalidArgument;
     };
 
     if data.is_null() && size > 0 {
         set_last_error("Null data pointer with non-zero size");
-        return JxlrsStatus::InvalidArgument;
+        return JxlStatus::InvalidArgument;
     }
 
     clear_last_error();
@@ -153,7 +157,7 @@ pub unsafe extern "C" fn jxlrs_decoder_set_input(
             .extend_from_slice(unsafe { slice::from_raw_parts(data, size) });
     }
 
-    JxlrsStatus::Success
+    JxlStatus::Success
 }
 
 // ============================================================================
@@ -165,24 +169,24 @@ pub unsafe extern "C" fn jxlrs_decoder_set_input(
 /// # Safety
 /// The decoder pointer must be valid.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxlrs_decoder_set_pixel_format(
-    decoder: *mut JxlrsDecoder,
-    format: *const JxlrsPixelFormat,
-) -> JxlrsStatus {
+pub unsafe extern "C" fn jxl_decoder_set_pixel_format(
+    decoder: *mut NativeDecoderHandle,
+    format: *const JxlPixelFormat,
+) -> JxlStatus {
     let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
         set_last_error("Null decoder pointer");
-        return JxlrsStatus::InvalidArgument;
+        return JxlStatus::InvalidArgument;
     };
 
     let Some(format) = (unsafe { format.as_ref() }) else {
         set_last_error("Null format pointer");
-        return JxlrsStatus::InvalidArgument;
+        return JxlStatus::InvalidArgument;
     };
 
     clear_last_error();
     inner.pixel_format = *format;
 
-    JxlrsStatus::Success
+    JxlStatus::Success
 }
 
 // ============================================================================
@@ -191,24 +195,24 @@ pub unsafe extern "C" fn jxlrs_decoder_set_pixel_format(
 
 /// Decodes the image header and retrieves basic info.
 ///
-/// This must be called before `jxlrs_decoder_get_pixels`.
+/// This must be called before `jxl_decoder_get_pixels`.
 ///
 /// # Safety
 /// - `decoder` must be valid.
-/// - `info` must point to a writable `JxlrsBasicInfo`.
+/// - `info` must point to a writable `JxlBasicInfo`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxlrs_decoder_read_info(
-    decoder: *mut JxlrsDecoder,
-    info: *mut JxlrsBasicInfo,
-) -> JxlrsStatus {
+pub unsafe extern "C" fn jxl_decoder_read_info(
+    decoder: *mut NativeDecoderHandle,
+    info: *mut JxlBasicInfo,
+) -> JxlStatus {
     let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
         set_last_error("Null decoder pointer");
-        return JxlrsStatus::InvalidArgument;
+        return JxlStatus::InvalidArgument;
     };
 
     if inner.data.is_empty() {
         set_last_error("No input data set");
-        return JxlrsStatus::InvalidState;
+        return JxlStatus::InvalidState;
     }
 
     clear_last_error();
@@ -218,7 +222,7 @@ pub unsafe extern "C" fn jxlrs_decoder_read_info(
         if let Some(out_info) = unsafe { info.as_mut() } {
             *out_info = cached_info.clone();
         }
-        return JxlrsStatus::Success;
+        return JxlStatus::Success;
     }
 
     // Take ownership of the decoder state for processing
@@ -242,7 +246,7 @@ pub unsafe extern "C" fn jxlrs_decoder_read_info(
             }
 
             inner.state = DecoderState::WithImageInfo(d);
-            return JxlrsStatus::Success;
+            return JxlStatus::Success;
         }
         DecoderState::WithFrameInfo(d) => {
             // Already past image info stage
@@ -252,11 +256,11 @@ pub unsafe extern "C" fn jxlrs_decoder_read_info(
                     *out_info = cached.clone();
                 }
             }
-            return JxlrsStatus::Success;
+            return JxlStatus::Success;
         }
         DecoderState::Processing => {
             set_last_error("Decoder is in an invalid state");
-            return JxlrsStatus::InvalidState;
+            return JxlStatus::InvalidState;
         }
     };
 
@@ -283,28 +287,28 @@ pub unsafe extern "C" fn jxlrs_decoder_read_info(
             }
 
             inner.state = DecoderState::WithImageInfo(decoder_with_info);
-            JxlrsStatus::Success
+            JxlStatus::Success
         }
         Ok(ProcessingResult::NeedsMoreInput { fallback, .. }) => {
             inner.state = DecoderState::Initialized(fallback);
             set_last_error("Incomplete header data");
-            JxlrsStatus::NeedMoreInput
+            JxlStatus::NeedMoreInput
         }
         Err(e) => {
             // Recreate decoder for next attempt
-            inner.state = DecoderState::Initialized(JxlDecoder::new(JxlDecoderOptions::default()));
+            inner.state = DecoderState::Initialized(UpstreamDecoder::new(JxlDecoderOptions::default()));
             set_last_error(format!("Failed to decode header: {}", e));
-            JxlrsStatus::Error
+            JxlStatus::Error
         }
     }
 }
 
 /// Gets the number of extra channels.
 ///
-/// Must be called after `jxlrs_decoder_read_info`.
+/// Must be called after `jxl_decoder_read_info`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxlrs_decoder_get_extra_channel_count(
-    decoder: *const JxlrsDecoder,
+pub unsafe extern "C" fn jxl_decoder_get_extra_channel_count(
+    decoder: *const NativeDecoderHandle,
 ) -> u32 {
     let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
         return 0;
@@ -317,29 +321,29 @@ pub unsafe extern "C" fn jxlrs_decoder_get_extra_channel_count(
 ///
 /// # Safety
 /// - `decoder` must be valid.
-/// - `info` must point to a writable `JxlrsExtraChannelInfo`.
+/// - `info` must point to a writable `JxlExtraChannelInfo`.
 /// - `index` must be less than the extra channel count.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxlrs_decoder_get_extra_channel_info(
-    decoder: *const JxlrsDecoder,
+pub unsafe extern "C" fn jxl_decoder_get_extra_channel_info(
+    decoder: *const NativeDecoderHandle,
     index: u32,
-    info: *mut JxlrsExtraChannelInfo,
-) -> JxlrsStatus {
+    info: *mut JxlExtraChannelInfo,
+) -> JxlStatus {
     let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
         set_last_error("Null decoder pointer");
-        return JxlrsStatus::InvalidArgument;
+        return JxlStatus::InvalidArgument;
     };
 
     let Some(channel_info) = inner.extra_channels.get(index as usize) else {
         set_last_error(format!("Extra channel index {} out of range", index));
-        return JxlrsStatus::InvalidArgument;
+        return JxlStatus::InvalidArgument;
     };
 
     if let Some(out_info) = unsafe { info.as_mut() } {
         *out_info = channel_info.clone();
     }
 
-    JxlrsStatus::Success
+    JxlStatus::Success
 }
 
 // ============================================================================
@@ -349,9 +353,9 @@ pub unsafe extern "C" fn jxlrs_decoder_get_extra_channel_info(
 /// Calculates the required buffer size for decoded pixels.
 ///
 /// # Safety
-/// `decoder` must be valid and `jxlrs_decoder_read_info` must have been called.
+/// `decoder` must be valid and `jxl_decoder_read_info` must have been called.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxlrs_decoder_get_buffer_size(decoder: *const JxlrsDecoder) -> usize {
+pub unsafe extern "C" fn jxl_decoder_get_buffer_size(decoder: *const NativeDecoderHandle) -> usize {
     let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
         return 0;
     };
@@ -361,16 +365,16 @@ pub unsafe extern "C" fn jxlrs_decoder_get_buffer_size(decoder: *const JxlrsDeco
     };
 
     let bytes_per_sample = match inner.pixel_format.data_format {
-        JxlrsDataFormat::Uint8 => 1,
-        JxlrsDataFormat::Uint16 | JxlrsDataFormat::Float16 => 2,
-        JxlrsDataFormat::Float32 => 4,
+        JxlDataFormat::Uint8 => 1,
+        JxlDataFormat::Uint16 | JxlDataFormat::Float16 => 2,
+        JxlDataFormat::Float32 => 4,
     };
 
     let samples_per_pixel = match inner.pixel_format.color_type {
-        JxlrsColorType::Grayscale => 1,
-        JxlrsColorType::GrayscaleAlpha => 2,
-        JxlrsColorType::Rgb | JxlrsColorType::Bgr => 3,
-        JxlrsColorType::Rgba | JxlrsColorType::Bgra => 4,
+        JxlColorType::Grayscale => 1,
+        JxlColorType::GrayscaleAlpha => 2,
+        JxlColorType::Rgb | JxlColorType::Bgr => 3,
+        JxlColorType::Rgba | JxlColorType::Bgra => 4,
     };
 
     (info.width as usize) * (info.height as usize) * samples_per_pixel * bytes_per_sample
@@ -386,35 +390,35 @@ pub unsafe extern "C" fn jxlrs_decoder_get_buffer_size(decoder: *const JxlrsDeco
 /// # Safety
 /// - `decoder` must be valid.
 /// - `buffer` must be valid for writes of `buffer_size` bytes.
-/// - `jxlrs_decoder_read_info` must have been called first.
+/// - `jxl_decoder_read_info` must have been called first.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxlrs_decoder_get_pixels(
-    decoder: *mut JxlrsDecoder,
+pub unsafe extern "C" fn jxl_decoder_get_pixels(
+    decoder: *mut NativeDecoderHandle,
     buffer: *mut u8,
     buffer_size: usize,
-) -> JxlrsStatus {
+) -> JxlStatus {
     let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
         set_last_error("Null decoder pointer");
-        return JxlrsStatus::InvalidArgument;
+        return JxlStatus::InvalidArgument;
     };
 
     if buffer.is_null() {
         set_last_error("Null buffer pointer");
-        return JxlrsStatus::InvalidArgument;
+        return JxlStatus::InvalidArgument;
     }
 
     let Some(ref info) = inner.basic_info else {
-        set_last_error("Must call jxlrs_decoder_read_info first");
-        return JxlrsStatus::InvalidState;
+        set_last_error("Must call jxl_decoder_read_info first");
+        return JxlStatus::InvalidState;
     };
 
-    let required_size = unsafe { jxlrs_decoder_get_buffer_size(decoder) };
+    let required_size = unsafe { jxl_decoder_get_buffer_size(decoder) };
     if buffer_size < required_size {
         set_last_error(format!(
             "Buffer too small: {} bytes provided, {} required",
             buffer_size, required_size
         ));
-        return JxlrsStatus::BufferTooSmall;
+        return JxlStatus::BufferTooSmall;
     }
 
     clear_last_error();
@@ -425,16 +429,16 @@ pub unsafe extern "C" fn jxlrs_decoder_get_pixels(
 
     // Calculate bytes per row
     let bytes_per_sample = match inner.pixel_format.data_format {
-        JxlrsDataFormat::Uint8 => 1,
-        JxlrsDataFormat::Uint16 | JxlrsDataFormat::Float16 => 2,
-        JxlrsDataFormat::Float32 => 4,
+        JxlDataFormat::Uint8 => 1,
+        JxlDataFormat::Uint16 | JxlDataFormat::Float16 => 2,
+        JxlDataFormat::Float32 => 4,
     };
 
     let samples_per_pixel = match inner.pixel_format.color_type {
-        JxlrsColorType::Grayscale => 1,
-        JxlrsColorType::GrayscaleAlpha => 2,
-        JxlrsColorType::Rgb | JxlrsColorType::Bgr => 3,
-        JxlrsColorType::Rgba | JxlrsColorType::Bgra => 4,
+        JxlColorType::Grayscale => 1,
+        JxlColorType::GrayscaleAlpha => 2,
+        JxlColorType::Rgb | JxlColorType::Bgr => 3,
+        JxlColorType::Rgba | JxlColorType::Bgra => 4,
     };
 
     let bytes_per_row = width * samples_per_pixel * bytes_per_sample;
@@ -458,25 +462,25 @@ pub unsafe extern "C" fn jxlrs_decoder_get_pixels(
             match result {
                 Ok(ProcessingResult::Complete { result }) => {
                     inner.state = DecoderState::WithImageInfo(result);
-                    return JxlrsStatus::Success;
+                    return JxlStatus::Success;
                 }
                 Ok(ProcessingResult::NeedsMoreInput { fallback, .. }) => {
                     inner.state = DecoderState::WithFrameInfo(fallback);
                     set_last_error("Incomplete pixel data");
-                    return JxlrsStatus::NeedMoreInput;
+                    return JxlStatus::NeedMoreInput;
                 }
                 Err(e) => {
                     inner.state =
-                        DecoderState::Initialized(JxlDecoder::new(JxlDecoderOptions::default()));
+                        DecoderState::Initialized(UpstreamDecoder::new(JxlDecoderOptions::default()));
                     set_last_error(format!("Pixel decode error: {}", e));
-                    return JxlrsStatus::Error;
+                    return JxlStatus::Error;
                 }
             }
         }
         other => {
             inner.state = other;
-            set_last_error("Must call jxlrs_decoder_read_info first");
-            return JxlrsStatus::InvalidState;
+            set_last_error("Must call jxl_decoder_read_info first");
+            return JxlStatus::InvalidState;
         }
     };
 
@@ -497,12 +501,12 @@ pub unsafe extern "C" fn jxlrs_decoder_get_pixels(
             inner.data_offset += len_before - input_slice.len();
             inner.state = DecoderState::WithImageInfo(fallback);
             set_last_error("Incomplete frame data");
-            return JxlrsStatus::NeedMoreInput;
+            return JxlStatus::NeedMoreInput;
         }
         Err(e) => {
-            inner.state = DecoderState::Initialized(JxlDecoder::new(JxlDecoderOptions::default()));
+            inner.state = DecoderState::Initialized(UpstreamDecoder::new(JxlDecoderOptions::default()));
             set_last_error(format!("Frame decode error: {}", e));
-            return JxlrsStatus::Error;
+            return JxlStatus::Error;
         }
     };
 
@@ -519,17 +523,17 @@ pub unsafe extern "C" fn jxlrs_decoder_get_pixels(
     match result {
         Ok(ProcessingResult::Complete { result }) => {
             inner.state = DecoderState::WithImageInfo(result);
-            JxlrsStatus::Success
+            JxlStatus::Success
         }
         Ok(ProcessingResult::NeedsMoreInput { fallback, .. }) => {
             inner.state = DecoderState::WithFrameInfo(fallback);
             set_last_error("Incomplete pixel data");
-            JxlrsStatus::NeedMoreInput
+            JxlStatus::NeedMoreInput
         }
         Err(e) => {
-            inner.state = DecoderState::Initialized(JxlDecoder::new(JxlDecoderOptions::default()));
+            inner.state = DecoderState::Initialized(UpstreamDecoder::new(JxlDecoderOptions::default()));
             set_last_error(format!("Pixel decode error: {}", e));
-            JxlrsStatus::Error
+            JxlStatus::Error
         }
     }
 }
@@ -541,7 +545,7 @@ pub unsafe extern "C" fn jxlrs_decoder_get_pixels(
 /// Signature check result.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JxlrsSignature {
+pub enum JxlSignature {
     /// Not enough data to determine.
     NotEnoughBytes = 0,
     /// Not a JPEG XL file.
@@ -559,16 +563,16 @@ pub enum JxlrsSignature {
 /// # Safety
 /// `data` must be valid for reads of `size` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxlrs_signature_check(data: *const u8, size: usize) -> JxlrsSignature {
+pub unsafe extern "C" fn jxl_signature_check(data: *const u8, size: usize) -> JxlSignature {
     if data.is_null() || size < 2 {
-        return JxlrsSignature::NotEnoughBytes;
+        return JxlSignature::NotEnoughBytes;
     }
 
     let bytes = unsafe { slice::from_raw_parts(data, size.min(12)) };
 
     // Check for codestream signature (0xFF 0x0A)
     if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0x0A {
-        return JxlrsSignature::Codestream;
+        return JxlSignature::Codestream;
     }
 
     // Check for container signature
@@ -577,14 +581,14 @@ pub unsafe extern "C" fn jxlrs_signature_check(data: *const u8, size: usize) -> 
             0x00, 0x00, 0x00, 0x0C, 0x4A, 0x58, 0x4C, 0x20, 0x0D, 0x0A, 0x87, 0x0A,
         ];
         if bytes == container_sig {
-            return JxlrsSignature::Container;
+            return JxlSignature::Container;
         }
     }
 
     if size < 12 {
-        JxlrsSignature::NotEnoughBytes
+        JxlSignature::NotEnoughBytes
     } else {
-        JxlrsSignature::Invalid
+        JxlSignature::Invalid
     }
 }
 
@@ -592,7 +596,7 @@ pub unsafe extern "C" fn jxlrs_signature_check(data: *const u8, size: usize) -> 
 // Helper Functions
 // ============================================================================
 
-fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlrsBasicInfo {
+fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlBasicInfo {
     let (anim_num, anim_den, anim_loops) = info
         .animation
         .as_ref()
@@ -609,7 +613,7 @@ fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlrsBasicInfo {
         } => (*bits_per_sample, *exponent_bits_per_sample),
     };
 
-    JxlrsBasicInfo {
+    JxlBasicInfo {
         width: info.size.0 as u32,
         height: info.size.1 as u32,
         bits_per_sample: bits,
@@ -630,32 +634,32 @@ fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlrsBasicInfo {
     }
 }
 
-fn convert_orientation(orientation: Orientation) -> JxlrsOrientation {
+fn convert_orientation(orientation: Orientation) -> JxlOrientation {
     match orientation {
-        Orientation::Identity => JxlrsOrientation::Identity,
-        Orientation::FlipHorizontal => JxlrsOrientation::FlipHorizontal,
-        Orientation::Rotate180 => JxlrsOrientation::Rotate180,
-        Orientation::FlipVertical => JxlrsOrientation::FlipVertical,
-        Orientation::Transpose => JxlrsOrientation::Transpose,
-        Orientation::Rotate90Cw => JxlrsOrientation::Rotate90Cw,
-        Orientation::AntiTranspose => JxlrsOrientation::AntiTranspose,
-        Orientation::Rotate90Ccw => JxlrsOrientation::Rotate90Ccw,
+        Orientation::Identity => JxlOrientation::Identity,
+        Orientation::FlipHorizontal => JxlOrientation::FlipHorizontal,
+        Orientation::Rotate180 => JxlOrientation::Rotate180,
+        Orientation::FlipVertical => JxlOrientation::FlipVertical,
+        Orientation::Transpose => JxlOrientation::Transpose,
+        Orientation::Rotate90Cw => JxlOrientation::Rotate90Cw,
+        Orientation::AntiTranspose => JxlOrientation::AntiTranspose,
+        Orientation::Rotate90Ccw => JxlOrientation::Rotate90Ccw,
     }
 }
 
-fn convert_extra_channel_info(channel: &jxl::api::JxlExtraChannel) -> JxlrsExtraChannelInfo {
+fn convert_extra_channel_info(channel: &jxl::api::JxlExtraChannel) -> JxlExtraChannelInfo {
     let channel_type = match channel.ec_type {
-        ExtraChannel::Alpha => JxlrsExtraChannelType::Alpha,
-        ExtraChannel::Depth => JxlrsExtraChannelType::Depth,
-        ExtraChannel::SpotColor => JxlrsExtraChannelType::SpotColor,
-        ExtraChannel::SelectionMask => JxlrsExtraChannelType::SelectionMask,
-        ExtraChannel::CFA => JxlrsExtraChannelType::Cfa,
-        ExtraChannel::Thermal => JxlrsExtraChannelType::Thermal,
-        ExtraChannel::Optional => JxlrsExtraChannelType::Optional,
-        _ => JxlrsExtraChannelType::Unknown,
+        ExtraChannel::Alpha => JxlExtraChannelType::Alpha,
+        ExtraChannel::Depth => JxlExtraChannelType::Depth,
+        ExtraChannel::SpotColor => JxlExtraChannelType::SpotColor,
+        ExtraChannel::SelectionMask => JxlExtraChannelType::SelectionMask,
+        ExtraChannel::CFA => JxlExtraChannelType::Cfa,
+        ExtraChannel::Thermal => JxlExtraChannelType::Thermal,
+        ExtraChannel::Optional => JxlExtraChannelType::Optional,
+        _ => JxlExtraChannelType::Unknown,
     };
 
-    JxlrsExtraChannelInfo {
+    JxlExtraChannelInfo {
         channel_type,
         bits_per_sample: 8, // Default, actual value may need to be retrieved differently
         exponent_bits_per_sample: 0,
@@ -665,30 +669,30 @@ fn convert_extra_channel_info(channel: &jxl::api::JxlExtraChannel) -> JxlrsExtra
     }
 }
 
-fn convert_to_jxl_pixel_format(format: &JxlrsPixelFormat, num_extra_channels: usize, skip_extra_channels: bool) -> JxlPixelFormat {
+fn convert_to_jxl_pixel_format(format: &JxlPixelFormat, num_extra_channels: usize, skip_extra_channels: bool) -> UpstreamPixelFormat {
     let color_type = match format.color_type {
-        JxlrsColorType::Grayscale => JxlColorType::Grayscale,
-        JxlrsColorType::GrayscaleAlpha => JxlColorType::GrayscaleAlpha,
-        JxlrsColorType::Rgb => JxlColorType::Rgb,
-        JxlrsColorType::Rgba => JxlColorType::Rgba,
-        JxlrsColorType::Bgr => JxlColorType::Bgr,
-        JxlrsColorType::Bgra => JxlColorType::Bgra,
+        JxlColorType::Grayscale => UpstreamColorType::Grayscale,
+        JxlColorType::GrayscaleAlpha => UpstreamColorType::GrayscaleAlpha,
+        JxlColorType::Rgb => UpstreamColorType::Rgb,
+        JxlColorType::Rgba => UpstreamColorType::Rgba,
+        JxlColorType::Bgr => UpstreamColorType::Bgr,
+        JxlColorType::Bgra => UpstreamColorType::Bgra,
     };
 
     let endianness = match format.endianness {
-        JxlrsEndianness::Native => Endianness::native(),
-        JxlrsEndianness::LittleEndian => Endianness::LittleEndian,
-        JxlrsEndianness::BigEndian => Endianness::BigEndian,
+        JxlEndianness::Native => Endianness::native(),
+        JxlEndianness::LittleEndian => Endianness::LittleEndian,
+        JxlEndianness::BigEndian => Endianness::BigEndian,
     };
 
     let data_format = match format.data_format {
-        JxlrsDataFormat::Uint8 => Some(JxlDataFormat::U8 { bit_depth: 8 }),
-        JxlrsDataFormat::Uint16 => Some(JxlDataFormat::U16 {
+        JxlDataFormat::Uint8 => Some(UpstreamDataFormat::U8 { bit_depth: 8 }),
+        JxlDataFormat::Uint16 => Some(UpstreamDataFormat::U16 {
             endianness,
             bit_depth: 16,
         }),
-        JxlrsDataFormat::Float16 => Some(JxlDataFormat::F16 { endianness }),
-        JxlrsDataFormat::Float32 => Some(JxlDataFormat::F32 { endianness }),
+        JxlDataFormat::Float16 => Some(UpstreamDataFormat::F16 { endianness }),
+        JxlDataFormat::Float32 => Some(UpstreamDataFormat::F32 { endianness }),
     };
 
     // If skipping extra channels, set them all to None so they won't be decoded
@@ -696,18 +700,18 @@ fn convert_to_jxl_pixel_format(format: &JxlrsPixelFormat, num_extra_channels: us
         vec![None; num_extra_channels]
     } else {
         let extra_format = match format.data_format {
-            JxlrsDataFormat::Uint8 => Some(JxlDataFormat::U8 { bit_depth: 8 }),
-            JxlrsDataFormat::Uint16 => Some(JxlDataFormat::U16 {
+            JxlDataFormat::Uint8 => Some(UpstreamDataFormat::U8 { bit_depth: 8 }),
+            JxlDataFormat::Uint16 => Some(UpstreamDataFormat::U16 {
                 endianness,
                 bit_depth: 16,
             }),
-            JxlrsDataFormat::Float16 => Some(JxlDataFormat::F16 { endianness }),
-            JxlrsDataFormat::Float32 => Some(JxlDataFormat::F32 { endianness }),
+            JxlDataFormat::Float16 => Some(UpstreamDataFormat::F16 { endianness }),
+            JxlDataFormat::Float32 => Some(UpstreamDataFormat::F32 { endianness }),
         };
         vec![extra_format; num_extra_channels]
     };
 
-    JxlPixelFormat {
+    UpstreamPixelFormat {
         color_type,
         color_data_format: data_format,
         extra_channel_format,

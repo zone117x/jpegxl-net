@@ -7,17 +7,17 @@
 
 /// Opaque decoder handle.
 #[repr(C)]
-pub struct JxlrsDecoder {
+pub struct NativeDecoderHandle {
     _private: [u8; 0],
 }
 
 /// Status codes returned by decoder functions.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JxlrsStatus {
+pub enum JxlStatus {
     /// Operation completed successfully.
     Success = 0,
-    /// An error occurred. Call `jxlrs_get_last_error` for details.
+    /// An error occurred. Call `jxl_get_last_error` for details.
     Error = 1,
     /// The decoder needs more input data.
     NeedMoreInput = 2,
@@ -32,7 +32,7 @@ pub enum JxlrsStatus {
 /// Pixel data format.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JxlrsDataFormat {
+pub enum JxlDataFormat {
     /// 8-bit unsigned integer per channel.
     Uint8 = 0,
     /// 16-bit unsigned integer per channel.
@@ -46,7 +46,7 @@ pub enum JxlrsDataFormat {
 /// Color channel layout.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JxlrsColorType {
+pub enum JxlColorType {
     /// Single grayscale channel.
     Grayscale = 0,
     /// Grayscale + alpha.
@@ -64,7 +64,7 @@ pub enum JxlrsColorType {
 /// Endianness for multi-byte pixel formats.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JxlrsEndianness {
+pub enum JxlEndianness {
     /// Use native endianness of the platform.
     Native = 0,
     /// Little endian byte order.
@@ -76,19 +76,19 @@ pub enum JxlrsEndianness {
 /// Pixel format specification.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
-pub struct JxlrsPixelFormat {
+pub struct JxlPixelFormat {
     /// Data format for each channel.
-    pub data_format: JxlrsDataFormat,
+    pub data_format: JxlDataFormat,
     /// Color channel layout.
-    pub color_type: JxlrsColorType,
+    pub color_type: JxlColorType,
     /// Endianness for formats > 8 bits.
-    pub endianness: JxlrsEndianness,
+    pub endianness: JxlEndianness,
 }
 
 /// Image orientation (EXIF-style).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JxlrsOrientation {
+pub enum JxlOrientation {
     /// Normal orientation.
     Identity = 1,
     /// Flipped horizontally.
@@ -110,7 +110,7 @@ pub enum JxlrsOrientation {
 /// Basic image information.
 #[repr(C)]
 #[derive(Debug, Clone)]
-pub struct JxlrsBasicInfo {
+pub struct JxlBasicInfo {
     /// Image width in pixels.
     pub width: u32,
     /// Image height in pixels.
@@ -126,7 +126,7 @@ pub struct JxlrsBasicInfo {
     /// Whether alpha is premultiplied (0 = no, 1 = yes).
     pub alpha_premultiplied: i32,
     /// Image orientation.
-    pub orientation: JxlrsOrientation,
+    pub orientation: JxlOrientation,
     /// Whether the image has animation (0 = no, 1 = yes).
     pub have_animation: i32,
     /// Animation ticks per second numerator (0 if no animation).
@@ -150,7 +150,7 @@ pub struct JxlrsBasicInfo {
 /// Extra channel type.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JxlrsExtraChannelType {
+pub enum JxlExtraChannelType {
     /// Alpha/transparency channel.
     Alpha = 0,
     /// Depth map.
@@ -174,9 +174,9 @@ pub enum JxlrsExtraChannelType {
 /// Information about an extra channel.
 #[repr(C)]
 #[derive(Debug, Clone)]
-pub struct JxlrsExtraChannelInfo {
+pub struct JxlExtraChannelInfo {
     /// Type of extra channel.
-    pub channel_type: JxlrsExtraChannelType,
+    pub channel_type: JxlExtraChannelType,
     /// Bits per sample.
     pub bits_per_sample: u32,
     /// Exponent bits (for float channels).
@@ -192,7 +192,7 @@ pub struct JxlrsExtraChannelInfo {
 /// Frame header information.
 #[repr(C)]
 #[derive(Debug, Clone)]
-pub struct JxlrsFrameHeader {
+pub struct JxlFrameHeader {
     /// Frame duration in animation ticks.
     pub duration: u32,
     /// Timecode (for video).
@@ -203,7 +203,7 @@ pub struct JxlrsFrameHeader {
     pub is_last: i32,
 }
 
-impl Default for JxlrsBasicInfo {
+impl Default for JxlBasicInfo {
     fn default() -> Self {
         Self {
             width: 0,
@@ -213,7 +213,7 @@ impl Default for JxlrsBasicInfo {
             num_color_channels: 3,
             num_extra_channels: 0,
             alpha_premultiplied: 0,
-            orientation: JxlrsOrientation::Identity,
+            orientation: JxlOrientation::Identity,
             have_animation: 0,
             animation_tps_numerator: 0,
             animation_tps_denominator: 0,
@@ -227,12 +227,12 @@ impl Default for JxlrsBasicInfo {
     }
 }
 
-impl Default for JxlrsPixelFormat {
+impl Default for JxlPixelFormat {
     fn default() -> Self {
         Self {
-            data_format: JxlrsDataFormat::Uint8,
-            color_type: JxlrsColorType::Rgba,
-            endianness: JxlrsEndianness::Native,
+            data_format: JxlDataFormat::Uint8,
+            color_type: JxlColorType::Rgba,
+            endianness: JxlEndianness::Native,
         }
     }
 }

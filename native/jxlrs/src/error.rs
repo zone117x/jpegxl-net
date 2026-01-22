@@ -40,7 +40,7 @@ pub(crate) fn clear_last_error() {
 /// # Safety
 /// The buffer must be valid for writes of `buffer_size` bytes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxlrs_get_last_error(buffer: *mut c_char, buffer_size: usize) -> usize {
+pub unsafe extern "C" fn jxl_get_last_error(buffer: *mut c_char, buffer_size: usize) -> usize {
     if buffer.is_null() || buffer_size == 0 {
         return LAST_ERROR.with(|e| e.borrow().len());
     }
@@ -67,6 +67,6 @@ pub unsafe extern "C" fn jxlrs_get_last_error(buffer: *mut c_char, buffer_size: 
 
 /// Clears the last error message.
 #[unsafe(no_mangle)]
-pub extern "C" fn jxlrs_clear_last_error() {
+pub extern "C" fn jxl_clear_last_error() {
     clear_last_error();
 }

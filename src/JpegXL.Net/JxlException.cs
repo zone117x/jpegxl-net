@@ -16,12 +16,12 @@ public class JxlException : Exception
     /// <summary>
     /// The status code from the native library.
     /// </summary>
-    public JxlrsStatus Status { get; }
+    public JxlStatus Status { get; }
 
     /// <summary>
     /// Creates a new JxlException.
     /// </summary>
-    public JxlException(JxlrsStatus status, string? message = null)
+    public JxlException(JxlStatus status, string? message = null)
         : base(message ?? GetDefaultMessage(status))
     {
         Status = status;
@@ -30,20 +30,20 @@ public class JxlException : Exception
     /// <summary>
     /// Creates a new JxlException with an inner exception.
     /// </summary>
-    public JxlException(JxlrsStatus status, string message, Exception innerException)
+    public JxlException(JxlStatus status, string message, Exception innerException)
         : base(message, innerException)
     {
         Status = status;
     }
 
-    private static string GetDefaultMessage(JxlrsStatus status) => status switch
+    private static string GetDefaultMessage(JxlStatus status) => status switch
     {
-        JxlrsStatus.Success => "Operation completed successfully",
-        JxlrsStatus.Error => "An error occurred",
-        JxlrsStatus.NeedMoreInput => "More input data is needed",
-        JxlrsStatus.InvalidArgument => "Invalid argument",
-        JxlrsStatus.BufferTooSmall => "Buffer too small",
-        JxlrsStatus.InvalidState => "Invalid decoder state",
+        JxlStatus.Success => "Operation completed successfully",
+        JxlStatus.Error => "An error occurred",
+        JxlStatus.NeedMoreInput => "More input data is needed",
+        JxlStatus.InvalidArgument => "Invalid argument",
+        JxlStatus.BufferTooSmall => "Buffer too small",
+        JxlStatus.InvalidState => "Invalid decoder state",
         _ => $"Unknown error (status {(int)status})"
     };
 }

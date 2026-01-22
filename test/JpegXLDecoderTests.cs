@@ -27,7 +27,7 @@ public class JxlDecoderTests
         var result = JxlImage.CheckSignature(data);
 
         // Assert
-        Assert.AreEqual(JxlrsSignature.Codestream, result);
+        Assert.AreEqual(JxlSignature.Codestream, result);
     }
 
     [TestMethod]
@@ -40,7 +40,7 @@ public class JxlDecoderTests
         var result = JxlImage.CheckSignature(data);
 
         // Assert
-        Assert.AreEqual(JxlrsSignature.Container, result);
+        Assert.AreEqual(JxlSignature.Container, result);
     }
 
     [TestMethod]
@@ -53,7 +53,7 @@ public class JxlDecoderTests
         var result = JxlImage.CheckSignature(data);
 
         // Assert
-        Assert.IsTrue(result == JxlrsSignature.NotEnoughBytes || result == JxlrsSignature.Invalid);
+        Assert.IsTrue(result == JxlSignature.NotEnoughBytes || result == JxlSignature.Invalid);
     }
 
     [TestMethod]
@@ -96,25 +96,25 @@ public class JxlDecoderTests
     }
 
     [TestMethod]
-    public void JxlrsPixelFormat_Default_HasExpectedValues()
+    public void JxlPixelFormat_Default_HasExpectedValues()
     {
         // Arrange & Act
-        var format = JxlrsPixelFormat.Default;
+        var format = JxlPixelFormat.Default;
 
         // Assert
-        Assert.AreEqual(JxlrsColorType.Rgba, format.ColorType);
-        Assert.AreEqual(JxlrsDataFormat.Uint8, format.DataFormat);
-        Assert.AreEqual(JxlrsEndianness.Native, format.Endianness);
+        Assert.AreEqual(JxlColorType.Rgba, format.ColorType);
+        Assert.AreEqual(JxlDataFormat.Uint8, format.DataFormat);
+        Assert.AreEqual(JxlEndianness.Native, format.Endianness);
     }
 
     [TestMethod]
     public void JxlException_ContainsStatusCode()
     {
         // Arrange & Act
-        var exception = new JxlException(JxlrsStatus.Error, "Test error");
+        var exception = new JxlException(JxlStatus.Error, "Test error");
 
         // Assert
-        Assert.AreEqual(JxlrsStatus.Error, exception.Status);
+        Assert.AreEqual(JxlStatus.Error, exception.Status);
         Assert.AreEqual("Test error", exception.Message);
     }
 
@@ -154,7 +154,7 @@ public class JxlDecoderTests
     {
         // Arrange
         var data = File.ReadAllBytes("TestData/3x3_srgb_lossless.jxl");
-        var format = JxlrsPixelFormat.Bgra8;
+        var format = JxlPixelFormat.Bgra8;
 
         // Act
         using var image = JxlImage.Decode(data, format);

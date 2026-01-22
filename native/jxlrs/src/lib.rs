@@ -19,7 +19,7 @@ pub use types::*;
 /// Returns the library version as a packed integer.
 /// Format: (major << 24) | (minor << 16) | (patch << 8)
 #[unsafe(no_mangle)]
-pub extern "C" fn jxlrs_version() -> u32 {
+pub extern "C" fn jxl_version() -> u32 {
     let major: u32 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
     let minor: u32 = env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
     let patch: u32 = env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);

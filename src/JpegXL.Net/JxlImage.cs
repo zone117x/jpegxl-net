@@ -27,12 +27,12 @@ public sealed class JxlImage : IDisposable
     /// <summary>
     /// Gets the pixel format of the decoded image.
     /// </summary>
-    public JxlrsPixelFormat PixelFormat { get; }
+    public JxlPixelFormat PixelFormat { get; }
 
     /// <summary>
     /// Gets the basic image information.
     /// </summary>
-    public JxlrsBasicInfo BasicInfo { get; }
+    public JxlBasicInfo BasicInfo { get; }
 
     /// <summary>
     /// Gets the decoded pixel data.
@@ -64,7 +64,7 @@ public sealed class JxlImage : IDisposable
     /// </summary>
     public bool IsAnimated => BasicInfo.IsAnimated;
 
-    private JxlImage(byte[] pixels, JxlrsBasicInfo info, JxlrsPixelFormat format)
+    private JxlImage(byte[] pixels, JxlBasicInfo info, JxlPixelFormat format)
     {
         _pixels = pixels;
         Width = (int)info.Width;
@@ -82,7 +82,7 @@ public sealed class JxlImage : IDisposable
     /// <exception cref="JxlException">Thrown if decoding fails.</exception>
     public static JxlImage Decode(byte[] data)
     {
-        return Decode(data, JxlrsPixelFormat.Default);
+        return Decode(data, JxlPixelFormat.Default);
     }
 
     /// <summary>
@@ -93,7 +93,7 @@ public sealed class JxlImage : IDisposable
     /// <returns>A decoded image.</returns>
     /// <exception cref="ArgumentNullException">Thrown if data is null.</exception>
     /// <exception cref="JxlException">Thrown if decoding fails.</exception>
-    public static JxlImage Decode(byte[] data, JxlrsPixelFormat format)
+    public static JxlImage Decode(byte[] data, JxlPixelFormat format)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -109,7 +109,7 @@ public sealed class JxlImage : IDisposable
     /// <exception cref="JxlException">Thrown if decoding fails.</exception>
     public static JxlImage Decode(ReadOnlySpan<byte> data)
     {
-        return Decode(data, JxlrsPixelFormat.Default);
+        return Decode(data, JxlPixelFormat.Default);
     }
 
     /// <summary>
@@ -119,7 +119,7 @@ public sealed class JxlImage : IDisposable
     /// <param name="format">The desired output pixel format.</param>
     /// <returns>A decoded image.</returns>
     /// <exception cref="JxlException">Thrown if decoding fails.</exception>
-    public static JxlImage Decode(ReadOnlySpan<byte> data, JxlrsPixelFormat format)
+    public static JxlImage Decode(ReadOnlySpan<byte> data, JxlPixelFormat format)
     {
         using var decoder = new JxlDecoder();
         decoder.SetInput(data);
@@ -136,11 +136,11 @@ public sealed class JxlImage : IDisposable
     /// </summary>
     /// <param name="data">The data to check (only first 12 bytes are needed).</param>
     /// <returns>The signature check result.</returns>
-    public static unsafe JxlrsSignature CheckSignature(ReadOnlySpan<byte> data)
+    public static unsafe JxlSignature CheckSignature(ReadOnlySpan<byte> data)
     {
         fixed (byte* ptr = data)
         {
-            return NativeMethods.jxlrs_signature_check(ptr, (UIntPtr)data.Length);
+            return NativeMethods.jxl_signature_check(ptr, (UIntPtr)data.Length);
         }
     }
 
@@ -152,7 +152,7 @@ public sealed class JxlImage : IDisposable
     public static bool IsJxl(ReadOnlySpan<byte> data)
     {
         var sig = CheckSignature(data);
-        return sig == JxlrsSignature.Codestream || sig == JxlrsSignature.Container;
+        return sig == JxlSignature.Codestream || sig == JxlSignature.Container;
     }
 
     /// <summary>
@@ -167,23 +167,23 @@ public sealed class JxlImage : IDisposable
         }
     }
 
-    private static int CalculateBytesPerPixel(JxlrsPixelFormat format)
+    private static int CalculateBytesPerPixel(JxlPixelFormat format)
     {
         var bytesPerChannel = format.DataFormat switch
         {
-            JxlrsDataFormat.Uint8 => 1,
-            JxlrsDataFormat.Uint16 => 2,
-            JxlrsDataFormat.Float16 => 2,
-            JxlrsDataFormat.Float32 => 4,
+            JxlDataFormat.Uint8 => 1,
+            JxlDataFormat.Uint16 => 2,
+            JxlDataFormat.Float16 => 2,
+            JxlDataFormat.Float32 => 4,
             _ => 1
         };
 
         var channels = format.ColorType switch
         {
-            JxlrsColorType.Grayscale => 1,
-            JxlrsColorType.GrayscaleAlpha => 2,
-            JxlrsColorType.Rgb or JxlrsColorType.Bgr => 3,
-            JxlrsColorType.Rgba or JxlrsColorType.Bgra => 4,
+            JxlColorType.Grayscale => 1,
+            JxlColorType.GrayscaleAlpha => 2,
+            JxlColorType.Rgb or JxlColorType.Bgr => 3,
+            JxlColorType.Rgba or JxlColorType.Bgra => 4,
             _ => 4
         };
 

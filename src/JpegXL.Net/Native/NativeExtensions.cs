@@ -7,12 +7,12 @@ namespace JpegXL.Net.Native;
 /// <summary>
 /// Pixel format specification extensions.
 /// </summary>
-public unsafe partial struct JxlrsPixelFormat
+public unsafe partial struct JxlPixelFormat
 {
     /// <summary>
     /// Data format for each channel.
     /// </summary>
-    public JxlrsDataFormat DataFormat
+    public JxlDataFormat DataFormat
     {
         readonly get => data_format;
         set => data_format = value;
@@ -21,7 +21,7 @@ public unsafe partial struct JxlrsPixelFormat
     /// <summary>
     /// Color channel layout.
     /// </summary>
-    public JxlrsColorType ColorType
+    public JxlColorType ColorType
     {
         readonly get => color_type;
         set => color_type = value;
@@ -30,7 +30,7 @@ public unsafe partial struct JxlrsPixelFormat
     /// <summary>
     /// Endianness for formats > 8 bits.
     /// </summary>
-    public JxlrsEndianness Endianness
+    public JxlEndianness Endianness
     {
         readonly get => endianness;
         set => endianness = value;
@@ -39,58 +39,58 @@ public unsafe partial struct JxlrsPixelFormat
     /// <summary>
     /// Creates a default RGBA 8-bit pixel format.
     /// </summary>
-    public static JxlrsPixelFormat Default => new()
+    public static JxlPixelFormat Default => new()
     {
-        data_format = JxlrsDataFormat.Uint8,
-        color_type = JxlrsColorType.Rgba,
-        endianness = JxlrsEndianness.Native,
+        data_format = JxlDataFormat.Uint8,
+        color_type = JxlColorType.Rgba,
+        endianness = JxlEndianness.Native,
     };
 
     /// <summary>
     /// Creates a BGRA 8-bit pixel format (Windows bitmap order).
     /// </summary>
-    public static JxlrsPixelFormat Bgra8 => new()
+    public static JxlPixelFormat Bgra8 => new()
     {
-        data_format = JxlrsDataFormat.Uint8,
-        color_type = JxlrsColorType.Bgra,
-        endianness = JxlrsEndianness.Native,
+        data_format = JxlDataFormat.Uint8,
+        color_type = JxlColorType.Bgra,
+        endianness = JxlEndianness.Native,
     };
 
     /// <summary>
     /// Creates an RGB 8-bit pixel format (no alpha).
     /// </summary>
-    public static JxlrsPixelFormat Rgb8 => new()
+    public static JxlPixelFormat Rgb8 => new()
     {
-        data_format = JxlrsDataFormat.Uint8,
-        color_type = JxlrsColorType.Rgb,
-        endianness = JxlrsEndianness.Native,
+        data_format = JxlDataFormat.Uint8,
+        color_type = JxlColorType.Rgb,
+        endianness = JxlEndianness.Native,
     };
 
     /// <summary>
     /// Creates an RGBA 16-bit pixel format.
     /// </summary>
-    public static JxlrsPixelFormat Rgba16 => new()
+    public static JxlPixelFormat Rgba16 => new()
     {
-        data_format = JxlrsDataFormat.Uint16,
-        color_type = JxlrsColorType.Rgba,
-        endianness = JxlrsEndianness.Native,
+        data_format = JxlDataFormat.Uint16,
+        color_type = JxlColorType.Rgba,
+        endianness = JxlEndianness.Native,
     };
 
     /// <summary>
     /// Creates an RGBA 32-bit float pixel format.
     /// </summary>
-    public static JxlrsPixelFormat RgbaFloat => new()
+    public static JxlPixelFormat RgbaFloat => new()
     {
-        data_format = JxlrsDataFormat.Float32,
-        color_type = JxlrsColorType.Rgba,
-        endianness = JxlrsEndianness.Native,
+        data_format = JxlDataFormat.Float32,
+        color_type = JxlColorType.Rgba,
+        endianness = JxlEndianness.Native,
     };
 }
 
 /// <summary>
 /// Basic image information extensions.
 /// </summary>
-public unsafe partial struct JxlrsBasicInfo
+public unsafe partial struct JxlBasicInfo
 {
     /// <summary>Image width in pixels.</summary>
     public uint Width
@@ -142,7 +142,7 @@ public unsafe partial struct JxlrsBasicInfo
     }
 
     /// <summary>Image orientation.</summary>
-    public JxlrsOrientation Orientation
+    public JxlOrientation Orientation
     {
         readonly get => orientation;
         set => orientation = value;
@@ -227,10 +227,10 @@ public unsafe partial struct JxlrsBasicInfo
 /// <summary>
 /// Extra channel information extensions.
 /// </summary>
-public unsafe partial struct JxlrsExtraChannelInfo
+public unsafe partial struct JxlExtraChannelInfo
 {
     /// <summary>Type of extra channel.</summary>
-    public JxlrsExtraChannelType ChannelType
+    public JxlExtraChannelType ChannelType
     {
         readonly get => channel_type;
         set => channel_type = value;

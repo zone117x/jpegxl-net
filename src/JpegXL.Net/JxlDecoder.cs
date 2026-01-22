@@ -17,9 +17,9 @@ namespace JpegXL.Net;
 /// </remarks>
 public sealed unsafe class JxlDecoder : IDisposable
 {
-    private JxlrsDecoder* _handle;
+    private NativeDecoderHandle* _handle;
     private bool _disposed;
-    private JxlrsBasicInfo? _basicInfo;
+    private JxlBasicInfo? _basicInfo;
 
     /// <summary>
     /// Creates a new JPEG XL decoder.
@@ -27,10 +27,10 @@ public sealed unsafe class JxlDecoder : IDisposable
     /// <exception cref="JxlException">Thrown if decoder creation fails.</exception>
     public JxlDecoder()
     {
-        _handle = NativeMethods.jxlrs_decoder_create();
+        _handle = NativeMethods.jxl_decoder_create();
         if (_handle == null)
         {
-            throw new JxlException(JxlrsStatus.Error, "Failed to create decoder");
+            throw new JxlException(JxlStatus.Error, "Failed to create decoder");
         }
     }
 
@@ -40,7 +40,7 @@ public sealed unsafe class JxlDecoder : IDisposable
     /// <remarks>
     /// This property is only valid after calling <see cref="SetInput"/> and <see cref="ReadInfo"/>.
     /// </remarks>
-    public JxlrsBasicInfo? BasicInfo => _basicInfo;
+    public JxlBasicInfo? BasicInfo => _basicInfo;
 
     /// <summary>
     /// Gets the image width in pixels.
@@ -89,7 +89,7 @@ public sealed unsafe class JxlDecoder : IDisposable
 
         fixed (byte* ptr = data)
         {
-            var status = NativeMethods.jxlrs_decoder_set_input(_handle, ptr, (UIntPtr)data.Length);
+            var status = NativeMethods.jxl_decoder_set_input(_handle, ptr, (UIntPtr)data.Length);
             ThrowIfFailed(status);
         }
 
@@ -101,10 +101,10 @@ public sealed unsafe class JxlDecoder : IDisposable
     /// </summary>
     /// <param name="format">The pixel format to use for decoded output.</param>
     /// <exception cref="JxlException">Thrown if setting pixel format fails.</exception>
-    public void SetPixelFormat(JxlrsPixelFormat format)
+    public void SetPixelFormat(JxlPixelFormat format)
     {
         ThrowIfDisposed();
-        var status = NativeMethods.jxlrs_decoder_set_pixel_format(_handle, &format);
+        var status = NativeMethods.jxl_decoder_set_pixel_format(_handle, &format);
         ThrowIfFailed(status);
     }
 
@@ -113,12 +113,12 @@ public sealed unsafe class JxlDecoder : IDisposable
     /// </summary>
     /// <returns>The basic image information.</returns>
     /// <exception cref="JxlException">Thrown if reading header fails.</exception>
-    public JxlrsBasicInfo ReadInfo()
+    public JxlBasicInfo ReadInfo()
     {
         ThrowIfDisposed();
 
-        JxlrsBasicInfo info;
-        var status = NativeMethods.jxlrs_decoder_read_info(_handle, &info);
+        JxlBasicInfo info;
+        var status = NativeMethods.jxl_decoder_read_info(_handle, &info);
         ThrowIfFailed(status);
 
         _basicInfo = info;
@@ -135,7 +135,7 @@ public sealed unsafe class JxlDecoder : IDisposable
     public int GetBufferSize()
     {
         ThrowIfDisposed();
-        return (int)(uint)NativeMethods.jxlrs_decoder_get_buffer_size(_handle);
+        return (int)(uint)NativeMethods.jxl_decoder_get_buffer_size(_handle);
     }
 
     /// <summary>
@@ -183,7 +183,7 @@ public sealed unsafe class JxlDecoder : IDisposable
 
         fixed (byte* ptr = buffer)
         {
-            var status = NativeMethods.jxlrs_decoder_get_pixels(_handle, ptr, (UIntPtr)buffer.Length);
+            var status = NativeMethods.jxl_decoder_get_pixels(_handle, ptr, (UIntPtr)buffer.Length);
             ThrowIfFailed(status);
         }
     }
@@ -195,7 +195,7 @@ public sealed unsafe class JxlDecoder : IDisposable
     public int GetExtraChannelCount()
     {
         ThrowIfDisposed();
-        return (int)NativeMethods.jxlrs_decoder_get_extra_channel_count(_handle);
+        return (int)NativeMethods.jxl_decoder_get_extra_channel_count(_handle);
     }
 
     /// <summary>
@@ -204,12 +204,12 @@ public sealed unsafe class JxlDecoder : IDisposable
     /// <param name="index">The index of the extra channel.</param>
     /// <returns>Information about the extra channel.</returns>
     /// <exception cref="JxlException">Thrown if the index is out of range.</exception>
-    public JxlrsExtraChannelInfo GetExtraChannelInfo(int index)
+    public JxlExtraChannelInfo GetExtraChannelInfo(int index)
     {
         ThrowIfDisposed();
 
-        JxlrsExtraChannelInfo info;
-        var status = NativeMethods.jxlrs_decoder_get_extra_channel_info(_handle, (uint)index, &info);
+        JxlExtraChannelInfo info;
+        var status = NativeMethods.jxl_decoder_get_extra_channel_info(_handle, (uint)index, &info);
         ThrowIfFailed(status);
         return info;
     }
@@ -221,7 +221,7 @@ public sealed unsafe class JxlDecoder : IDisposable
     public void Reset()
     {
         ThrowIfDisposed();
-        var status = NativeMethods.jxlrs_decoder_reset(_handle);
+        var status = NativeMethods.jxl_decoder_reset(_handle);
         ThrowIfFailed(status);
         _basicInfo = null;
     }
@@ -235,7 +235,7 @@ public sealed unsafe class JxlDecoder : IDisposable
         {
             if (_handle != null)
             {
-                NativeMethods.jxlrs_decoder_destroy(_handle);
+                NativeMethods.jxl_decoder_destroy(_handle);
                 _handle = null;
             }
             _disposed = true;
@@ -251,9 +251,9 @@ public sealed unsafe class JxlDecoder : IDisposable
 #endif
     }
 
-    private static void ThrowIfFailed(JxlrsStatus status)
+    private static void ThrowIfFailed(JxlStatus status)
     {
-        if (status != JxlrsStatus.Success)
+        if (status != JxlStatus.Success)
         {
             var message = GetLastError();
             throw new JxlException(status, message);
@@ -263,7 +263,7 @@ public sealed unsafe class JxlDecoder : IDisposable
     private static string? GetLastError()
     {
         // Get required length
-        var length = (int)(uint)NativeMethods.jxlrs_get_last_error(null, UIntPtr.Zero);
+        var length = (int)(uint)NativeMethods.jxl_get_last_error(null, UIntPtr.Zero);
         if (length == 0)
         {
             return null;
@@ -271,7 +271,7 @@ public sealed unsafe class JxlDecoder : IDisposable
 
         // Allocate buffer and get message
         var buffer = stackalloc byte[length + 1];
-        NativeMethods.jxlrs_get_last_error(buffer, (UIntPtr)(length + 1));
+        NativeMethods.jxl_get_last_error(buffer, (UIntPtr)(length + 1));
         
 #if NETSTANDARD2_0
         // PtrToStringUTF8 not available in netstandard2.0, use ANSI as fallback
