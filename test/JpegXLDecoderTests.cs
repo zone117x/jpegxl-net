@@ -117,4 +117,81 @@ public class JxlDecoderTests
         Assert.AreEqual(JxlrsStatus.Error, exception.Status);
         Assert.AreEqual("Test error", exception.Message);
     }
+
+    [TestMethod]
+    public void Decode_3x3SrgbLossless_ReturnsCorrectDimensions()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/3x3_srgb_lossless.jxl");
+
+        // Act
+        using var image = JxlImage.Decode(data);
+
+        // Assert
+        Assert.AreEqual(3, image.Width);
+        Assert.AreEqual(3, image.Height);
+        Assert.AreEqual(4, image.BytesPerPixel); // RGBA 8-bit = 4 bytes per pixel
+        Assert.AreEqual(3 * 3 * 4, image.Pixels.Length); // 3x3 pixels * 4 bytes
+    }
+
+    [TestMethod]
+    public void Decode_Dice_ReturnsValidImage()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/dice.jxl");
+
+        // Act
+        using var image = JxlImage.Decode(data);
+
+        // Assert
+        Assert.IsTrue(image.Width > 0);
+        Assert.IsTrue(image.Height > 0);
+        Assert.IsTrue(image.Pixels.Length > 0);
+    }
+
+    [TestMethod]
+    public void Decode_WithBgraFormat_ReturnsCorrectFormat()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/3x3_srgb_lossless.jxl");
+        var format = JxlrsPixelFormat.Bgra8;
+
+        // Act
+        using var image = JxlImage.Decode(data, format);
+
+        // Assert
+        Assert.AreEqual(3, image.Width);
+        Assert.AreEqual(3, image.Height);
+        Assert.AreEqual(4, image.BytesPerPixel);
+    }
+
+    [TestMethod]
+    public void JxlDecoder_ReadInfo_ReturnsImageInfo()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/dice.jxl");
+
+        // Act
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        var info = decoder.ReadInfo();
+
+        // Assert
+        Assert.IsTrue(info.Width > 0);
+        Assert.IsTrue(info.Height > 0);
+        Assert.IsTrue(info.BitsPerSample > 0);
+    }
+
+    [TestMethod]
+    public void IsJxl_WithRealJxlFile_ReturnsTrue()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/3x3_srgb_lossless.jxl");
+
+        // Act
+        var result = JxlImage.IsJxl(data);
+
+        // Assert
+        Assert.IsTrue(result);
+    }
 }

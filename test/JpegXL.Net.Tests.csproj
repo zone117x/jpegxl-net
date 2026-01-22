@@ -11,4 +11,8 @@
     <ProjectReference Include="../src/JpegXL.Net.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="TestData/**/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

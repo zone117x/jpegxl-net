@@ -34,6 +34,8 @@ struct DecoderInner {
     state: DecoderState,
     /// Raw JXL data (for one-shot decoding).
     data: Vec<u8>,
+    /// Current read offset in data (tracks position between process calls).
+    data_offset: usize,
     /// Cached basic info.
     basic_info: Option<JxlrsBasicInfo>,
     /// Cached extra channel info.
@@ -48,6 +50,7 @@ impl DecoderInner {
         Self {
             state: DecoderState::Initialized(JxlDecoder::new(options)),
             data: Vec::new(),
+            data_offset: 0,
             basic_info: None,
             extra_channels: Vec::new(),
             pixel_format: JxlrsPixelFormat::default(),
@@ -58,6 +61,7 @@ impl DecoderInner {
         let options = JxlDecoderOptions::default();
         self.state = DecoderState::Initialized(JxlDecoder::new(options));
         self.data.clear();
+        self.data_offset = 0;
         self.basic_info = None;
         self.extra_channels.clear();
     }
@@ -256,9 +260,11 @@ pub unsafe extern "C" fn jxlrs_decoder_read_info(
         }
     };
 
-    // Process to get image info
-    let mut input_slice: &[u8] = &inner.data;
+    // Process to get image info - use offset to continue from where we left off
+    let mut input_slice: &[u8] = &inner.data[inner.data_offset..];
+    let len_before = input_slice.len();
     let result = decoder_initialized.process(&mut input_slice);
+    inner.data_offset += len_before - input_slice.len();
 
     match result {
         Ok(ProcessingResult::Complete { result: decoder_with_info }) => {
@@ -444,8 +450,12 @@ pub unsafe extern "C" fn jxlrs_decoder_get_pixels(
             let output_buffer = JxlOutputBuffer::new(buffer_slice, height, bytes_per_row);
             let mut buffers = [output_buffer];
 
-            let mut input_slice: &[u8] = &inner.data;
-            match d.process(&mut input_slice, &mut buffers) {
+            let mut input_slice: &[u8] = &inner.data[inner.data_offset..];
+            let len_before = input_slice.len();
+            let result = d.process(&mut input_slice, &mut buffers);
+            inner.data_offset += len_before - input_slice.len();
+            
+            match result {
                 Ok(ProcessingResult::Complete { result }) => {
                     inner.state = DecoderState::WithImageInfo(result);
                     return JxlrsStatus::Success;
@@ -470,15 +480,21 @@ pub unsafe extern "C" fn jxlrs_decoder_get_pixels(
         }
     };
 
-    // Set pixel format
-    let pixel_format = convert_to_jxl_pixel_format(&inner.pixel_format, num_extra);
+    // Set pixel format - skip extra channels for simple one-shot decode
+    // This means we only need one output buffer (for the main color data)
+    let pixel_format = convert_to_jxl_pixel_format(&inner.pixel_format, num_extra, true);
     decoder_with_info.set_pixel_format(pixel_format);
 
-    // Process to get frame info
-    let mut input_slice: &[u8] = &inner.data;
+    // Process to get frame info - continue from current offset
+    let mut input_slice: &[u8] = &inner.data[inner.data_offset..];
+    let len_before = input_slice.len();
     let decoder_with_frame = match decoder_with_info.process(&mut input_slice) {
-        Ok(ProcessingResult::Complete { result }) => result,
+        Ok(ProcessingResult::Complete { result }) => {
+            inner.data_offset += len_before - input_slice.len();
+            result
+        }
         Ok(ProcessingResult::NeedsMoreInput { fallback, .. }) => {
+            inner.data_offset += len_before - input_slice.len();
             inner.state = DecoderState::WithImageInfo(fallback);
             set_last_error("Incomplete frame data");
             return JxlrsStatus::NeedMoreInput;
@@ -490,13 +506,17 @@ pub unsafe extern "C" fn jxlrs_decoder_get_pixels(
         }
     };
 
-    // Now decode pixels
+    // Now decode pixels - continue from current offset
     let buffer_slice = unsafe { slice::from_raw_parts_mut(buffer, buffer_size) };
     let output_buffer = JxlOutputBuffer::new(buffer_slice, height, bytes_per_row);
     let mut buffers = [output_buffer];
 
-    let mut input_slice: &[u8] = &inner.data;
-    match decoder_with_frame.process(&mut input_slice, &mut buffers) {
+    let mut input_slice: &[u8] = &inner.data[inner.data_offset..];
+    let len_before = input_slice.len();
+    let result = decoder_with_frame.process(&mut input_slice, &mut buffers);
+    inner.data_offset += len_before - input_slice.len();
+    
+    match result {
         Ok(ProcessingResult::Complete { result }) => {
             inner.state = DecoderState::WithImageInfo(result);
             JxlrsStatus::Success
@@ -645,7 +665,7 @@ fn convert_extra_channel_info(channel: &jxl::api::JxlExtraChannel) -> JxlrsExtra
     }
 }
 
-fn convert_to_jxl_pixel_format(format: &JxlrsPixelFormat, num_extra_channels: usize) -> JxlPixelFormat {
+fn convert_to_jxl_pixel_format(format: &JxlrsPixelFormat, num_extra_channels: usize, skip_extra_channels: bool) -> JxlPixelFormat {
     let color_type = match format.color_type {
         JxlrsColorType::Grayscale => JxlColorType::Grayscale,
         JxlrsColorType::GrayscaleAlpha => JxlColorType::GrayscaleAlpha,
@@ -671,19 +691,25 @@ fn convert_to_jxl_pixel_format(format: &JxlrsPixelFormat, num_extra_channels: us
         JxlrsDataFormat::Float32 => Some(JxlDataFormat::F32 { endianness }),
     };
 
-    let extra_format = match format.data_format {
-        JxlrsDataFormat::Uint8 => Some(JxlDataFormat::U8 { bit_depth: 8 }),
-        JxlrsDataFormat::Uint16 => Some(JxlDataFormat::U16 {
-            endianness,
-            bit_depth: 16,
-        }),
-        JxlrsDataFormat::Float16 => Some(JxlDataFormat::F16 { endianness }),
-        JxlrsDataFormat::Float32 => Some(JxlDataFormat::F32 { endianness }),
+    // If skipping extra channels, set them all to None so they won't be decoded
+    let extra_channel_format = if skip_extra_channels {
+        vec![None; num_extra_channels]
+    } else {
+        let extra_format = match format.data_format {
+            JxlrsDataFormat::Uint8 => Some(JxlDataFormat::U8 { bit_depth: 8 }),
+            JxlrsDataFormat::Uint16 => Some(JxlDataFormat::U16 {
+                endianness,
+                bit_depth: 16,
+            }),
+            JxlrsDataFormat::Float16 => Some(JxlDataFormat::F16 { endianness }),
+            JxlrsDataFormat::Float32 => Some(JxlDataFormat::F32 { endianness }),
+        };
+        vec![extra_format; num_extra_channels]
     };
 
     JxlPixelFormat {
         color_type,
         color_data_format: data_format,
-        extra_channel_format: vec![extra_format; num_extra_channels],
+        extra_channel_format,
     }
 }
