@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/JpegXL.Net.csproj" />
+  <Project Path="test/JpegXL.Net.Tests.csproj" />
+</Solution>
