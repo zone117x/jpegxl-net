@@ -136,14 +136,11 @@ public sealed class JxlImage : IDisposable
     /// </summary>
     /// <param name="data">The data to check (only first 12 bytes are needed).</param>
     /// <returns>The signature check result.</returns>
-    public static JxlrsSignature CheckSignature(ReadOnlySpan<byte> data)
+    public static unsafe JxlrsSignature CheckSignature(ReadOnlySpan<byte> data)
     {
-        unsafe
+        fixed (byte* ptr = data)
         {
-            fixed (byte* ptr = data)
-            {
-                return NativeMethods.SignatureCheck(ptr, (UIntPtr)data.Length);
-            }
+            return NativeMethods.jxlrs_signature_check(ptr, (UIntPtr)data.Length);
         }
     }
 

@@ -3,7 +3,6 @@
 
 using System;
 using System.Runtime.InteropServices;
-using System.Text;
 using JpegXL.Net.Native;
 
 namespace JpegXL.Net;
@@ -16,9 +15,9 @@ namespace JpegXL.Net;
 /// for decoding JPEG XL images. It implements <see cref="IDisposable"/> and
 /// should be disposed when no longer needed.
 /// </remarks>
-public sealed class JxlDecoder : IDisposable
+public sealed unsafe class JxlDecoder : IDisposable
 {
-    private IntPtr _handle;
+    private JxlrsDecoder* _handle;
     private bool _disposed;
     private JxlrsBasicInfo? _basicInfo;
 
@@ -28,8 +27,8 @@ public sealed class JxlDecoder : IDisposable
     /// <exception cref="JxlException">Thrown if decoder creation fails.</exception>
     public JxlDecoder()
     {
-        _handle = NativeMethods.DecoderCreate();
-        if (_handle == IntPtr.Zero)
+        _handle = NativeMethods.jxlrs_decoder_create();
+        if (_handle == null)
         {
             throw new JxlException(JxlrsStatus.Error, "Failed to create decoder");
         }
@@ -71,7 +70,11 @@ public sealed class JxlDecoder : IDisposable
     /// <exception cref="JxlException">Thrown if setting input fails.</exception>
     public void SetInput(byte[] data)
     {
+#if NETSTANDARD2_0
         if (data == null) throw new ArgumentNullException(nameof(data));
+#else
+        ArgumentNullException.ThrowIfNull(data);
+#endif
         SetInput(data.AsSpan());
     }
 
@@ -84,13 +87,10 @@ public sealed class JxlDecoder : IDisposable
     {
         ThrowIfDisposed();
 
-        unsafe
+        fixed (byte* ptr = data)
         {
-            fixed (byte* ptr = data)
-            {
-                var status = NativeMethods.DecoderSetInput(_handle, ptr, (UIntPtr)data.Length);
-                ThrowIfFailed(status);
-            }
+            var status = NativeMethods.jxlrs_decoder_set_input(_handle, ptr, (UIntPtr)data.Length);
+            ThrowIfFailed(status);
         }
 
         _basicInfo = null;
@@ -104,7 +104,7 @@ public sealed class JxlDecoder : IDisposable
     public void SetPixelFormat(JxlrsPixelFormat format)
     {
         ThrowIfDisposed();
-        var status = NativeMethods.DecoderSetPixelFormat(_handle, ref format);
+        var status = NativeMethods.jxlrs_decoder_set_pixel_format(_handle, &format);
         ThrowIfFailed(status);
     }
 
@@ -117,7 +117,8 @@ public sealed class JxlDecoder : IDisposable
     {
         ThrowIfDisposed();
 
-        var status = NativeMethods.DecoderReadInfo(_handle, out var info);
+        JxlrsBasicInfo info;
+        var status = NativeMethods.jxlrs_decoder_read_info(_handle, &info);
         ThrowIfFailed(status);
 
         _basicInfo = info;
@@ -134,7 +135,7 @@ public sealed class JxlDecoder : IDisposable
     public int GetBufferSize()
     {
         ThrowIfDisposed();
-        return (int)NativeMethods.DecoderGetBufferSize(_handle);
+        return (int)(uint)NativeMethods.jxlrs_decoder_get_buffer_size(_handle);
     }
 
     /// <summary>
@@ -163,7 +164,11 @@ public sealed class JxlDecoder : IDisposable
     /// <exception cref="JxlException">Thrown if decoding fails or buffer is too small.</exception>
     public void GetPixels(byte[] buffer)
     {
+#if NETSTANDARD2_0
         if (buffer == null) throw new ArgumentNullException(nameof(buffer));
+#else
+        ArgumentNullException.ThrowIfNull(buffer);
+#endif
         GetPixels(buffer.AsSpan());
     }
 
@@ -176,13 +181,10 @@ public sealed class JxlDecoder : IDisposable
     {
         ThrowIfDisposed();
 
-        unsafe
+        fixed (byte* ptr = buffer)
         {
-            fixed (byte* ptr = buffer)
-            {
-                var status = NativeMethods.DecoderGetPixels(_handle, ptr, (UIntPtr)buffer.Length);
-                ThrowIfFailed(status);
-            }
+            var status = NativeMethods.jxlrs_decoder_get_pixels(_handle, ptr, (UIntPtr)buffer.Length);
+            ThrowIfFailed(status);
         }
     }
 
@@ -193,7 +195,7 @@ public sealed class JxlDecoder : IDisposable
     public int GetExtraChannelCount()
     {
         ThrowIfDisposed();
-        return (int)NativeMethods.DecoderGetExtraChannelCount(_handle);
+        return (int)NativeMethods.jxlrs_decoder_get_extra_channel_count(_handle);
     }
 
     /// <summary>
@@ -206,7 +208,8 @@ public sealed class JxlDecoder : IDisposable
     {
         ThrowIfDisposed();
 
-        var status = NativeMethods.DecoderGetExtraChannelInfo(_handle, (uint)index, out var info);
+        JxlrsExtraChannelInfo info;
+        var status = NativeMethods.jxlrs_decoder_get_extra_channel_info(_handle, (uint)index, &info);
         ThrowIfFailed(status);
         return info;
     }
@@ -218,7 +221,7 @@ public sealed class JxlDecoder : IDisposable
     public void Reset()
     {
         ThrowIfDisposed();
-        var status = NativeMethods.DecoderReset(_handle);
+        var status = NativeMethods.jxlrs_decoder_reset(_handle);
         ThrowIfFailed(status);
         _basicInfo = null;
     }
@@ -230,10 +233,10 @@ public sealed class JxlDecoder : IDisposable
     {
         if (!_disposed)
         {
-            if (_handle != IntPtr.Zero)
+            if (_handle != null)
             {
-                NativeMethods.DecoderDestroy(_handle);
-                _handle = IntPtr.Zero;
+                NativeMethods.jxlrs_decoder_destroy(_handle);
+                _handle = null;
             }
             _disposed = true;
         }
@@ -241,7 +244,11 @@ public sealed class JxlDecoder : IDisposable
 
     private void ThrowIfDisposed()
     {
+#if NET7_0_OR_GREATER
+        ObjectDisposedException.ThrowIf(_disposed, this);
+#else
         if (_disposed) throw new ObjectDisposedException(nameof(JxlDecoder));
+#endif
     }
 
     private static void ThrowIfFailed(JxlrsStatus status)
@@ -256,27 +263,21 @@ public sealed class JxlDecoder : IDisposable
     private static string? GetLastError()
     {
         // Get required length
-        var length = (int)NativeMethods.GetLastError(IntPtr.Zero, UIntPtr.Zero);
+        var length = (int)(uint)NativeMethods.jxlrs_get_last_error(null, UIntPtr.Zero);
         if (length == 0)
         {
             return null;
         }
 
         // Allocate buffer and get message
-        var buffer = Marshal.AllocHGlobal(length + 1);
-        try
-        {
-            NativeMethods.GetLastError(buffer, (UIntPtr)(length + 1));
+        var buffer = stackalloc byte[length + 1];
+        NativeMethods.jxlrs_get_last_error(buffer, (UIntPtr)(length + 1));
+        
 #if NETSTANDARD2_0
-            // PtrToStringUTF8 not available in netstandard2.0, use ANSI as fallback
-            return Marshal.PtrToStringAnsi(buffer);
+        // PtrToStringUTF8 not available in netstandard2.0, use ANSI as fallback
+        return Marshal.PtrToStringAnsi((IntPtr)buffer);
 #else
-            return Marshal.PtrToStringUTF8(buffer);
+        return Marshal.PtrToStringUTF8((IntPtr)buffer);
 #endif
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(buffer);
-        }
     }
 }

@@ -14,7 +14,7 @@ crate-type = ["cdylib", "staticlib"]
 jxl = { path = "../../jxl-rs/jxl" }
 
 [build-dependencies]
-cbindgen = "0.29"
+csbindgen = "1.9"
 
 [features]
 default = []
