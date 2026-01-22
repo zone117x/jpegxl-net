@@ -154,12 +154,25 @@ public sealed unsafe class JxlDecoder : IDisposable
     {
         ThrowIfDisposed();
 
-        NativeBasicInfo info;
-        var status = NativeMethods.jxl_decoder_read_info(_handle, &info);
-        ThrowIfFailed(status);
+        // If we already have cached info, return it
+        if (_basicInfo.HasValue)
+        {
+            return new JxlBasicInfo(_basicInfo.Value);
+        }
 
-        _basicInfo = info;
-        return new JxlBasicInfo(info);
+        // Use streaming API to read info
+        var evt = Process();
+        while (evt == JxlDecoderEvent.NeedMoreInput)
+        {
+            throw new JxlException(JxlStatus.NeedMoreInput, "Incomplete header data - use SetInput with complete data or use streaming API");
+        }
+
+        if (evt != JxlDecoderEvent.HaveBasicInfo)
+        {
+            throw new JxlException(JxlStatus.Error, $"Unexpected decoder event: {evt}");
+        }
+
+        return GetBasicInfo();
     }
 
     /// <summary>
@@ -218,10 +231,39 @@ public sealed unsafe class JxlDecoder : IDisposable
     {
         ThrowIfDisposed();
 
-        fixed (byte* ptr = buffer)
+        // Ensure we have basic info
+        if (!_basicInfo.HasValue)
         {
-            var status = NativeMethods.jxl_decoder_get_pixels(_handle, ptr, (UIntPtr)buffer.Length);
-            ThrowIfFailed(status);
+            ReadInfo();
+        }
+
+        // Process until we get NeedOutputBuffer
+        var evt = Process();
+        while (evt == JxlDecoderEvent.NeedMoreInput)
+        {
+            throw new JxlException(JxlStatus.NeedMoreInput, "Incomplete data - use SetInput with complete data or use streaming API");
+        }
+
+        // Skip frame header event if present
+        if (evt == JxlDecoderEvent.HaveFrameHeader)
+        {
+            evt = Process();
+        }
+
+        if (evt != JxlDecoderEvent.NeedOutputBuffer)
+        {
+            throw new JxlException(JxlStatus.Error, $"Unexpected decoder event: {evt}");
+        }
+
+        // Decode pixels
+        evt = ReadPixels(buffer);
+        if (evt == JxlDecoderEvent.NeedMoreInput)
+        {
+            throw new JxlException(JxlStatus.NeedMoreInput, "Incomplete pixel data");
+        }
+        if (evt != JxlDecoderEvent.FrameComplete)
+        {
+            throw new JxlException(JxlStatus.Error, $"Unexpected decoder event after ReadPixels: {evt}");
         }
     }
 

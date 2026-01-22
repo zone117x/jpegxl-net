@@ -107,7 +107,7 @@ namespace JpegXL.Net.Native
         ///  - `NeedMoreInput`: Call `jxl_decoder_append_input` with more data
         ///  - `HaveBasicInfo`: Image info is available, call `jxl_decoder_get_basic_info`
         ///  - `HaveFrameHeader`: Frame header is available, call `jxl_decoder_get_frame_header`
-        ///  - `NeedOutputBuffer`: Ready to decode pixels, call `jxl_decoder_get_pixels`
+        ///  - `NeedOutputBuffer`: Ready to decode pixels, call `jxl_decoder_read_pixels`
         ///  - `FrameComplete`: Frame is done, check for more frames or call again
         ///  - `Complete`: All frames decoded, decoding is finished
         ///  - `Error`: Check `jxl_get_last_error` for details
@@ -177,7 +177,7 @@ namespace JpegXL.Net.Native
         ///  The required buffer size in bytes, or 0 if invalid.
         ///
         ///  # Safety
-        ///  `decoder` must be valid and `jxl_decoder_read_info` must have been called.
+        ///  `decoder` must be valid and basic info must be available (after `HaveBasicInfo` event).
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_extra_channel_buffer_size", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         internal static extern System.UIntPtr jxl_decoder_get_extra_channel_buffer_size(NativeDecoderHandle* decoder, uint index);
@@ -215,21 +215,9 @@ namespace JpegXL.Net.Native
         internal static extern JxlStatus jxl_decoder_set_pixel_format(NativeDecoderHandle* decoder, JxlPixelFormat* format);
 
         /// <summary>
-        ///  Decodes the image header and retrieves basic info.
-        ///
-        ///  This must be called before `jxl_decoder_get_pixels`.
-        ///
-        ///  # Safety
-        ///  - `decoder` must be valid.
-        ///  - `info` must point to a writable `JxlBasicInfo`.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_read_info", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_read_info(NativeDecoderHandle* decoder, JxlBasicInfo* info);
-
-        /// <summary>
         ///  Gets the number of extra channels.
         ///
-        ///  Must be called after `jxl_decoder_read_info`.
+        ///  Must be called after basic info is available (after `HaveBasicInfo` event).
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_extra_channel_count", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         internal static extern uint jxl_decoder_get_extra_channel_count(NativeDecoderHandle* decoder);
@@ -249,26 +237,10 @@ namespace JpegXL.Net.Native
         ///  Calculates the required buffer size for decoded pixels.
         ///
         ///  # Safety
-        ///  `decoder` must be valid and `jxl_decoder_read_info` must have been called.
+        ///  `decoder` must be valid and basic info must be available (after `HaveBasicInfo` event).
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_buffer_size", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         internal static extern System.UIntPtr jxl_decoder_get_buffer_size(NativeDecoderHandle* decoder);
-
-        /// <summary>
-        ///  Decodes pixels into the provided buffer.
-        ///
-        ///  # Arguments
-        ///  * `decoder` - The decoder instance.
-        ///  * `buffer` - Output buffer for pixel data.
-        ///  * `buffer_size` - Size of the buffer in bytes.
-        ///
-        ///  # Safety
-        ///  - `decoder` must be valid.
-        ///  - `buffer` must be valid for writes of `buffer_size` bytes.
-        ///  - `jxl_decoder_read_info` must have been called first.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_pixels", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_get_pixels(NativeDecoderHandle* decoder, byte* buffer, System.UIntPtr buffer_size);
 
         /// <summary>
         ///  Checks if data appears to be a JPEG XL file.
@@ -784,7 +756,7 @@ namespace JpegXL.Net.Native
         /// </summary>
         HaveFrameHeader = 3,
         /// <summary>
-        ///  Pixels are available. Call `jxl_decoder_get_pixels` with a buffer.
+        ///  Pixels are available. Call `jxl_decoder_read_pixels` with a buffer.
         /// </summary>
         NeedOutputBuffer = 4,
         /// <summary>

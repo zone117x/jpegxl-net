@@ -317,7 +317,7 @@ pub enum JxlDecoderEvent {
     HaveBasicInfo = 2,
     /// Frame header is available. Call `jxl_decoder_get_frame_header`.
     HaveFrameHeader = 3,
-    /// Pixels are available. Call `jxl_decoder_get_pixels` with a buffer.
+    /// Pixels are available. Call `jxl_decoder_read_pixels` with a buffer.
     NeedOutputBuffer = 4,
     /// A frame has been fully decoded.
     FrameComplete = 5,

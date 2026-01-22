@@ -322,7 +322,7 @@ pub unsafe extern "C" fn jxl_decoder_append_input(
 /// - `NeedMoreInput`: Call `jxl_decoder_append_input` with more data
 /// - `HaveBasicInfo`: Image info is available, call `jxl_decoder_get_basic_info`
 /// - `HaveFrameHeader`: Frame header is available, call `jxl_decoder_get_frame_header`
-/// - `NeedOutputBuffer`: Ready to decode pixels, call `jxl_decoder_get_pixels`
+/// - `NeedOutputBuffer`: Ready to decode pixels, call `jxl_decoder_read_pixels`
 /// - `FrameComplete`: Frame is done, check for more frames or call again
 /// - `Complete`: All frames decoded, decoding is finished
 /// - `Error`: Check `jxl_get_last_error` for details
@@ -604,7 +604,7 @@ pub unsafe extern "C" fn jxl_decoder_has_more_frames(
 /// The required buffer size in bytes, or 0 if invalid.
 ///
 /// # Safety
-/// `decoder` must be valid and `jxl_decoder_read_info` must have been called.
+/// `decoder` must be valid and basic info must be available (after `HaveBasicInfo` event).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jxl_decoder_get_extra_channel_buffer_size(
     decoder: *const NativeDecoderHandle,
@@ -796,123 +796,10 @@ pub unsafe extern "C" fn jxl_decoder_set_pixel_format(
     JxlStatus::Success
 }
 
-// ============================================================================
-// Decoding - Basic Info
-// ============================================================================
-
-/// Decodes the image header and retrieves basic info.
-///
-/// This must be called before `jxl_decoder_get_pixels`.
-///
-/// # Safety
-/// - `decoder` must be valid.
-/// - `info` must point to a writable `JxlBasicInfo`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxl_decoder_read_info(
-    decoder: *mut NativeDecoderHandle,
-    info: *mut JxlBasicInfo,
-) -> JxlStatus {
-    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
-        set_last_error("Null decoder pointer");
-        return JxlStatus::InvalidArgument;
-    };
-
-    if inner.data.is_empty() {
-        set_last_error("No input data set");
-        return JxlStatus::InvalidState;
-    }
-
-    clear_last_error();
-
-    // If we already have cached info, return it
-    if let Some(ref cached_info) = inner.basic_info {
-        if let Some(out_info) = unsafe { info.as_mut() } {
-            *out_info = cached_info.clone();
-        }
-        return JxlStatus::Success;
-    }
-
-    // Take ownership of the decoder state for processing
-    let state = std::mem::replace(&mut inner.state, DecoderState::Processing);
-
-    let decoder_initialized = match state {
-        DecoderState::Initialized(d) => d,
-        DecoderState::WithImageInfo(d) => {
-            // Already processed, get info from this state
-            let jxl_info = d.basic_info();
-            let basic_info = convert_basic_info(jxl_info);
-            inner.extra_channels = jxl_info
-                .extra_channels
-                .iter()
-                .map(convert_extra_channel_info)
-                .collect();
-            inner.basic_info = Some(basic_info.clone());
-
-            if let Some(out_info) = unsafe { info.as_mut() } {
-                *out_info = basic_info;
-            }
-
-            inner.state = DecoderState::WithImageInfo(d);
-            return JxlStatus::Success;
-        }
-        DecoderState::WithFrameInfo(d) => {
-            // Already past image info stage
-            inner.state = DecoderState::WithFrameInfo(d);
-            if let Some(ref cached) = inner.basic_info {
-                if let Some(out_info) = unsafe { info.as_mut() } {
-                    *out_info = cached.clone();
-                }
-            }
-            return JxlStatus::Success;
-        }
-        DecoderState::Processing => {
-            set_last_error("Decoder is in an invalid state");
-            return JxlStatus::InvalidState;
-        }
-    };
-
-    // Process to get image info - use offset to continue from where we left off
-    let mut input_slice: &[u8] = &inner.data[inner.data_offset..];
-    let len_before = input_slice.len();
-    let result = decoder_initialized.process(&mut input_slice);
-    inner.data_offset += len_before - input_slice.len();
-
-    match result {
-        Ok(ProcessingResult::Complete { result: decoder_with_info }) => {
-            // Get and cache basic info
-            let jxl_info = decoder_with_info.basic_info();
-            let basic_info = convert_basic_info(jxl_info);
-            inner.extra_channels = jxl_info
-                .extra_channels
-                .iter()
-                .map(convert_extra_channel_info)
-                .collect();
-            inner.basic_info = Some(basic_info.clone());
-
-            if let Some(out_info) = unsafe { info.as_mut() } {
-                *out_info = basic_info;
-            }
-
-            inner.state = DecoderState::WithImageInfo(decoder_with_info);
-            JxlStatus::Success
-        }
-        Ok(ProcessingResult::NeedsMoreInput { fallback, .. }) => {
-            inner.state = DecoderState::Initialized(fallback);
-            set_last_error("Incomplete header data");
-            JxlStatus::NeedMoreInput
-        }
-        Err(e) => {
-            // Recreate decoder for next attempt
-            inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
-            set_last_error(format!("Failed to decode header: {}", e));
-            JxlStatus::Error
-        }
-    }
-}
 
 /// Gets the number of extra channels.
 ///
-/// Must be called after `jxl_decoder_read_info`.
+/// Must be called after basic info is available (after `HaveBasicInfo` event).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jxl_decoder_get_extra_channel_count(
     decoder: *const NativeDecoderHandle,
@@ -960,7 +847,7 @@ pub unsafe extern "C" fn jxl_decoder_get_extra_channel_info(
 /// Calculates the required buffer size for decoded pixels.
 ///
 /// # Safety
-/// `decoder` must be valid and `jxl_decoder_read_info` must have been called.
+/// `decoder` must be valid and basic info must be available (after `HaveBasicInfo` event).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jxl_decoder_get_buffer_size(decoder: *const NativeDecoderHandle) -> usize {
     let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
@@ -972,147 +859,6 @@ pub unsafe extern "C" fn jxl_decoder_get_buffer_size(decoder: *const NativeDecod
     };
 
     calculate_buffer_size(info, &inner.pixel_format)
-}
-
-/// Decodes pixels into the provided buffer.
-///
-/// # Arguments
-/// * `decoder` - The decoder instance.
-/// * `buffer` - Output buffer for pixel data.
-/// * `buffer_size` - Size of the buffer in bytes.
-///
-/// # Safety
-/// - `decoder` must be valid.
-/// - `buffer` must be valid for writes of `buffer_size` bytes.
-/// - `jxl_decoder_read_info` must have been called first.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxl_decoder_get_pixels(
-    decoder: *mut NativeDecoderHandle,
-    buffer: *mut u8,
-    buffer_size: usize,
-) -> JxlStatus {
-    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
-        set_last_error("Null decoder pointer");
-        return JxlStatus::InvalidArgument;
-    };
-
-    if buffer.is_null() {
-        set_last_error("Null buffer pointer");
-        return JxlStatus::InvalidArgument;
-    }
-
-    let Some(ref info) = inner.basic_info else {
-        set_last_error("Must call jxl_decoder_read_info first");
-        return JxlStatus::InvalidState;
-    };
-
-    let required_size = unsafe { jxl_decoder_get_buffer_size(decoder) };
-    if buffer_size < required_size {
-        set_last_error(format!(
-            "Buffer too small: {} bytes provided, {} required",
-            buffer_size, required_size
-        ));
-        return JxlStatus::BufferTooSmall;
-    }
-
-    clear_last_error();
-
-    let height = info.height as usize;
-    let bytes_per_row = calculate_bytes_per_row(info, &inner.pixel_format);
-
-    // Take ownership of decoder state
-    let state = std::mem::replace(&mut inner.state, DecoderState::Processing);
-
-    let mut decoder_with_info = match state {
-        DecoderState::WithImageInfo(d) => d,
-        DecoderState::WithFrameInfo(d) => {
-            // Need to get pixels from frame info state
-            let buffer_slice = unsafe { slice::from_raw_parts_mut(buffer, buffer_size) };
-            let output_buffer = JxlOutputBuffer::new(buffer_slice, height, bytes_per_row);
-            let mut buffers = [output_buffer];
-
-            let mut input_slice: &[u8] = &inner.data[inner.data_offset..];
-            let len_before = input_slice.len();
-            let result = d.process(&mut input_slice, &mut buffers);
-            inner.data_offset += len_before - input_slice.len();
-            
-            match result {
-                Ok(ProcessingResult::Complete { result }) => {
-                    inner.state = DecoderState::WithImageInfo(result);
-                    return JxlStatus::Success;
-                }
-                Ok(ProcessingResult::NeedsMoreInput { fallback, .. }) => {
-                    inner.state = DecoderState::WithFrameInfo(fallback);
-                    set_last_error("Incomplete pixel data");
-                    return JxlStatus::NeedMoreInput;
-                }
-                Err(e) => {
-                    inner.state =
-                        DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
-                    set_last_error(format!("Pixel decode error: {}", e));
-                    return JxlStatus::Error;
-                }
-            }
-        }
-        other => {
-            inner.state = other;
-            set_last_error("Must call jxl_decoder_read_info first");
-            return JxlStatus::InvalidState;
-        }
-    };
-
-    // Set pixel format - skip extra channels for simple one-shot decode
-    // This means we only need one output buffer (for the main color data)
-    let pixel_format = convert_to_jxl_pixel_format(&inner.pixel_format, &inner.extra_channels, true);
-    decoder_with_info.set_pixel_format(pixel_format);
-
-    // Process to get frame info - continue from current offset
-    let mut input_slice: &[u8] = &inner.data[inner.data_offset..];
-    let len_before = input_slice.len();
-    let decoder_with_frame = match decoder_with_info.process(&mut input_slice) {
-        Ok(ProcessingResult::Complete { result }) => {
-            inner.data_offset += len_before - input_slice.len();
-            result
-        }
-        Ok(ProcessingResult::NeedsMoreInput { fallback, .. }) => {
-            inner.data_offset += len_before - input_slice.len();
-            inner.state = DecoderState::WithImageInfo(fallback);
-            set_last_error("Incomplete frame data");
-            return JxlStatus::NeedMoreInput;
-        }
-        Err(e) => {
-            inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
-            set_last_error(format!("Frame decode error: {}", e));
-            return JxlStatus::Error;
-        }
-    };
-
-    // Now decode pixels - continue from current offset
-    let buffer_slice = unsafe { slice::from_raw_parts_mut(buffer, buffer_size) };
-    let output_buffer = JxlOutputBuffer::new(buffer_slice, height, bytes_per_row);
-    let mut buffers = [output_buffer];
-
-    let mut input_slice: &[u8] = &inner.data[inner.data_offset..];
-    let len_before = input_slice.len();
-    let result = decoder_with_frame.process(&mut input_slice, &mut buffers);
-    inner.data_offset += len_before - input_slice.len();
-    
-    match result {
-        Ok(ProcessingResult::Complete { result }) => {
-            inner.state = DecoderState::WithImageInfo(result);
-            JxlStatus::Success
-        }
-        Ok(ProcessingResult::NeedsMoreInput { fallback, .. }) => {
-            inner.state = DecoderState::WithFrameInfo(fallback);
-            set_last_error("Incomplete pixel data");
-            JxlStatus::NeedMoreInput
-        }
-        Err(e) => {
-            inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
-            set_last_error(format!("Pixel decode error: {}", e));
-            JxlStatus::Error
-        }
-    }
 }
 
 // ============================================================================
@@ -1141,31 +887,21 @@ pub enum JxlSignature {
 /// `data` must be valid for reads of `size` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jxl_signature_check(data: *const u8, size: usize) -> JxlSignature {
-    if data.is_null() || size < 2 {
+    if data.is_null() || size == 0 {
         return JxlSignature::NotEnoughBytes;
     }
 
-    let bytes = unsafe { slice::from_raw_parts(data, size.min(12)) };
-
-    // Check for codestream signature (0xFF 0x0A)
-    if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0x0A {
-        return JxlSignature::Codestream;
-    }
-
-    // Check for container signature
-    if bytes.len() >= 12 {
-        let container_sig: [u8; 12] = [
-            0x00, 0x00, 0x00, 0x0C, 0x4A, 0x58, 0x4C, 0x20, 0x0D, 0x0A, 0x87, 0x0A,
-        ];
-        if bytes == container_sig {
-            return JxlSignature::Container;
+    let bytes = unsafe { slice::from_raw_parts(data, size) };
+    
+    match jxl::api::check_signature(bytes) {
+        ProcessingResult::Complete { result: Some(sig_type) } => {
+            match sig_type {
+                jxl::api::JxlSignatureType::Codestream => JxlSignature::Codestream,
+                jxl::api::JxlSignatureType::Container => JxlSignature::Container,
+            }
         }
-    }
-
-    if size < 12 {
-        JxlSignature::NotEnoughBytes
-    } else {
-        JxlSignature::Invalid
+        ProcessingResult::Complete { result: None } => JxlSignature::Invalid,
+        ProcessingResult::NeedsMoreInput { .. } => JxlSignature::NotEnoughBytes,
     }
 }
 
