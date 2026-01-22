@@ -8,11 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../src/JpegXL.Net.csproj" />
+    <ProjectReference Include="../../src/JpegXL.Net/JpegXL.Net.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="TestData/**/*" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../TestData/**/*" CopyToOutputDirectory="PreserveNewest" LinkBase="TestData" />
   </ItemGroup>
 
 </Project>

@@ -7,6 +7,12 @@ using JpegXL.Net.Native;
 
 namespace JpegXL.Net;
 
+// Type aliases for clarity between internal and public types
+using NativeBasicInfo = Native.JxlBasicInfo;
+using NativePixelFormat = Native.JxlPixelFormat;
+using NativeExtraChannelInfo = Native.JxlExtraChannelInfo;
+using NativeStatus = Native.JxlStatus;
+
 /// <summary>
 /// JPEG XL decoder for decoding JXL images.
 /// </summary>
@@ -19,7 +25,7 @@ public sealed unsafe class JxlDecoder : IDisposable
 {
     private NativeDecoderHandle* _handle;
     private bool _disposed;
-    private JxlBasicInfo? _basicInfo;
+    private NativeBasicInfo? _basicInfo;
 
     /// <summary>
     /// Creates a new JPEG XL decoder.
@@ -40,27 +46,27 @@ public sealed unsafe class JxlDecoder : IDisposable
     /// <remarks>
     /// This property is only valid after calling <see cref="SetInput"/> and <see cref="ReadInfo"/>.
     /// </remarks>
-    public JxlBasicInfo? BasicInfo => _basicInfo;
+    public JxlBasicInfo? BasicInfo => _basicInfo.HasValue ? new JxlBasicInfo(_basicInfo.Value) : null;
 
     /// <summary>
     /// Gets the image width in pixels.
     /// </summary>
-    public int Width => (int)(_basicInfo?.Width ?? 0);
+    public int Width => (int)(_basicInfo?.width ?? 0);
 
     /// <summary>
     /// Gets the image height in pixels.
     /// </summary>
-    public int Height => (int)(_basicInfo?.Height ?? 0);
+    public int Height => (int)(_basicInfo?.height ?? 0);
 
     /// <summary>
     /// Gets whether the image has an alpha channel.
     /// </summary>
-    public bool HasAlpha => _basicInfo?.HasAlpha ?? false;
+    public bool HasAlpha => (_basicInfo?.num_extra_channels ?? 0) > 0;
 
     /// <summary>
     /// Gets whether the image is animated.
     /// </summary>
-    public bool IsAnimated => _basicInfo?.IsAnimated ?? false;
+    public bool IsAnimated => (_basicInfo?.have_animation ?? 0) != 0;
 
     /// <summary>
     /// Sets the input data for decoding.
@@ -104,6 +110,18 @@ public sealed unsafe class JxlDecoder : IDisposable
     public void SetPixelFormat(JxlPixelFormat format)
     {
         ThrowIfDisposed();
+        var nativeFormat = format.Native;
+        var status = NativeMethods.jxl_decoder_set_pixel_format(_handle, &nativeFormat);
+        ThrowIfFailed(status);
+    }
+
+    /// <summary>
+    /// Sets the desired output pixel format using native format directly.
+    /// </summary>
+    /// <param name="format">The native pixel format.</param>
+    internal void SetPixelFormat(NativePixelFormat format)
+    {
+        ThrowIfDisposed();
         var status = NativeMethods.jxl_decoder_set_pixel_format(_handle, &format);
         ThrowIfFailed(status);
     }
@@ -117,12 +135,12 @@ public sealed unsafe class JxlDecoder : IDisposable
     {
         ThrowIfDisposed();
 
-        JxlBasicInfo info;
+        NativeBasicInfo info;
         var status = NativeMethods.jxl_decoder_read_info(_handle, &info);
         ThrowIfFailed(status);
 
         _basicInfo = info;
-        return info;
+        return new JxlBasicInfo(info);
     }
 
     /// <summary>
@@ -208,10 +226,10 @@ public sealed unsafe class JxlDecoder : IDisposable
     {
         ThrowIfDisposed();
 
-        JxlExtraChannelInfo info;
+        NativeExtraChannelInfo info;
         var status = NativeMethods.jxl_decoder_get_extra_channel_info(_handle, (uint)index, &info);
         ThrowIfFailed(status);
-        return info;
+        return new JxlExtraChannelInfo(info);
     }
 
     /// <summary>
@@ -251,12 +269,12 @@ public sealed unsafe class JxlDecoder : IDisposable
 #endif
     }
 
-    private static void ThrowIfFailed(JxlStatus status)
+    private static void ThrowIfFailed(NativeStatus status)
     {
-        if (status != JxlStatus.Success)
+        if (status != NativeStatus.Success)
         {
             var message = GetLastError();
-            throw new JxlException(status, message);
+            throw new JxlException((JxlStatus)status, message);
         }
     }
 

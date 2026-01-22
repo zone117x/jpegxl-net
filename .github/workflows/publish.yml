@@ -60,7 +60,7 @@ jobs:
         run: dotnet test --no-build --configuration Release
 
       - name: Pack
-        run: dotnet pack src/JpegXL.Net.csproj --no-build --configuration Release -p:Version=${{ steps.version.outputs.VERSION }} --output ./nupkg
+        run: dotnet pack src/JpegXL.Net/JpegXL.Net.csproj --no-build --configuration Release -p:Version=${{ steps.version.outputs.VERSION }} --output ./nupkg
 
       - name: Display package contents
         run: unzip -l ./nupkg/*.nupkg
