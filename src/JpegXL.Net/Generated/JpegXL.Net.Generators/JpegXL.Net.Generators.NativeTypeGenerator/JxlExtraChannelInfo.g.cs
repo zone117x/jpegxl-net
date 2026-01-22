@@ -9,15 +9,15 @@ public partial struct JxlExtraChannelInfo
 
     internal JxlExtraChannelInfo(JpegXL.Net.Native.JxlExtraChannelInfo native) => _native = native;
 
-    public JpegXL.Net.JxlExtraChannelType ChannelType => (JpegXL.Net.JxlExtraChannelType)_native.channel_type;
-
     public uint BitsPerSample => _native.bits_per_sample;
 
     public uint ExponentBitsPerSample => _native.exponent_bits_per_sample;
 
-    public bool AlphaPremultiplied => _native.alpha_premultiplied != 0;
-
     public uint NameLength => _native.name_length;
+
+    public JpegXL.Net.JxlExtraChannelType ChannelType => (JpegXL.Net.JxlExtraChannelType)_native.channel_type;
+
+    public bool AlphaPremultiplied => _native.alpha_premultiplied;
 
     public float[] SpotColor
     {

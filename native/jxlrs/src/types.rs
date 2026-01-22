@@ -120,6 +120,7 @@ pub enum JxlProgressiveMode {
 }
 
 /// Basic image information.
+/// Fields are ordered by size (largest first) to minimize padding.
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct JxlBasicInfo {
@@ -135,20 +136,12 @@ pub struct JxlBasicInfo {
     pub num_color_channels: u32,
     /// Number of extra channels (alpha, depth, etc.).
     pub num_extra_channels: u32,
-    /// Whether alpha is premultiplied (0 = no, 1 = yes).
-    pub alpha_premultiplied: i32,
-    /// Image orientation.
-    pub orientation: JxlOrientation,
-    /// Whether the image has animation (0 = no, 1 = yes).
-    pub have_animation: i32,
     /// Animation ticks per second numerator (0 if no animation).
     pub animation_tps_numerator: u32,
     /// Animation ticks per second denominator (0 if no animation).
     pub animation_tps_denominator: u32,
     /// Number of animation loops (0 = infinite).
     pub animation_num_loops: u32,
-    /// Whether original color profile is used (0 = no, 1 = yes).
-    pub uses_original_profile: i32,
     /// Preview image width (0 if no preview).
     pub preview_width: u32,
     /// Preview image height (0 if no preview).
@@ -157,6 +150,14 @@ pub struct JxlBasicInfo {
     pub intensity_target: f32,
     /// Minimum nits for tone mapping.
     pub min_nits: f32,
+    /// Image orientation.
+    pub orientation: JxlOrientation,
+    /// Whether alpha is premultiplied.
+    pub alpha_premultiplied: bool,
+    /// Whether the image has animation.
+    pub have_animation: bool,
+    /// Whether original color profile is used.
+    pub uses_original_profile: bool,
 }
 
 /// Extra channel type.
@@ -184,24 +185,26 @@ pub enum JxlExtraChannelType {
 }
 
 /// Information about an extra channel.
+/// Fields are ordered by size (largest first) to minimize padding.
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct JxlExtraChannelInfo {
-    /// Type of extra channel.
-    pub channel_type: JxlExtraChannelType,
+    /// Spot color values (RGBA, only for spot color channels).
+    pub spot_color: [f32; 4],
     /// Bits per sample.
     pub bits_per_sample: u32,
     /// Exponent bits (for float channels).
     pub exponent_bits_per_sample: u32,
-    /// Whether alpha is premultiplied (only for alpha channels).
-    pub alpha_premultiplied: i32,
-    /// Spot color values (RGBA, only for spot color channels).
-    pub spot_color: [f32; 4],
     /// Channel name length in bytes (excluding null terminator).
     pub name_length: u32,
+    /// Type of extra channel.
+    pub channel_type: JxlExtraChannelType,
+    /// Whether alpha is premultiplied (only for alpha channels).
+    pub alpha_premultiplied: bool,
 }
 
 /// Frame header information.
+/// Fields are ordered by size (largest first) to minimize padding.
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct JxlFrameHeader {
@@ -211,8 +214,8 @@ pub struct JxlFrameHeader {
     pub timecode: u32,
     /// Frame name length in bytes (excluding null terminator).
     pub name_length: u32,
-    /// Whether this is the last frame (0 = no, 1 = yes).
-    pub is_last: i32,
+    /// Whether this is the last frame.
+    pub is_last: bool,
 }
 
 impl Default for JxlBasicInfo {
@@ -224,17 +227,17 @@ impl Default for JxlBasicInfo {
             exponent_bits_per_sample: 0,
             num_color_channels: 3,
             num_extra_channels: 0,
-            alpha_premultiplied: 0,
-            orientation: JxlOrientation::Identity,
-            have_animation: 0,
             animation_tps_numerator: 0,
             animation_tps_denominator: 0,
             animation_num_loops: 0,
-            uses_original_profile: 0,
             preview_width: 0,
             preview_height: 0,
             intensity_target: 255.0,
             min_nits: 0.0,
+            orientation: JxlOrientation::Identity,
+            alpha_premultiplied: false,
+            have_animation: false,
+            uses_original_profile: false,
         }
     }
 }
@@ -294,4 +297,25 @@ impl Default for JxlDecoderOptionsC {
             premultiply_alpha: false,
         }
     }
+}
+
+/// Events returned by the streaming decoder's process function.
+/// These indicate what stage the decoder has reached.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlDecoderEvent {
+    /// An error occurred. Call `jxl_get_last_error` for details.
+    Error = 0,
+    /// The decoder needs more input data. Call `jxl_decoder_append_input`.
+    NeedMoreInput = 1,
+    /// Basic image info is now available. Call `jxl_decoder_get_basic_info`.
+    HaveBasicInfo = 2,
+    /// Frame header is available. Call `jxl_decoder_get_frame_header`.
+    HaveFrameHeader = 3,
+    /// Pixels are available. Call `jxl_decoder_get_pixels` with a buffer.
+    NeedOutputBuffer = 4,
+    /// A frame has been fully decoded.
+    FrameComplete = 5,
+    /// All frames have been decoded. The decoder is finished.
+    Complete = 6,
 }

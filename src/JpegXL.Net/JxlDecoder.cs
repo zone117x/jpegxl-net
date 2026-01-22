@@ -84,7 +84,7 @@ public sealed unsafe class JxlDecoder : IDisposable
     /// <summary>
     /// Gets whether the image is animated.
     /// </summary>
-    public bool IsAnimated => (_basicInfo?.have_animation ?? 0) != 0;
+    public bool IsAnimated => _basicInfo?.have_animation ?? false;
 
     /// <summary>
     /// Sets the input data for decoding.
@@ -260,6 +260,140 @@ public sealed unsafe class JxlDecoder : IDisposable
         var status = NativeMethods.jxl_decoder_reset(_handle);
         ThrowIfFailed(status);
         _basicInfo = null;
+    }
+
+    // ========================================================================
+    // Streaming API
+    // ========================================================================
+
+    /// <summary>
+    /// Appends input data for incremental decoding.
+    /// </summary>
+    /// <param name="data">Additional JXL-encoded data to append.</param>
+    /// <remarks>
+    /// Unlike <see cref="SetInput"/>, this method appends data to the existing buffer
+    /// without resetting the decoder state. Use this for streaming scenarios where
+    /// data arrives incrementally.
+    /// </remarks>
+    /// <exception cref="JxlException">Thrown if appending input fails.</exception>
+    public void AppendInput(ReadOnlySpan<byte> data)
+    {
+        ThrowIfDisposed();
+
+        fixed (byte* ptr = data)
+        {
+            var status = NativeMethods.jxl_decoder_append_input(_handle, ptr, (UIntPtr)data.Length);
+            ThrowIfFailed(status);
+        }
+    }
+
+    /// <summary>
+    /// Appends input data for incremental decoding.
+    /// </summary>
+    /// <param name="data">Additional JXL-encoded data to append.</param>
+    /// <exception cref="ArgumentNullException">Thrown if data is null.</exception>
+    /// <exception cref="JxlException">Thrown if appending input fails.</exception>
+    public void AppendInput(byte[] data)
+    {
+#if NETSTANDARD2_0
+        if (data == null) throw new ArgumentNullException(nameof(data));
+#else
+        ArgumentNullException.ThrowIfNull(data);
+#endif
+        AppendInput(data.AsSpan());
+    }
+
+    /// <summary>
+    /// Processes the current input data and returns the next decoder event.
+    /// </summary>
+    /// <returns>The event indicating what action should be taken next.</returns>
+    /// <remarks>
+    /// <para>
+    /// This is the main entry point for streaming decoding. Call this method
+    /// repeatedly to drive the decode process. Based on the returned event:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><term><see cref="JxlDecoderEvent.NeedMoreInput"/></term>
+    /// <description>Call <see cref="AppendInput"/> with more data.</description></item>
+    /// <item><term><see cref="JxlDecoderEvent.HaveBasicInfo"/></term>
+    /// <description>Call <see cref="GetBasicInfo"/> to retrieve image metadata.</description></item>
+    /// <item><term><see cref="JxlDecoderEvent.HaveFrameHeader"/></term>
+    /// <description>Frame header is available for processing.</description></item>
+    /// <item><term><see cref="JxlDecoderEvent.NeedOutputBuffer"/></term>
+    /// <description>Call <see cref="ReadPixels"/> to decode pixels.</description></item>
+    /// <item><term><see cref="JxlDecoderEvent.FrameComplete"/></term>
+    /// <description>A frame has been fully decoded.</description></item>
+    /// <item><term><see cref="JxlDecoderEvent.Complete"/></term>
+    /// <description>All frames have been decoded.</description></item>
+    /// <item><term><see cref="JxlDecoderEvent.Error"/></term>
+    /// <description>An error occurred. Check the exception for details.</description></item>
+    /// </list>
+    /// </remarks>
+    /// <exception cref="JxlException">Thrown if an error occurs during processing.</exception>
+    public JxlDecoderEvent Process()
+    {
+        ThrowIfDisposed();
+        var evt = NativeMethods.jxl_decoder_process(_handle);
+        if (evt == Native.JxlDecoderEvent.Error)
+        {
+            var message = GetLastError();
+            throw new JxlException(JxlStatus.Error, message);
+        }
+        return (JxlDecoderEvent)evt;
+    }
+
+    /// <summary>
+    /// Gets the basic image information after <see cref="Process"/> returns 
+    /// <see cref="JxlDecoderEvent.HaveBasicInfo"/>.
+    /// </summary>
+    /// <returns>The basic image information.</returns>
+    /// <exception cref="JxlException">Thrown if info is not yet available.</exception>
+    public JxlBasicInfo GetBasicInfo()
+    {
+        ThrowIfDisposed();
+
+        NativeBasicInfo info;
+        var status = NativeMethods.jxl_decoder_get_basic_info(_handle, &info);
+        ThrowIfFailed(status);
+
+        _basicInfo = info;
+        return new JxlBasicInfo(info);
+    }
+
+    /// <summary>
+    /// Decodes pixels into the provided buffer during streaming decode.
+    /// </summary>
+    /// <param name="buffer">The buffer to write decoded pixels to.</param>
+    /// <returns>The event indicating what happened during pixel decoding.</returns>
+    /// <remarks>
+    /// Call this method after <see cref="Process"/> returns <see cref="JxlDecoderEvent.NeedOutputBuffer"/>.
+    /// The returned event indicates whether more data is needed or if the frame is complete.
+    /// </remarks>
+    /// <exception cref="JxlException">Thrown if decoding fails.</exception>
+    public JxlDecoderEvent ReadPixels(Span<byte> buffer)
+    {
+        ThrowIfDisposed();
+
+        fixed (byte* ptr = buffer)
+        {
+            var evt = NativeMethods.jxl_decoder_read_pixels(_handle, ptr, (UIntPtr)buffer.Length);
+            if (evt == Native.JxlDecoderEvent.Error)
+            {
+                var message = GetLastError();
+                throw new JxlException(JxlStatus.Error, message);
+            }
+            return (JxlDecoderEvent)evt;
+        }
+    }
+
+    /// <summary>
+    /// Gets whether there are more frames to decode in an animated image.
+    /// </summary>
+    /// <returns>True if more frames are available, false otherwise.</returns>
+    public bool HasMoreFrames()
+    {
+        ThrowIfDisposed();
+        return NativeMethods.jxl_decoder_has_more_frames(_handle);
     }
 
     /// <summary>

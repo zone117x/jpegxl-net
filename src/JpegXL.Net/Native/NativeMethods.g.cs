@@ -87,6 +87,74 @@ namespace JpegXL.Net.Native
         internal static extern JxlStatus jxl_decoder_set_input(NativeDecoderHandle* decoder, byte* data, System.UIntPtr size);
 
         /// <summary>
+        ///  Appends more input data to the decoder's buffer (streaming decoding).
+        ///
+        ///  Unlike `jxl_decoder_set_input`, this does not reset the decoder state,
+        ///  allowing incremental feeding of data.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be a valid decoder pointer.
+        ///  - `data` must point to `size` readable bytes.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_append_input", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_append_input(NativeDecoderHandle* decoder, byte* data, System.UIntPtr size);
+
+        /// <summary>
+        ///  Processes the current input data and returns the next decoder event.
+        ///
+        ///  This is the main function for streaming decoding. Call it repeatedly,
+        ///  handling each event appropriately:
+        ///  - `NeedMoreInput`: Call `jxl_decoder_append_input` with more data
+        ///  - `HaveBasicInfo`: Image info is available, call `jxl_decoder_get_basic_info`
+        ///  - `HaveFrameHeader`: Frame header is available, call `jxl_decoder_get_frame_header`
+        ///  - `NeedOutputBuffer`: Ready to decode pixels, call `jxl_decoder_get_pixels`
+        ///  - `FrameComplete`: Frame is done, check for more frames or call again
+        ///  - `Complete`: All frames decoded, decoding is finished
+        ///  - `Error`: Check `jxl_get_last_error` for details
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_process", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlDecoderEvent jxl_decoder_process(NativeDecoderHandle* decoder);
+
+        /// <summary>
+        ///  Gets the basic image info (streaming API).
+        ///
+        ///  Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        ///  - `info` must point to a writable `JxlBasicInfo`.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_basic_info", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlStatus jxl_decoder_get_basic_info(NativeDecoderHandle* decoder, JxlBasicInfo* info);
+
+        /// <summary>
+        ///  Decodes pixels into the provided buffer (streaming API).
+        ///
+        ///  Call this after `jxl_decoder_process` returns `NeedOutputBuffer`.
+        ///  After successful completion, call `jxl_decoder_process` again to
+        ///  get `FrameComplete` or continue with the next frame.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        ///  - `buffer` must be valid for writes of `buffer_size` bytes.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_read_pixels", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern JxlDecoderEvent jxl_decoder_read_pixels(NativeDecoderHandle* decoder, byte* buffer, System.UIntPtr buffer_size);
+
+        /// <summary>
+        ///  Checks if the decoder has more frames to decode.
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_has_more_frames", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.U1)]
+        internal static extern bool jxl_decoder_has_more_frames(NativeDecoderHandle* decoder);
+
+        /// <summary>
         ///  Sets the desired output pixel format.
         ///
         ///  # Safety
@@ -220,6 +288,7 @@ namespace JpegXL.Net.Native
 
     /// <summary>
     ///  Basic image information.
+    ///  Fields are ordered by size (largest first) to minimize padding.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     internal unsafe partial struct JxlBasicInfo
@@ -249,18 +318,6 @@ namespace JpegXL.Net.Native
         /// </summary>
         public uint num_extra_channels;
         /// <summary>
-        ///  Whether alpha is premultiplied (0 = no, 1 = yes).
-        /// </summary>
-        public int alpha_premultiplied;
-        /// <summary>
-        ///  Image orientation.
-        /// </summary>
-        public JxlOrientation orientation;
-        /// <summary>
-        ///  Whether the image has animation (0 = no, 1 = yes).
-        /// </summary>
-        public int have_animation;
-        /// <summary>
         ///  Animation ticks per second numerator (0 if no animation).
         /// </summary>
         public uint animation_tps_numerator;
@@ -272,10 +329,6 @@ namespace JpegXL.Net.Native
         ///  Number of animation loops (0 = infinite).
         /// </summary>
         public uint animation_num_loops;
-        /// <summary>
-        ///  Whether original color profile is used (0 = no, 1 = yes).
-        /// </summary>
-        public int uses_original_profile;
         /// <summary>
         ///  Preview image width (0 if no preview).
         /// </summary>
@@ -292,18 +345,35 @@ namespace JpegXL.Net.Native
         ///  Minimum nits for tone mapping.
         /// </summary>
         public float min_nits;
+        /// <summary>
+        ///  Image orientation.
+        /// </summary>
+        public JxlOrientation orientation;
+        /// <summary>
+        ///  Whether alpha is premultiplied.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool alpha_premultiplied;
+        /// <summary>
+        ///  Whether the image has animation.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool have_animation;
+        /// <summary>
+        ///  Whether original color profile is used.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool uses_original_profile;
     }
 
     /// <summary>
     ///  Information about an extra channel.
+    ///  Fields are ordered by size (largest first) to minimize padding.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     internal unsafe partial struct JxlExtraChannelInfo
     {
         /// <summary>
-        ///  Type of extra channel.
+        ///  Spot color values (RGBA, only for spot color channels).
         /// </summary>
-        public JxlExtraChannelType channel_type;
+        public fixed float spot_color[4];
         /// <summary>
         ///  Bits per sample.
         /// </summary>
@@ -313,17 +383,17 @@ namespace JpegXL.Net.Native
         /// </summary>
         public uint exponent_bits_per_sample;
         /// <summary>
-        ///  Whether alpha is premultiplied (only for alpha channels).
-        /// </summary>
-        public int alpha_premultiplied;
-        /// <summary>
-        ///  Spot color values (RGBA, only for spot color channels).
-        /// </summary>
-        public fixed float spot_color[4];
-        /// <summary>
         ///  Channel name length in bytes (excluding null terminator).
         /// </summary>
         public uint name_length;
+        /// <summary>
+        ///  Type of extra channel.
+        /// </summary>
+        public JxlExtraChannelType channel_type;
+        /// <summary>
+        ///  Whether alpha is premultiplied (only for alpha channels).
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool alpha_premultiplied;
     }
 
     /// <summary>
@@ -605,6 +675,42 @@ namespace JpegXL.Net.Native
         ///  Unknown channel type.
         /// </summary>
         Unknown = 255,
+    }
+
+    /// <summary>
+    ///  Events returned by the streaming decoder's process function.
+    ///  These indicate what stage the decoder has reached.
+    /// </summary>
+    internal enum JxlDecoderEvent : uint
+    {
+        /// <summary>
+        ///  An error occurred. Call `jxl_get_last_error` for details.
+        /// </summary>
+        Error = 0,
+        /// <summary>
+        ///  The decoder needs more input data. Call `jxl_decoder_append_input`.
+        /// </summary>
+        NeedMoreInput = 1,
+        /// <summary>
+        ///  Basic image info is now available. Call `jxl_decoder_get_basic_info`.
+        /// </summary>
+        HaveBasicInfo = 2,
+        /// <summary>
+        ///  Frame header is available. Call `jxl_decoder_get_frame_header`.
+        /// </summary>
+        HaveFrameHeader = 3,
+        /// <summary>
+        ///  Pixels are available. Call `jxl_decoder_get_pixels` with a buffer.
+        /// </summary>
+        NeedOutputBuffer = 4,
+        /// <summary>
+        ///  A frame has been fully decoded.
+        /// </summary>
+        FrameComplete = 5,
+        /// <summary>
+        ///  All frames have been decoded. The decoder is finished.
+        /// </summary>
+        Complete = 6,
     }
 
 

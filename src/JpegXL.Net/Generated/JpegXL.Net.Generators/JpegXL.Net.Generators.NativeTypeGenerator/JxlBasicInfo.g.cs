@@ -21,19 +21,11 @@ public readonly partial struct JxlBasicInfo
 
     public uint NumExtraChannels => _native.num_extra_channels;
 
-    public bool AlphaPremultiplied => _native.alpha_premultiplied != 0;
-
-    public JpegXL.Net.JxlOrientation Orientation => (JpegXL.Net.JxlOrientation)_native.orientation;
-
-    public bool HaveAnimation => _native.have_animation != 0;
-
     public uint AnimationTpsNumerator => _native.animation_tps_numerator;
 
     public uint AnimationTpsDenominator => _native.animation_tps_denominator;
 
     public uint AnimationNumLoops => _native.animation_num_loops;
-
-    public bool UsesOriginalProfile => _native.uses_original_profile != 0;
 
     public uint PreviewWidth => _native.preview_width;
 
@@ -42,6 +34,14 @@ public readonly partial struct JxlBasicInfo
     public float IntensityTarget => _native.intensity_target;
 
     public float MinNits => _native.min_nits;
+
+    public JpegXL.Net.JxlOrientation Orientation => (JpegXL.Net.JxlOrientation)_native.orientation;
+
+    public bool AlphaPremultiplied => _native.alpha_premultiplied;
+
+    public bool HaveAnimation => _native.have_animation;
+
+    public bool UsesOriginalProfile => _native.uses_original_profile;
 
     /// <summary>Gets the underlying native struct for advanced interop.</summary>
     internal JpegXL.Net.Native.JxlBasicInfo Native => _native;

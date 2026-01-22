@@ -252,4 +252,115 @@ public class JxlDecoderTests
 
         Assert.IsTrue(foundSemiTransparent, "No semi-transparent pixels found in dice.jxl");
     }
+
+    [TestMethod]
+    public void StreamingDecode_WithChunkedInput_DecodesSuccessfully()
+    {
+        // Arrange
+        var fullData = File.ReadAllBytes("TestData/dice.jxl");
+        
+        using var decoder = new JxlDecoder();
+        
+        // Act - feed data in chunks and process
+        int chunkSize = 1024; // 1KB chunks
+        int offset = 0;
+        JxlBasicInfo? info = null;
+        byte[]? pixels = null;
+        bool complete = false;
+        int maxIterations = 10000; // Safety limit to prevent infinite loops
+        int iterations = 0;
+
+        while (!complete && iterations < maxIterations)
+        {
+            iterations++;
+            var evt = decoder.Process();
+            
+            switch (evt)
+            {
+                case JxlDecoderEvent.NeedMoreInput:
+                    if (offset >= fullData.Length)
+                    {
+                        Assert.Fail($"Decoder needs more input but we've sent all data");
+                    }
+                    int bytesToSend = Math.Min(chunkSize, fullData.Length - offset);
+                    decoder.AppendInput(fullData.AsSpan(offset, bytesToSend));
+                    offset += bytesToSend;
+                    break;
+                    
+                case JxlDecoderEvent.HaveBasicInfo:
+                    info = decoder.GetBasicInfo();
+                    break;
+                    
+                case JxlDecoderEvent.NeedOutputBuffer:
+                    pixels = new byte[decoder.GetBufferSize()];
+                    
+                    // Keep trying to read pixels, feeding more data as needed
+                    JxlDecoderEvent pixelEvt;
+                    do
+                    {
+                        pixelEvt = decoder.ReadPixels(pixels);
+                        if (pixelEvt == JxlDecoderEvent.NeedMoreInput)
+                        {
+                            if (offset >= fullData.Length)
+                            {
+                                Assert.Fail("ReadPixels needs more input but we've sent all data");
+                            }
+                            int moreBytesToSend = Math.Min(chunkSize, fullData.Length - offset);
+                            decoder.AppendInput(fullData.AsSpan(offset, moreBytesToSend));
+                            offset += moreBytesToSend;
+                        }
+                    } while (pixelEvt == JxlDecoderEvent.NeedMoreInput && iterations++ < maxIterations);
+                    break;
+                    
+                case JxlDecoderEvent.FrameComplete:
+                    // Continue processing
+                    break;
+                    
+                case JxlDecoderEvent.Complete:
+                    complete = true;
+                    break;
+                    
+                case JxlDecoderEvent.HaveFrameHeader:
+                    // Continue processing
+                    break;
+                    
+                case JxlDecoderEvent.Error:
+                    Assert.Fail($"Decoder encountered an error");
+                    break;
+            }
+        }
+
+        if (!complete)
+        {
+            Assert.Fail($"Test reached max iterations ({maxIterations}). Last offset: {offset}, data length: {fullData.Length}");
+        }
+
+        // Assert
+        Assert.IsNotNull(info, "BasicInfo should be available after streaming decode");
+        Assert.IsTrue(info.Value.Width > 0);
+        Assert.IsTrue(info.Value.Height > 0);
+        Assert.IsNotNull(pixels, "Pixels should be decoded");
+        Assert.IsTrue(pixels.Length > 0);
+        Assert.IsTrue(complete, "Decode should complete");
+    }
+
+    [TestMethod]
+    public void StreamingDecode_HasMoreFrames_ReturnsFalseAfterDecodingStaticImage()
+    {
+        // Arrange - use a simple static image
+        var data = File.ReadAllBytes("TestData/3x3_srgb_lossless.jxl");
+        
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        
+        // Before decoding, has_more_frames should be true (we haven't decoded any frames yet)
+        decoder.ReadInfo();
+        Assert.IsTrue(decoder.HasMoreFrames(), "Should have frames to decode before starting");
+        
+        // Decode the image
+        var pixels = decoder.GetPixels();
+        
+        // After decoding a static (non-animated) image, should have no more frames
+        Assert.IsFalse(decoder.HasMoreFrames(), "Should have no more frames after decoding static image");
+    }
 }
