@@ -103,6 +103,7 @@ public partial class MainWindow : Window
         {
             StopAnimation();
             StatusText!.Text = "Loading...";
+            HdrInfoText!.IsVisible = false;
             
             // Load on background thread
             var bytes = await File.ReadAllBytesAsync(path);
@@ -117,22 +118,31 @@ public partial class MainWindow : Window
             
             if (info.IsAnimated)
             {
+                // Check if HDR
+                var isHdr = info.IsHdr;
+
                 // Decode all frames
-                _frames = await Task.Run(() => DecodeAnimatedImage(bytes, info));
-                
+                _frames = await Task.Run(() => DecodeAnimatedImage(bytes, info, isHdr));
+
                 if (_frames.Count > 0)
                 {
                     _currentFrameIndex = 0;
                     ImageDisplay!.Source = _frames[0].Bitmap;
                     DropHint!.IsVisible = false;
-                    
+
                     // Start playback if we have multiple frames
                     if (_frames.Count > 1)
                     {
                         StartAnimation();
                     }
-                    
-                    ImageInfoText!.Text = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {_frames.Count} frames | Animated";
+
+                    var formatStr = isHdr ? "HDR" : "Animated";
+                    ImageInfoText!.Text = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {_frames.Count} frames | {formatStr}";
+                    HdrInfoText!.IsVisible = isHdr;
+                    if (isHdr)
+                    {
+                        HdrInfoText.Text = $"HDR: {info.IntensityTarget:F0} nits";
+                    }
                     StatusText.Text = $"Loaded: {Path.GetFileName(path)}";
                     UpdatePlayPauseButton();
                 }
@@ -140,14 +150,27 @@ public partial class MainWindow : Window
             else
             {
                 // Static image - use simple decode
+                var isHdr = info.IsHdr;
                 var options = new JxlDecodeOptions { PremultiplyAlpha = true };
+                if (isHdr)
+                {
+                    // Tone map HDR to SDR by setting target intensity to 255 nits
+                    options.DesiredIntensityTarget = 255f;
+                }
+
                 _currentImage = await Task.Run(() => JxlImage.Decode(bytes, JxlPixelFormat.Bgra8, options));
-                
+
                 var bitmap = CreateBitmapFromPixels(_currentImage.GetPixelArray(), _currentImage.Width, _currentImage.Height);
                 ImageDisplay!.Source = bitmap;
                 DropHint!.IsVisible = false;
-                
-                ImageInfoText!.Text = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {(info.HasAlpha ? "RGBA" : "RGB")}";
+
+                var formatStr = isHdr ? "HDR" : (info.HasAlpha ? "RGBA" : "RGB");
+                ImageInfoText!.Text = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {formatStr}";
+                HdrInfoText!.IsVisible = isHdr;
+                if (isHdr)
+                {
+                    HdrInfoText.Text = $"HDR: {info.IntensityTarget:F0} nits";
+                }
                 StatusText.Text = $"Loaded: {Path.GetFileName(path)}";
                 UpdatePlayPauseButton();
             }
@@ -163,15 +186,22 @@ public partial class MainWindow : Window
         }
     }
 
-    private List<AnimationFrame> DecodeAnimatedImage(byte[] data, JxlBasicInfo info)
+    private List<AnimationFrame> DecodeAnimatedImage(byte[] data, JxlBasicInfo info, bool isHdr)
     {
         var frames = new List<AnimationFrame>();
         var width = (int)info.Width;
         var height = (int)info.Height;
         var bufferSize = width * height * 4; // BGRA
         var pixels = new byte[bufferSize];
-        
-        using var decoder = new JxlDecoder(new JxlDecodeOptions { PremultiplyAlpha = true });
+
+        var options = new JxlDecodeOptions { PremultiplyAlpha = true };
+        if (isHdr)
+        {
+            // Tone map HDR to SDR by setting target intensity to 255 nits
+            options.DesiredIntensityTarget = 255f;
+        }
+
+        using var decoder = new JxlDecoder(options);
         decoder.SetInput(data);
         decoder.SetPixelFormat(JxlPixelFormat.Bgra8);
         decoder.ReadInfo(); // Advance past basic info

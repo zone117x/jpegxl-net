@@ -17,4 +17,9 @@ public partial struct JxlBasicInfo
     /// Gets whether the image is animated.
     /// </summary>
     public bool IsAnimated => HaveAnimation;
+
+    /// <summary>
+    /// Gets whether the image is HDR (intensity target exceeds SDR or uses float samples).
+    /// </summary>
+    public bool IsHdr => IntensityTarget > 255f || ExponentBitsPerSample > 0;
 }

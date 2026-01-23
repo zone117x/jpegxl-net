@@ -47,6 +47,7 @@
                 <TextBlock Name="StatusText" Foreground="White" Text="Ready" />
                 <TextBlock Name="ImageInfoText" Foreground="Gray" />
                 <TextBlock Name="FrameInfoText" Foreground="LightGreen" IsVisible="False" />
+                <TextBlock Name="HdrInfoText" Foreground="Orange" IsVisible="False" />
             </StackPanel>
         </Border>
     </Grid>

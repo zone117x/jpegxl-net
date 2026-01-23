@@ -62,4 +62,24 @@ public partial struct JxlPixelFormat
         color_type = NativeColorType.Rgba,
         endianness = NativeEndianness.Native
     });
+
+    /// <summary>
+    /// Gets an RGBA 32-bit float pixel format (HDR).
+    /// </summary>
+    public static JxlPixelFormat Rgba32F => new(new NativeFormat
+    {
+        data_format = NativeDataFormat.Float32,
+        color_type = NativeColorType.Rgba,
+        endianness = NativeEndianness.Native
+    });
+
+    /// <summary>
+    /// Gets a BGRA 32-bit float pixel format (HDR).
+    /// </summary>
+    public static JxlPixelFormat Bgra32F => new(new NativeFormat
+    {
+        data_format = NativeDataFormat.Float32,
+        color_type = NativeColorType.Bgra,
+        endianness = NativeEndianness.Native
+    });
 }
