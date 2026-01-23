@@ -506,29 +506,6 @@ namespace JpegXL.Net.Native
 
 
     /// <summary>
-    ///  Signature check result.
-    /// </summary>
-    internal enum JxlSignature : uint
-    {
-        /// <summary>
-        ///  Not enough data to determine.
-        /// </summary>
-        NotEnoughBytes = 0,
-        /// <summary>
-        ///  Not a JPEG XL file.
-        /// </summary>
-        Invalid = 1,
-        /// <summary>
-        ///  Valid JPEG XL codestream.
-        /// </summary>
-        Codestream = 2,
-        /// <summary>
-        ///  Valid JPEG XL container.
-        /// </summary>
-        Container = 3,
-    }
-
-    /// <summary>
     ///  Status codes returned by decoder functions.
     /// </summary>
     internal enum JxlStatus : uint
@@ -767,6 +744,29 @@ namespace JpegXL.Net.Native
         ///  All frames have been decoded. The decoder is finished.
         /// </summary>
         Complete = 6,
+    }
+
+    /// <summary>
+    ///  Signature check result.
+    /// </summary>
+    internal enum JxlSignature : uint
+    {
+        /// <summary>
+        ///  Not enough data to determine.
+        /// </summary>
+        NotEnoughBytes = 0,
+        /// <summary>
+        ///  Not a JPEG XL file.
+        /// </summary>
+        Invalid = 1,
+        /// <summary>
+        ///  Valid JPEG XL codestream.
+        /// </summary>
+        Codestream = 2,
+        /// <summary>
+        ///  Valid JPEG XL container.
+        /// </summary>
+        Container = 3,
     }
 
 

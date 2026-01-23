@@ -324,3 +324,17 @@ pub enum JxlDecoderEvent {
     /// All frames have been decoded. The decoder is finished.
     Complete = 6,
 }
+
+/// Signature check result.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlSignature {
+    /// Not enough data to determine.
+    NotEnoughBytes = 0,
+    /// Not a JPEG XL file.
+    Invalid = 1,
+    /// Valid JPEG XL codestream.
+    Codestream = 2,
+    /// Valid JPEG XL container.
+    Container = 3,
+}

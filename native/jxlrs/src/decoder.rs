@@ -5,21 +5,59 @@
 
 //! Decoder implementation for the C API.
 
+use crate::conversions::{
+    bytes_per_sample, calculate_buffer_size, calculate_bytes_per_row, convert_basic_info,
+    convert_extra_channel_info, convert_frame_header, convert_options_to_upstream,
+    convert_to_jxl_pixel_format,
+};
 use crate::error::{clear_last_error, set_last_error};
 use crate::types::*;
-// Use fully qualified paths for upstream jxl types to avoid conflicts with our types
-use jxl::api::{Endianness, JxlDecoderOptions, ProcessingResult};
-use jxl::api::JxlProgressiveMode as UpstreamProgressiveMode;
-use jxl::headers::extra_channels::ExtraChannel;
-use jxl::headers::image_metadata::Orientation;
+use jxl::api::ProcessingResult;
 use jxl::image::JxlOutputBuffer;
 use std::slice;
 
-// Type aliases for upstream jxl types to distinguish from our C API types
+// Type alias for upstream decoder
 type UpstreamDecoder<S> = jxl::api::JxlDecoder<S>;
-type UpstreamPixelFormat = jxl::api::JxlPixelFormat;
-type UpstreamColorType = jxl::api::JxlColorType;
-type UpstreamDataFormat = jxl::api::JxlDataFormat;
+
+// ============================================================================
+// Decoder Pointer Validation Macros
+// ============================================================================
+
+/// Gets a mutable reference to the decoder, returning an error if null.
+macro_rules! get_decoder_mut {
+    ($decoder:expr, $error_return:expr) => {
+        match unsafe { ($decoder as *mut DecoderInner).as_mut() } {
+            Some(inner) => inner,
+            None => {
+                set_last_error("Null decoder pointer");
+                return $error_return;
+            }
+        }
+    };
+}
+
+/// Gets an immutable reference to the decoder, returning an error if null.
+macro_rules! get_decoder_ref {
+    ($decoder:expr, $error_return:expr) => {
+        match unsafe { ($decoder as *const DecoderInner).as_ref() } {
+            Some(inner) => inner,
+            None => {
+                set_last_error("Null decoder pointer");
+                return $error_return;
+            }
+        }
+    };
+}
+
+/// Gets an immutable reference to the decoder, returning silently if null.
+macro_rules! get_decoder_ref_silent {
+    ($decoder:expr, $error_return:expr) => {
+        match unsafe { ($decoder as *const DecoderInner).as_ref() } {
+            Some(inner) => inner,
+            None => return $error_return,
+        }
+    };
+}
 
 /// Internal decoder state machine.
 enum DecoderState {
@@ -53,34 +91,6 @@ struct DecoderInner {
     options: JxlDecoderOptionsC,
 }
 
-/// Converts C-compatible options to upstream decoder options.
-fn convert_options_to_upstream(c_options: &JxlDecoderOptionsC) -> JxlDecoderOptions {
-    let mut options = JxlDecoderOptions::default();
-    options.adjust_orientation = c_options.adjust_orientation;
-    options.render_spot_colors = c_options.render_spot_colors;
-    options.coalescing = c_options.coalescing;
-    options.desired_intensity_target = if c_options.desired_intensity_target > 0.0 {
-        Some(c_options.desired_intensity_target)
-    } else {
-        None
-    };
-    options.skip_preview = c_options.skip_preview;
-    options.progressive_mode = match c_options.progressive_mode {
-        JxlProgressiveMode::Eager => UpstreamProgressiveMode::Eager,
-        JxlProgressiveMode::Pass => UpstreamProgressiveMode::Pass,
-        JxlProgressiveMode::FullFrame => UpstreamProgressiveMode::FullFrame,
-    };
-    options.enable_output = c_options.enable_output;
-    options.pixel_limit = if c_options.pixel_limit > 0 {
-        Some(c_options.pixel_limit)
-    } else {
-        None
-    };
-    options.high_precision = c_options.high_precision;
-    options.premultiply_output = c_options.premultiply_alpha;
-    options
-}
-
 impl DecoderInner {
     fn new() -> Self {
         Self::with_options(JxlDecoderOptionsC::default())
@@ -100,12 +110,17 @@ impl DecoderInner {
     }
 
     fn reset(&mut self) {
-        self.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&self.options)));
+        self.reset_state();
         self.data.clear();
         self.data_offset = 0;
         self.basic_info = None;
         self.frame_header = None;
         self.extra_channels.clear();
+    }
+
+    /// Resets only the decoder state (used for error recovery).
+    fn reset_state(&mut self) {
+        self.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&self.options)));
     }
 }
 
@@ -175,10 +190,7 @@ pub unsafe extern "C" fn jxl_decoder_destroy(decoder: *mut NativeDecoderHandle) 
 /// The decoder pointer must be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jxl_decoder_reset(decoder: *mut NativeDecoderHandle) -> JxlStatus {
-    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
-        set_last_error("Null decoder pointer");
-        return JxlStatus::InvalidArgument;
-    };
+    let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
 
     clear_last_error();
     inner.reset();
@@ -204,10 +216,7 @@ pub unsafe extern "C" fn jxl_decoder_set_input(
     data: *const u8,
     size: usize,
 ) -> JxlStatus {
-    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
-        set_last_error("Null decoder pointer");
-        return JxlStatus::InvalidArgument;
-    };
+    let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
 
     if data.is_null() && size > 0 {
         set_last_error("Null data pointer with non-zero size");
@@ -241,10 +250,7 @@ pub unsafe extern "C" fn jxl_decoder_append_input(
     data: *const u8,
     size: usize,
 ) -> JxlStatus {
-    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
-        set_last_error("Null decoder pointer");
-        return JxlStatus::InvalidArgument;
-    };
+    let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
 
     if data.is_null() && size > 0 {
         set_last_error("Null data pointer with non-zero size");
@@ -281,10 +287,7 @@ pub unsafe extern "C" fn jxl_decoder_append_input(
 pub unsafe extern "C" fn jxl_decoder_process(
     decoder: *mut NativeDecoderHandle,
 ) -> JxlDecoderEvent {
-    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
-        set_last_error("Null decoder pointer");
-        return JxlDecoderEvent::Error;
-    };
+    let inner = get_decoder_mut!(decoder, JxlDecoderEvent::Error);
 
     clear_last_error();
 
@@ -318,7 +321,7 @@ pub unsafe extern "C" fn jxl_decoder_process(
                     JxlDecoderEvent::NeedMoreInput
                 }
                 Err(e) => {
-                    inner.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&inner.options)));
+                    inner.reset_state();
                     set_last_error(format!("Failed to decode header: {}", e));
                     JxlDecoderEvent::Error
                 }
@@ -356,7 +359,7 @@ pub unsafe extern "C" fn jxl_decoder_process(
                     JxlDecoderEvent::NeedMoreInput
                 }
                 Err(e) => {
-                    inner.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&inner.options)));
+                    inner.reset_state();
                     set_last_error(format!("Failed to decode frame header: {}", e));
                     JxlDecoderEvent::Error
                 }
@@ -386,10 +389,7 @@ pub unsafe extern "C" fn jxl_decoder_get_basic_info(
     decoder: *const NativeDecoderHandle,
     info: *mut JxlBasicInfo,
 ) -> JxlStatus {
-    let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
-        set_last_error("Null decoder pointer");
-        return JxlStatus::InvalidArgument;
-    };
+    let inner = get_decoder_ref!(decoder, JxlStatus::InvalidArgument);
 
     let Some(ref cached_info) = inner.basic_info else {
         set_last_error("Basic info not yet available - call jxl_decoder_process first");
@@ -415,10 +415,7 @@ pub unsafe extern "C" fn jxl_decoder_get_frame_header(
     decoder: *const NativeDecoderHandle,
     header: *mut JxlFrameHeader,
 ) -> JxlStatus {
-    let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
-        set_last_error("Null decoder pointer");
-        return JxlStatus::InvalidArgument;
-    };
+    let inner = get_decoder_ref!(decoder, JxlStatus::InvalidArgument);
 
     let Some(ref cached_header) = inner.frame_header else {
         set_last_error("Frame header not yet available - call jxl_decoder_process until HaveFrameHeader");
@@ -447,10 +444,7 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels(
     buffer: *mut u8,
     buffer_size: usize,
 ) -> JxlDecoderEvent {
-    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
-        set_last_error("Null decoder pointer");
-        return JxlDecoderEvent::Error;
-    };
+    let inner = get_decoder_mut!(decoder, JxlDecoderEvent::Error);
 
     if buffer.is_null() {
         set_last_error("Null buffer pointer");
@@ -512,7 +506,7 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels(
             JxlDecoderEvent::NeedMoreInput
         }
         Err(e) => {
-            inner.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&inner.options)));
+            inner.reset_state();
             set_last_error(format!("Pixel decode error: {}", e));
             JxlDecoderEvent::Error
         }
@@ -527,9 +521,7 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels(
 pub unsafe extern "C" fn jxl_decoder_has_more_frames(
     decoder: *const NativeDecoderHandle,
 ) -> bool {
-    let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
-        return false;
-    };
+    let inner = get_decoder_ref_silent!(decoder, false);
 
     match &inner.state {
         DecoderState::WithImageInfo(d) => d.has_more_frames(),
@@ -558,9 +550,7 @@ pub unsafe extern "C" fn jxl_decoder_get_extra_channel_buffer_size(
     decoder: *const NativeDecoderHandle,
     index: u32,
 ) -> usize {
-    let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
-        return 0;
-    };
+    let inner = get_decoder_ref_silent!(decoder, 0);
 
     let Some(ref info) = inner.basic_info else {
         return 0;
@@ -605,10 +595,7 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels_with_extra_channels(
     extra_buffer_sizes: *const usize,
     num_extra_buffers: usize,
 ) -> JxlDecoderEvent {
-    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
-        set_last_error("Null decoder pointer");
-        return JxlDecoderEvent::Error;
-    };
+    let inner = get_decoder_mut!(decoder, JxlDecoderEvent::Error);
 
     if color_buffer.is_null() {
         set_last_error("Null color buffer pointer");
@@ -708,7 +695,7 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels_with_extra_channels(
             JxlDecoderEvent::NeedMoreInput
         }
         Err(e) => {
-            inner.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&inner.options)));
+            inner.reset_state();
             set_last_error(format!("Pixel decode error: {}", e));
             JxlDecoderEvent::Error
         }
@@ -728,10 +715,7 @@ pub unsafe extern "C" fn jxl_decoder_set_pixel_format(
     decoder: *mut NativeDecoderHandle,
     format: *const JxlPixelFormat,
 ) -> JxlStatus {
-    let Some(inner) = (unsafe { (decoder as *mut DecoderInner).as_mut() }) else {
-        set_last_error("Null decoder pointer");
-        return JxlStatus::InvalidArgument;
-    };
+    let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
 
     let Some(format) = (unsafe { format.as_ref() }) else {
         set_last_error("Null format pointer");
@@ -752,9 +736,7 @@ pub unsafe extern "C" fn jxl_decoder_set_pixel_format(
 pub unsafe extern "C" fn jxl_decoder_get_extra_channel_count(
     decoder: *const NativeDecoderHandle,
 ) -> u32 {
-    let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
-        return 0;
-    };
+    let inner = get_decoder_ref_silent!(decoder, 0);
 
     inner.extra_channels.len() as u32
 }
@@ -771,10 +753,7 @@ pub unsafe extern "C" fn jxl_decoder_get_extra_channel_info(
     index: u32,
     info: *mut JxlExtraChannelInfo,
 ) -> JxlStatus {
-    let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
-        set_last_error("Null decoder pointer");
-        return JxlStatus::InvalidArgument;
-    };
+    let inner = get_decoder_ref!(decoder, JxlStatus::InvalidArgument);
 
     let Some(channel_info) = inner.extra_channels.get(index as usize) else {
         set_last_error(format!("Extra channel index {} out of range", index));
@@ -798,9 +777,7 @@ pub unsafe extern "C" fn jxl_decoder_get_extra_channel_info(
 /// `decoder` must be valid and basic info must be available (after `HaveBasicInfo` event).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jxl_decoder_get_buffer_size(decoder: *const NativeDecoderHandle) -> usize {
-    let Some(inner) = (unsafe { (decoder as *const DecoderInner).as_ref() }) else {
-        return 0;
-    };
+    let inner = get_decoder_ref_silent!(decoder, 0);
 
     let Some(ref info) = inner.basic_info else {
         return 0;
@@ -812,20 +789,6 @@ pub unsafe extern "C" fn jxl_decoder_get_buffer_size(decoder: *const NativeDecod
 // ============================================================================
 // Signature Check
 // ============================================================================
-
-/// Signature check result.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JxlSignature {
-    /// Not enough data to determine.
-    NotEnoughBytes = 0,
-    /// Not a JPEG XL file.
-    Invalid = 1,
-    /// Valid JPEG XL codestream.
-    Codestream = 2,
-    /// Valid JPEG XL container.
-    Container = 3,
-}
 
 /// Checks if data appears to be a JPEG XL file.
 ///
@@ -853,251 +816,6 @@ pub unsafe extern "C" fn jxl_signature_check(data: *const u8, size: usize) -> Jx
     }
 }
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// Calculates bytes per sample based on data format.
-fn bytes_per_sample(data_format: JxlDataFormat) -> usize {
-    match data_format {
-        JxlDataFormat::Uint8 => 1,
-        JxlDataFormat::Uint16 | JxlDataFormat::Float16 => 2,
-        JxlDataFormat::Float32 => 4,
-    }
-}
-
-/// Calculates samples per pixel based on color type.
-fn samples_per_pixel(color_type: JxlColorType) -> usize {
-    match color_type {
-        JxlColorType::Grayscale => 1,
-        JxlColorType::GrayscaleAlpha => 2,
-        JxlColorType::Rgb | JxlColorType::Bgr => 3,
-        JxlColorType::Rgba | JxlColorType::Bgra => 4,
-    }
-}
-
-/// Calculates the bytes per row for the given image info and pixel format.
-fn calculate_bytes_per_row(info: &JxlBasicInfo, pixel_format: &JxlPixelFormat) -> usize {
-    let width = info.width as usize;
-    let bps = bytes_per_sample(pixel_format.data_format);
-    let spp = samples_per_pixel(pixel_format.color_type);
-    width * spp * bps
-}
-
-/// Calculates the required buffer size for the given image info and pixel format.
-fn calculate_buffer_size(info: &JxlBasicInfo, pixel_format: &JxlPixelFormat) -> usize {
-    let height = info.height as usize;
-    calculate_bytes_per_row(info, pixel_format) * height
-}
-
-fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlBasicInfo {
-    let (anim_num, anim_den, anim_loops) = info
-        .animation
-        .as_ref()
-        .map_or((0, 0, 0), |a| (a.tps_numerator, a.tps_denominator, a.num_loops));
-
-    let (preview_w, preview_h) = info.preview_size.unwrap_or((0, 0));
-
-    // Determine bits_per_sample and exponent_bits
-    let (bits, exp_bits) = match &info.bit_depth {
-        jxl::api::JxlBitDepth::Int { bits_per_sample } => (*bits_per_sample, 0),
-        jxl::api::JxlBitDepth::Float {
-            bits_per_sample,
-            exponent_bits_per_sample,
-        } => (*bits_per_sample, *exponent_bits_per_sample),
-    };
-
-    JxlBasicInfo {
-        width: info.size.0 as u32,
-        height: info.size.1 as u32,
-        bits_per_sample: bits,
-        exponent_bits_per_sample: exp_bits,
-        num_color_channels: 3, // RGB, grayscale handled by color_type
-        num_extra_channels: info.extra_channels.len() as u32,
-        animation_tps_numerator: anim_num,
-        animation_tps_denominator: anim_den,
-        animation_num_loops: anim_loops,
-        preview_width: preview_w as u32,
-        preview_height: preview_h as u32,
-        intensity_target: info.tone_mapping.intensity_target,
-        min_nits: info.tone_mapping.min_nits,
-        orientation: convert_orientation(info.orientation),
-        alpha_premultiplied: false, // TODO: Check actual value from extra channels
-        have_animation: info.animation.is_some(),
-        uses_original_profile: info.uses_original_profile,
-    }
-}
-
-fn convert_orientation(orientation: Orientation) -> JxlOrientation {
-    match orientation {
-        Orientation::Identity => JxlOrientation::Identity,
-        Orientation::FlipHorizontal => JxlOrientation::FlipHorizontal,
-        Orientation::Rotate180 => JxlOrientation::Rotate180,
-        Orientation::FlipVertical => JxlOrientation::FlipVertical,
-        Orientation::Transpose => JxlOrientation::Transpose,
-        Orientation::Rotate90Cw => JxlOrientation::Rotate90Cw,
-        Orientation::AntiTranspose => JxlOrientation::AntiTranspose,
-        Orientation::Rotate90Ccw => JxlOrientation::Rotate90Ccw,
-    }
-}
-
-fn convert_frame_header(header: &jxl::api::JxlFrameHeader) -> JxlFrameHeader {
-    JxlFrameHeader {
-        duration_ms: header.duration.unwrap_or(0.0) as f32,
-        frame_width: header.size.0 as u32,
-        frame_height: header.size.1 as u32,
-        name_length: header.name.len() as u32,
-        is_last: false, // Will be updated when we know if there are more frames
-    }
-}
-
-fn convert_extra_channel_info(channel: &jxl::api::JxlExtraChannel) -> JxlExtraChannelInfo {
-    let channel_type = match channel.ec_type {
-        ExtraChannel::Alpha => JxlExtraChannelType::Alpha,
-        ExtraChannel::Depth => JxlExtraChannelType::Depth,
-        ExtraChannel::SpotColor => JxlExtraChannelType::SpotColor,
-        ExtraChannel::SelectionMask => JxlExtraChannelType::SelectionMask,
-        ExtraChannel::CFA => JxlExtraChannelType::Cfa,
-        ExtraChannel::Thermal => JxlExtraChannelType::Thermal,
-        ExtraChannel::Optional => JxlExtraChannelType::Optional,
-        _ => JxlExtraChannelType::Unknown,
-    };
-
-    JxlExtraChannelInfo {
-        spot_color: [0.0; 4],
-        bits_per_sample: 8, // Default, actual value may need to be retrieved differently
-        exponent_bits_per_sample: 0,
-        name_length: 0,
-        channel_type,
-        alpha_premultiplied: channel.alpha_associated,
-    }
-}
-
-fn convert_to_jxl_pixel_format(
-    format: &JxlPixelFormat, 
-    extra_channels: &[JxlExtraChannelInfo], 
-    skip_extra_channels: bool
-) -> UpstreamPixelFormat {
-    let color_type = match format.color_type {
-        JxlColorType::Grayscale => UpstreamColorType::Grayscale,
-        JxlColorType::GrayscaleAlpha => UpstreamColorType::GrayscaleAlpha,
-        JxlColorType::Rgb => UpstreamColorType::Rgb,
-        JxlColorType::Rgba => UpstreamColorType::Rgba,
-        JxlColorType::Bgr => UpstreamColorType::Bgr,
-        JxlColorType::Bgra => UpstreamColorType::Bgra,
-    };
-
-    let endianness = match format.endianness {
-        JxlEndianness::Native => Endianness::native(),
-        JxlEndianness::LittleEndian => Endianness::LittleEndian,
-        JxlEndianness::BigEndian => Endianness::BigEndian,
-    };
-
-    let data_format = match format.data_format {
-        JxlDataFormat::Uint8 => Some(UpstreamDataFormat::U8 { bit_depth: 8 }),
-        JxlDataFormat::Uint16 => Some(UpstreamDataFormat::U16 {
-            endianness,
-            bit_depth: 16,
-        }),
-        JxlDataFormat::Float16 => Some(UpstreamDataFormat::F16 { endianness }),
-        JxlDataFormat::Float32 => Some(UpstreamDataFormat::F32 { endianness }),
-    };
-
-    // Determine if the color type already includes alpha
-    let color_includes_alpha = matches!(
-        format.color_type,
-        JxlColorType::Rgba | JxlColorType::Bgra | JxlColorType::GrayscaleAlpha
-    );
-
-    // If skipping extra channels, set them all to None so they won't be decoded
-    let extra_channel_format = if skip_extra_channels {
-        vec![None; extra_channels.len()]
-    } else {
-        let extra_format = match format.data_format {
-            JxlDataFormat::Uint8 => Some(UpstreamDataFormat::U8 { bit_depth: 8 }),
-            JxlDataFormat::Uint16 => Some(UpstreamDataFormat::U16 {
-                endianness,
-                bit_depth: 16,
-            }),
-            JxlDataFormat::Float16 => Some(UpstreamDataFormat::F16 { endianness }),
-            JxlDataFormat::Float32 => Some(UpstreamDataFormat::F32 { endianness }),
-        };
-        
-        // Track whether we've skipped the first alpha channel (when color includes alpha)
-        let mut first_alpha_skipped = false;
-        
-        extra_channels.iter().map(|ec| {
-            // If color type includes alpha and this is the first alpha channel, skip it
-            // (it's already part of the color output)
-            if color_includes_alpha && ec.channel_type == JxlExtraChannelType::Alpha && !first_alpha_skipped {
-                first_alpha_skipped = true;
-                None
-            } else {
-                extra_format
-            }
-        }).collect()
-    };
-
-    UpstreamPixelFormat {
-        color_type,
-        color_data_format: data_format,
-        extra_channel_format,
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_convert_to_jxl_pixel_format_rgba_with_alpha() {
-        let format = JxlPixelFormat {
-            color_type: JxlColorType::Rgba,
-            data_format: JxlDataFormat::Uint8,
-            endianness: JxlEndianness::Native,
-        };
-        
-        let extra_channels = vec![JxlExtraChannelInfo {
-            channel_type: JxlExtraChannelType::Alpha,
-            bits_per_sample: 8,
-            exponent_bits_per_sample: 0,
-            name_length: 0,
-            spot_color: [0.0; 4],
-            alpha_premultiplied: false,
-        }];
-        
-        // When using RGBA with alpha as extra channel, alpha should be None
-        // (alpha is already in the RGBA color output)
-        let pixel_format = convert_to_jxl_pixel_format(&format, &extra_channels, false);
-        
-        assert_eq!(pixel_format.extra_channel_format.len(), 1);
-        assert!(pixel_format.extra_channel_format[0].is_none(), 
-            "Alpha should be None when using RGBA");
-    }
-    
-    #[test]
-    fn test_convert_to_jxl_pixel_format_rgb_with_alpha() {
-        let format = JxlPixelFormat {
-            color_type: JxlColorType::Rgb,
-            data_format: JxlDataFormat::Uint8,
-            endianness: JxlEndianness::Native,
-        };
-        
-        let extra_channels = vec![JxlExtraChannelInfo {
-            channel_type: JxlExtraChannelType::Alpha,
-            bits_per_sample: 8,
-            exponent_bits_per_sample: 0,
-            name_length: 0,
-            spot_color: [0.0; 4],
-            alpha_premultiplied: false,
-        }];
-        
-        // When using RGB (no alpha in color), alpha should be Some
-        // (alpha needs to go to a separate buffer)
-        let pixel_format = convert_to_jxl_pixel_format(&format, &extra_channels, false);
-        
-        assert_eq!(pixel_format.extra_channel_format.len(), 1);
-        assert!(pixel_format.extra_channel_format[0].is_some(), 
-            "Alpha should be Some when using RGB");
-    }
-}
+#[path = "decoder_tests.rs"]
+mod tests;

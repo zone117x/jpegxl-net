@@ -8,6 +8,7 @@
 //! This crate provides a C-compatible API for decoding JPEG XL images,
 //! designed for FFI bindings to languages like C#.
 
+mod conversions;
 mod decoder;
 mod error;
 mod types;
