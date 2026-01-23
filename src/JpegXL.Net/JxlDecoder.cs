@@ -396,7 +396,7 @@ public sealed unsafe class JxlDecoder : IDisposable
     }
 
     /// <summary>
-    /// Gets the current frame header after <see cref="Process"/> returns 
+    /// Gets the current frame header after <see cref="Process"/> returns
     /// <see cref="JxlDecoderEvent.HaveFrameHeader"/>.
     /// </summary>
     /// <returns>The frame header information.</returns>
@@ -410,6 +410,41 @@ public sealed unsafe class JxlDecoder : IDisposable
         ThrowIfFailed(status);
 
         return new JxlFrameHeader(header);
+    }
+
+    /// <summary>
+    /// Gets the current frame's name after <see cref="Process"/> returns
+    /// <see cref="JxlDecoderEvent.HaveFrameHeader"/>.
+    /// </summary>
+    /// <returns>The frame name, or an empty string if the frame has no name.</returns>
+    /// <remarks>
+    /// Most frames do not have names. Check <see cref="JxlFrameHeader.NameLength"/>
+    /// to determine if a name exists before calling this method.
+    /// </remarks>
+    public string GetFrameName()
+    {
+        ThrowIfDisposed();
+
+        // First call with null buffer to get required size
+        uint length = NativeMethods.jxl_decoder_get_frame_name(_handle, null, 0);
+
+        if (length == 0)
+            return string.Empty;
+
+        // Allocate buffer and get the name
+        var buffer = new byte[length];
+        fixed (byte* ptr = buffer)
+        {
+            uint written = NativeMethods.jxl_decoder_get_frame_name(_handle, ptr, length);
+            if (written == 0)
+                return string.Empty;
+
+#if NETSTANDARD2_0
+            return System.Text.Encoding.UTF8.GetString(buffer, 0, (int)written);
+#else
+            return System.Text.Encoding.UTF8.GetString(buffer.AsSpan(0, (int)written));
+#endif
+        }
     }
 
     /// <summary>

@@ -131,6 +131,28 @@ namespace JpegXL.Net.Native
         internal static extern JxlStatus jxl_decoder_get_frame_header(NativeDecoderHandle* decoder, JxlFrameHeader* header);
 
         /// <summary>
+        ///  Gets the current frame's name.
+        ///
+        ///  Only valid after `jxl_decoder_process` returns `HaveFrameHeader`.
+        ///  Returns the number of bytes written to buffer, or the required size if buffer is null/too small.
+        ///
+        ///  # Arguments
+        ///  * `decoder` - The decoder instance.
+        ///  * `buffer` - Output buffer for the UTF-8 name, or null to query required size.
+        ///  * `buffer_size` - Size of the buffer in bytes.
+        ///
+        ///  # Returns
+        ///  The number of bytes written, or the required buffer size if buffer is null or too small.
+        ///  Returns 0 if no frame header is available or the frame has no name.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        ///  - If `buffer` is not null, it must be valid for writes of `buffer_size` bytes.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_frame_name", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        internal static extern uint jxl_decoder_get_frame_name(NativeDecoderHandle* decoder, byte* buffer, uint buffer_size);
+
+        /// <summary>
         ///  Decodes pixels into the provided buffer (streaming API).
         ///
         ///  Call this after `jxl_decoder_process` returns `NeedOutputBuffer`.
@@ -410,9 +432,9 @@ namespace JpegXL.Net.Native
         /// </summary>
         public JxlExtraChannelType channel_type;
         /// <summary>
-        ///  Whether alpha is premultiplied (only for alpha channels).
+        ///  Whether alpha is associated/premultiplied (only for alpha channels).
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool alpha_premultiplied;
+        [MarshalAs(UnmanagedType.U1)] public bool alpha_associated;
     }
 
     /// <summary>
@@ -435,7 +457,7 @@ namespace JpegXL.Net.Native
         /// </summary>
         public uint frame_height;
         /// <summary>
-        ///  Frame name length in bytes (excluding null terminator).
+        ///  Frame name length in bytes. Use jxl_decoder_get_frame_name to get the actual name.
         /// </summary>
         public uint name_length;
         /// <summary>

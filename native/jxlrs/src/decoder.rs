@@ -79,11 +79,9 @@ struct DecoderInner {
     data: Vec<u8>,
     /// Current read offset in data (tracks position between process calls).
     data_offset: usize,
-    /// Cached basic info.
+    /// Cached basic info (needed for WithFrameInfo state which doesn't expose it).
     basic_info: Option<JxlBasicInfo>,
-    /// Cached frame header.
-    frame_header: Option<JxlFrameHeader>,
-    /// Cached extra channel info.
+    /// Cached extra channel info (needed for pixel format conversion).
     extra_channels: Vec<JxlExtraChannelInfo>,
     /// Desired output pixel format.
     pixel_format: JxlPixelFormat,
@@ -102,7 +100,6 @@ impl DecoderInner {
             data: Vec::new(),
             data_offset: 0,
             basic_info: None,
-            frame_header: None,
             extra_channels: Vec::new(),
             pixel_format: JxlPixelFormat::default(),
             options,
@@ -114,7 +111,6 @@ impl DecoderInner {
         self.data.clear();
         self.data_offset = 0;
         self.basic_info = None;
-        self.frame_header = None;
         self.extra_channels.clear();
     }
 
@@ -315,9 +311,6 @@ pub unsafe extern "C" fn jxl_decoder_process(
 
             match result {
                 Ok(ProcessingResult::Complete { result: decoder_with_frame }) => {
-                    // Cache the frame header
-                    let frame_header = decoder_with_frame.frame_header();
-                    inner.frame_header = Some(convert_frame_header(&frame_header));
                     inner.state = DecoderState::WithFrameInfo(decoder_with_frame);
                     JxlDecoderEvent::HaveFrameHeader
                 }
@@ -384,16 +377,69 @@ pub unsafe extern "C" fn jxl_decoder_get_frame_header(
 ) -> JxlStatus {
     let inner = get_decoder_ref!(decoder, JxlStatus::InvalidArgument);
 
-    let Some(ref cached_header) = inner.frame_header else {
+    let DecoderState::WithFrameInfo(ref decoder_with_frame) = inner.state else {
         set_last_error("Frame header not yet available - call jxl_decoder_process until HaveFrameHeader");
         return JxlStatus::InvalidState;
     };
 
     if let Some(out_header) = unsafe { header.as_mut() } {
-        *out_header = cached_header.clone();
+        let jxl_header = decoder_with_frame.frame_header();
+        // is_last is not known until frame decode completes
+        *out_header = convert_frame_header(&jxl_header, false);
     }
 
     JxlStatus::Success
+}
+
+/// Gets the current frame's name.
+///
+/// Only valid after `jxl_decoder_process` returns `HaveFrameHeader`.
+/// Returns the number of bytes written to buffer, or the required size if buffer is null/too small.
+///
+/// # Arguments
+/// * `decoder` - The decoder instance.
+/// * `buffer` - Output buffer for the UTF-8 name, or null to query required size.
+/// * `buffer_size` - Size of the buffer in bytes.
+///
+/// # Returns
+/// The number of bytes written, or the required buffer size if buffer is null or too small.
+/// Returns 0 if no frame header is available or the frame has no name.
+///
+/// # Safety
+/// - `decoder` must be valid.
+/// - If `buffer` is not null, it must be valid for writes of `buffer_size` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_get_frame_name(
+    decoder: *const NativeDecoderHandle,
+    buffer: *mut u8,
+    buffer_size: u32,
+) -> u32 {
+    let inner = get_decoder_ref_silent!(decoder, 0);
+
+    let DecoderState::WithFrameInfo(ref decoder_with_frame) = inner.state else {
+        return 0;
+    };
+
+    let header = decoder_with_frame.frame_header();
+    let name_bytes = header.name.as_bytes();
+    let name_len = name_bytes.len() as u32;
+
+    // If no name, return 0
+    if name_len == 0 {
+        return 0;
+    }
+
+    // If no buffer or buffer too small, return required size
+    if buffer.is_null() || buffer_size < name_len {
+        return name_len;
+    }
+
+    // Copy name to buffer
+    unsafe {
+        std::ptr::copy_nonoverlapping(name_bytes.as_ptr(), buffer, name_len as usize);
+    }
+
+    name_len
 }
 
 /// Decodes pixels into the provided buffer (streaming API).
@@ -461,10 +507,6 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels(
 
     match result {
         Ok(ProcessingResult::Complete { result }) => {
-            // Update is_last in cached frame header based on whether there are more frames
-            if let Some(ref mut header) = inner.frame_header {
-                header.is_last = !result.has_more_frames();
-            }
             inner.state = DecoderState::WithImageInfo(result);
             JxlDecoderEvent::FrameComplete
         }
@@ -651,9 +693,6 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels_with_extra_channels(
 
     match result {
         Ok(ProcessingResult::Complete { result }) => {
-            if let Some(ref mut header) = inner.frame_header {
-                header.is_last = !result.has_more_frames();
-            }
             inner.state = DecoderState::WithImageInfo(result);
             JxlDecoderEvent::FrameComplete
         }

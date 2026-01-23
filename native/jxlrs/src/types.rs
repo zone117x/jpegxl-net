@@ -203,8 +203,8 @@ pub struct JxlExtraChannelInfo {
     pub name_length: u32,
     /// Type of extra channel.
     pub channel_type: JxlExtraChannelType,
-    /// Whether alpha is premultiplied (only for alpha channels).
-    pub alpha_premultiplied: bool,
+    /// Whether alpha is associated/premultiplied (only for alpha channels).
+    pub alpha_associated: bool,
 }
 
 /// Frame header information.
@@ -218,7 +218,7 @@ pub struct JxlFrameHeader {
     pub frame_width: u32,
     /// Frame height in pixels.
     pub frame_height: u32,
-    /// Frame name length in bytes (excluding null terminator).
+    /// Frame name length in bytes. Use jxl_decoder_get_frame_name to get the actual name.
     pub name_length: u32,
     /// Whether this is the last frame.
     pub is_last: bool,

@@ -17,7 +17,7 @@ public partial struct JxlExtraChannelInfo
 
     public JpegXL.Net.JxlExtraChannelType ChannelType => (JpegXL.Net.JxlExtraChannelType)_native.channel_type;
 
-    public bool AlphaPremultiplied => _native.alpha_premultiplied;
+    public bool AlphaAssociated => _native.alpha_associated;
 
     public float[] SpotColor
     {

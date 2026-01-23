@@ -142,13 +142,13 @@ fn convert_orientation(orientation: Orientation) -> JxlOrientation {
     }
 }
 
-pub(crate) fn convert_frame_header(header: &jxl::api::JxlFrameHeader) -> JxlFrameHeader {
+pub(crate) fn convert_frame_header(header: &jxl::api::JxlFrameHeader, is_last: bool) -> JxlFrameHeader {
     JxlFrameHeader {
         duration_ms: header.duration.unwrap_or(0.0) as f32,
         frame_width: header.size.0 as u32,
         frame_height: header.size.1 as u32,
         name_length: header.name.len() as u32,
-        is_last: false, // Will be updated when we know if there are more frames
+        is_last,
     }
 }
 
@@ -170,7 +170,7 @@ pub(crate) fn convert_extra_channel_info(channel: &jxl::api::JxlExtraChannel) ->
         exponent_bits_per_sample: 0,
         name_length: 0,
         channel_type,
-        alpha_premultiplied: channel.alpha_associated,
+        alpha_associated: channel.alpha_associated,
     }
 }
 
