@@ -37,6 +37,28 @@
             "cwd": "${workspaceFolder}",
             "console": "internalConsole",
             "stopAtEntry": false
+        },
+        {
+            "name": "JPEG XL Viewer (macOS HDR)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-macos-viewer",
+            "program": "${workspaceFolder}/examples/JpegXL.MacOS/bin/Debug/net10.0-macos/osx-arm64/JPEG XL Viewer.app/Contents/MacOS/JpegXL.MacOS",
+            "args": [],
+            "cwd": "${workspaceFolder}/examples/JpegXL.MacOS",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        },
+        {
+            "name": "JPEG XL Viewer (macOS HDR, with file)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-macos-viewer",
+            "program": "${workspaceFolder}/examples/JpegXL.MacOS/bin/Debug/net10.0-macos/osx-arm64/JPEG XL Viewer.app/Contents/MacOS/JpegXL.MacOS",
+            "args": ["${input:jxlFile}"],
+            "cwd": "${workspaceFolder}/examples/JpegXL.MacOS",
+            "console": "internalConsole",
+            "stopAtEntry": false
         }
     ],
     "inputs": [

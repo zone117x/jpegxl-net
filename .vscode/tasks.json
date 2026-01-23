@@ -26,6 +26,19 @@
             ],
             "problemMatcher": "$msCompile",
             "group": "build"
+        },
+        {
+            "label": "build-macos-viewer",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "build",
+                "${workspaceFolder}/examples/JpegXL.MacOS/JpegXL.MacOS.csproj",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary;ForceNoAlign"
+            ],
+            "problemMatcher": "$msCompile",
+            "group": "build"
         }
     ]
 }
