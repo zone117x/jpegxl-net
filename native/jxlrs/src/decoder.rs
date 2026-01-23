@@ -50,96 +50,45 @@ struct DecoderInner {
     /// Desired output pixel format.
     pixel_format: JxlPixelFormat,
     /// Decoder options (stored for reset).
-    options: DecoderOptions,
+    options: JxlDecoderOptionsC,
 }
 
-/// Decoder options mirroring JxlDecoderOptions from upstream.
-#[derive(Clone)]
-struct DecoderOptions {
-    adjust_orientation: bool,
-    render_spot_colors: bool,
-    coalescing: bool,
-    desired_intensity_target: Option<f32>,
-    skip_preview: bool,
-    progressive_mode: JxlProgressiveMode,
-    enable_output: bool,
-    pixel_limit: Option<usize>,
-    high_precision: bool,
-    premultiply_output: bool,
-    decode_extra_channels: bool,
-}
-
-impl Default for DecoderOptions {
-    fn default() -> Self {
-        Self {
-            adjust_orientation: true,
-            render_spot_colors: true,
-            coalescing: true,
-            desired_intensity_target: None,
-            skip_preview: true,
-            progressive_mode: JxlProgressiveMode::Pass,
-            enable_output: true,
-            pixel_limit: None,
-            high_precision: false,
-            premultiply_output: false,
-            decode_extra_channels: false,
-        }
-    }
-}
-
-impl DecoderOptions {
-    fn to_upstream(&self) -> JxlDecoderOptions {
-        let mut options = JxlDecoderOptions::default();
-        options.adjust_orientation = self.adjust_orientation;
-        options.render_spot_colors = self.render_spot_colors;
-        options.coalescing = self.coalescing;
-        options.desired_intensity_target = self.desired_intensity_target;
-        options.skip_preview = self.skip_preview;
-        options.progressive_mode = match self.progressive_mode {
-            JxlProgressiveMode::Eager => UpstreamProgressiveMode::Eager,
-            JxlProgressiveMode::Pass => UpstreamProgressiveMode::Pass,
-            JxlProgressiveMode::FullFrame => UpstreamProgressiveMode::FullFrame,
-        };
-        options.enable_output = self.enable_output;
-        options.pixel_limit = self.pixel_limit;
-        options.high_precision = self.high_precision;
-        options.premultiply_output = self.premultiply_output;
-        options
-    }
-
-    fn from_c(c_options: &JxlDecoderOptionsC) -> Self {
-        Self {
-            adjust_orientation: c_options.adjust_orientation,
-            render_spot_colors: c_options.render_spot_colors,
-            coalescing: c_options.coalescing,
-            desired_intensity_target: if c_options.desired_intensity_target > 0.0 {
-                Some(c_options.desired_intensity_target)
-            } else {
-                None
-            },
-            skip_preview: c_options.skip_preview,
-            progressive_mode: c_options.progressive_mode,
-            enable_output: c_options.enable_output,
-            pixel_limit: if c_options.pixel_limit > 0 {
-                Some(c_options.pixel_limit)
-            } else {
-                None
-            },
-            high_precision: c_options.high_precision,
-            premultiply_output: c_options.premultiply_alpha,
-            decode_extra_channels: c_options.decode_extra_channels,
-        }
-    }
+/// Converts C-compatible options to upstream decoder options.
+fn convert_options_to_upstream(c_options: &JxlDecoderOptionsC) -> JxlDecoderOptions {
+    let mut options = JxlDecoderOptions::default();
+    options.adjust_orientation = c_options.adjust_orientation;
+    options.render_spot_colors = c_options.render_spot_colors;
+    options.coalescing = c_options.coalescing;
+    options.desired_intensity_target = if c_options.desired_intensity_target > 0.0 {
+        Some(c_options.desired_intensity_target)
+    } else {
+        None
+    };
+    options.skip_preview = c_options.skip_preview;
+    options.progressive_mode = match c_options.progressive_mode {
+        JxlProgressiveMode::Eager => UpstreamProgressiveMode::Eager,
+        JxlProgressiveMode::Pass => UpstreamProgressiveMode::Pass,
+        JxlProgressiveMode::FullFrame => UpstreamProgressiveMode::FullFrame,
+    };
+    options.enable_output = c_options.enable_output;
+    options.pixel_limit = if c_options.pixel_limit > 0 {
+        Some(c_options.pixel_limit)
+    } else {
+        None
+    };
+    options.high_precision = c_options.high_precision;
+    options.premultiply_output = c_options.premultiply_alpha;
+    options
 }
 
 impl DecoderInner {
     fn new() -> Self {
-        Self::with_options(DecoderOptions::default())
+        Self::with_options(JxlDecoderOptionsC::default())
     }
 
-    fn with_options(options: DecoderOptions) -> Self {
+    fn with_options(options: JxlDecoderOptionsC) -> Self {
         Self {
-            state: DecoderState::Initialized(UpstreamDecoder::new(options.to_upstream())),
+            state: DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&options))),
             data: Vec::new(),
             data_offset: 0,
             basic_info: None,
@@ -151,7 +100,7 @@ impl DecoderInner {
     }
 
     fn reset(&mut self) {
-        self.state = DecoderState::Initialized(UpstreamDecoder::new(self.options.to_upstream()));
+        self.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&self.options)));
         self.data.clear();
         self.data_offset = 0;
         self.basic_info = None;
@@ -197,13 +146,12 @@ pub unsafe extern "C" fn jxl_decoder_create_with_options(
 ) -> *mut NativeDecoderHandle {
     clear_last_error();
 
-    let decoder_options = if options.is_null() {
-        DecoderOptions::default()
+    let decoder = if options.is_null() {
+        Box::new(DecoderInner::new())
     } else {
-        DecoderOptions::from_c(unsafe { &*options })
+        Box::new(DecoderInner::with_options(unsafe { (*options).clone() }))
     };
 
-    let decoder = Box::new(DecoderInner::with_options(decoder_options));
     Box::into_raw(decoder) as *mut NativeDecoderHandle
 }
 
@@ -370,7 +318,7 @@ pub unsafe extern "C" fn jxl_decoder_process(
                     JxlDecoderEvent::NeedMoreInput
                 }
                 Err(e) => {
-                    inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+                    inner.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&inner.options)));
                     set_last_error(format!("Failed to decode header: {}", e));
                     JxlDecoderEvent::Error
                 }
@@ -408,7 +356,7 @@ pub unsafe extern "C" fn jxl_decoder_process(
                     JxlDecoderEvent::NeedMoreInput
                 }
                 Err(e) => {
-                    inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+                    inner.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&inner.options)));
                     set_last_error(format!("Failed to decode frame header: {}", e));
                     JxlDecoderEvent::Error
                 }
@@ -564,7 +512,7 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels(
             JxlDecoderEvent::NeedMoreInput
         }
         Err(e) => {
-            inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+            inner.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&inner.options)));
             set_last_error(format!("Pixel decode error: {}", e));
             JxlDecoderEvent::Error
         }
@@ -760,7 +708,7 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels_with_extra_channels(
             JxlDecoderEvent::NeedMoreInput
         }
         Err(e) => {
-            inner.state = DecoderState::Initialized(UpstreamDecoder::new(inner.options.to_upstream()));
+            inner.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&inner.options)));
             set_last_error(format!("Pixel decode error: {}", e));
             JxlDecoderEvent::Error
         }
