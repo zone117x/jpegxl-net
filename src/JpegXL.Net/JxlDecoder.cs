@@ -110,15 +110,8 @@ public sealed unsafe class JxlDecoder : IDisposable
     /// <exception cref="JxlException">Thrown if setting input fails.</exception>
     public void SetInput(ReadOnlySpan<byte> data)
     {
-        ThrowIfDisposed();
-
-        fixed (byte* ptr = data)
-        {
-            var status = NativeMethods.jxl_decoder_set_input(_handle, ptr, (UIntPtr)data.Length);
-            ThrowIfFailed(status);
-        }
-
-        _basicInfo = null;
+        Reset();
+        AppendInput(data);
     }
 
     /// <summary>
@@ -314,8 +307,7 @@ public sealed unsafe class JxlDecoder : IDisposable
     /// </summary>
     /// <param name="data">Additional JXL-encoded data to append.</param>
     /// <remarks>
-    /// Unlike <see cref="SetInput"/>, this method appends data to the existing buffer
-    /// without resetting the decoder state. Use this for streaming scenarios where
+    /// Does not reset the decoder state. Use this for streaming scenarios where
     /// data arrives incrementally.
     /// </remarks>
     /// <exception cref="JxlException">Thrown if appending input fails.</exception>

@@ -74,22 +74,10 @@ namespace JpegXL.Net.Native
         internal static extern JxlStatus jxl_decoder_reset(NativeDecoderHandle* decoder);
 
         /// <summary>
-        ///  Sets the input data for the decoder (one-shot decoding).
+        ///  Appends input data to the decoder's buffer.
         ///
         ///  The decoder copies the data internally, so the caller can free
-        ///  the input buffer after this call.
-        ///
-        ///  # Safety
-        ///  - `decoder` must be a valid decoder pointer.
-        ///  - `data` must point to `size` readable bytes.
-        /// </summary>
-        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_input", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_set_input(NativeDecoderHandle* decoder, byte* data, System.UIntPtr size);
-
-        /// <summary>
-        ///  Appends more input data to the decoder's buffer (streaming decoding).
-        ///
-        ///  Unlike `jxl_decoder_set_input`, this does not reset the decoder state,
+        ///  the input buffer after this call. Does not reset decoder state,
         ///  allowing incremental feeding of data.
         ///
         ///  # Safety
@@ -368,6 +356,14 @@ namespace JpegXL.Net.Native
         ///  Minimum nits for tone mapping.
         /// </summary>
         public float min_nits;
+        /// <summary>
+        ///  Whether linear_below is relative to max display luminance.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool relative_to_max_display;
+        /// <summary>
+        ///  Linear tone mapping threshold (nits, or ratio if relative_to_max_display).
+        /// </summary>
+        public float linear_below;
         /// <summary>
         ///  Image orientation.
         /// </summary>

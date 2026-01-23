@@ -150,6 +150,10 @@ pub struct JxlBasicInfo {
     pub intensity_target: f32,
     /// Minimum nits for tone mapping.
     pub min_nits: f32,
+    /// Whether linear_below is relative to max display luminance.
+    pub relative_to_max_display: bool,
+    /// Linear tone mapping threshold (nits, or ratio if relative_to_max_display).
+    pub linear_below: f32,
     /// Image orientation.
     pub orientation: JxlOrientation,
     /// Whether alpha is premultiplied.
@@ -236,6 +240,8 @@ impl Default for JxlBasicInfo {
             preview_height: 0,
             intensity_target: 255.0,
             min_nits: 0.0,
+            relative_to_max_display: false,
+            linear_below: 0.0,
             orientation: JxlOrientation::Identity,
             alpha_premultiplied: false,
             have_animation: false,

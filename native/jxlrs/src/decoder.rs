@@ -202,43 +202,10 @@ pub unsafe extern "C" fn jxl_decoder_reset(decoder: *mut NativeDecoderHandle) ->
 // Input
 // ============================================================================
 
-/// Sets the input data for the decoder (one-shot decoding).
+/// Appends input data to the decoder's buffer.
 ///
 /// The decoder copies the data internally, so the caller can free
-/// the input buffer after this call.
-///
-/// # Safety
-/// - `decoder` must be a valid decoder pointer.
-/// - `data` must point to `size` readable bytes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn jxl_decoder_set_input(
-    decoder: *mut NativeDecoderHandle,
-    data: *const u8,
-    size: usize,
-) -> JxlStatus {
-    let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
-
-    if data.is_null() && size > 0 {
-        set_last_error("Null data pointer with non-zero size");
-        return JxlStatus::InvalidArgument;
-    }
-
-    clear_last_error();
-
-    // Reset decoder state and store new data
-    inner.reset();
-    if size > 0 {
-        inner
-            .data
-            .extend_from_slice(unsafe { slice::from_raw_parts(data, size) });
-    }
-
-    JxlStatus::Success
-}
-
-/// Appends more input data to the decoder's buffer (streaming decoding).
-///
-/// Unlike `jxl_decoder_set_input`, this does not reset the decoder state,
+/// the input buffer after this call. Does not reset decoder state,
 /// allowing incremental feeding of data.
 ///
 /// # Safety

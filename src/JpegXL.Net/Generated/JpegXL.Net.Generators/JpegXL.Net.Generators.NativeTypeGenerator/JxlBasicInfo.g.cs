@@ -35,6 +35,10 @@ public readonly partial struct JxlBasicInfo
 
     public float MinNits => _native.min_nits;
 
+    public bool RelativeToMaxDisplay => _native.relative_to_max_display;
+
+    public float LinearBelow => _native.linear_below;
+
     public JpegXL.Net.JxlOrientation Orientation => (JpegXL.Net.JxlOrientation)_native.orientation;
 
     public bool AlphaPremultiplied => _native.alpha_premultiplied;

@@ -120,6 +120,8 @@ pub(crate) fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlBasicInfo 
         preview_height: preview_h as u32,
         intensity_target: info.tone_mapping.intensity_target,
         min_nits: info.tone_mapping.min_nits,
+        relative_to_max_display: info.tone_mapping.relative_to_max_display,
+        linear_below: info.tone_mapping.linear_below,
         orientation: convert_orientation(info.orientation),
         alpha_premultiplied: false, // TODO: Check actual value from extra channels
         have_animation: info.animation.is_some(),
