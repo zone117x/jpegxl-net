@@ -152,17 +152,18 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
 ";
 
         NSError? error;
-        var library = _device.CreateLibrary(shaderSource, new MTLCompileOptions(), out error);
+        using var compileOptions = new MTLCompileOptions();
+        using var library = _device.CreateLibrary(shaderSource, compileOptions, out error);
         if (library == null || error != null)
         {
             Console.WriteLine($"Failed to create shader library: {error?.LocalizedDescription}");
             return;
         }
 
-        var vertexFunction = library.CreateFunction("vertexShader");
-        var fragmentFunction = library.CreateFunction("fragmentShader");
+        using var vertexFunction = library.CreateFunction("vertexShader");
+        using var fragmentFunction = library.CreateFunction("fragmentShader");
 
-        var vertexDescriptor = new MTLVertexDescriptor();
+        using var vertexDescriptor = new MTLVertexDescriptor();
         // Position
         vertexDescriptor.Attributes[0].Format = MTLVertexFormat.Float2;
         vertexDescriptor.Attributes[0].Offset = 0;
@@ -175,7 +176,7 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         vertexDescriptor.Layouts[0].Stride = 16;
         vertexDescriptor.Layouts[0].StepFunction = MTLVertexStepFunction.PerVertex;
 
-        var pipelineDescriptor = new MTLRenderPipelineDescriptor
+        using var pipelineDescriptor = new MTLRenderPipelineDescriptor
         {
             VertexFunction = vertexFunction,
             FragmentFunction = fragmentFunction,
@@ -190,8 +191,8 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         }
 
         // Create pipeline state for texture array (animation)
-        var fragmentArrayFunction = library.CreateFunction("fragmentShaderArray");
-        var arrayPipelineDescriptor = new MTLRenderPipelineDescriptor
+        using var fragmentArrayFunction = library.CreateFunction("fragmentShaderArray");
+        using var arrayPipelineDescriptor = new MTLRenderPipelineDescriptor
         {
             VertexFunction = vertexFunction,
             FragmentFunction = fragmentArrayFunction,
@@ -304,7 +305,7 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
 
         // Create texture from the shared buffer
         // On Apple Silicon, this is very fast as it's already in unified memory
-        var textureDescriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
+        using var textureDescriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
             MTLPixelFormat.RGBA32Float,
             (nuint)width,
             (nuint)height,
@@ -343,7 +344,7 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         _currentArrayFrameIndex = 0;
 
         // Create texture array descriptor
-        var descriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
+        using var descriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
             MTLPixelFormat.RGBA32Float,
             (nuint)width,
             (nuint)height,
@@ -410,7 +411,7 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         _imageTexture = null;
 
         // Create texture array descriptor
-        var descriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
+        using var descriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
             MTLPixelFormat.RGBA32Float,
             (nuint)width,
             (nuint)height,
@@ -522,7 +523,7 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
     {
         if (_device == null) return;
 
-        var textureDescriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
+        using var textureDescriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
             MTLPixelFormat.RGBA32Float,
             (nuint)width,
             (nuint)height,
@@ -575,15 +576,11 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
             Bounds.Width * (_metalLayer.ContentsScale),
             Bounds.Height * (_metalLayer.ContentsScale));
 
-        var drawable = _metalLayer.NextDrawable();
+        using var drawable = _metalLayer.NextDrawable();
         if (drawable == null) return;
 
-        var commandBuffer = _commandQueue.CommandBuffer();
-        if (commandBuffer == null)
-        {
-            drawable.Dispose();
-            return;
-        }
+        using var commandBuffer = _commandQueue.CommandBuffer();
+        if (commandBuffer == null) return;
 
         using var passDescriptor = new MTLRenderPassDescriptor();
         passDescriptor.ColorAttachments[0].Texture = drawable.Texture;
@@ -591,13 +588,8 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         passDescriptor.ColorAttachments[0].StoreAction = MTLStoreAction.Store;
         passDescriptor.ColorAttachments[0].ClearColor = new MTLClearColor(0.1, 0.1, 0.1, 1.0);
 
-        var encoder = commandBuffer.CreateRenderCommandEncoder(passDescriptor);
-        if (encoder == null)
-        {
-            commandBuffer.Dispose();
-            drawable.Dispose();
-            return;
-        }
+        using var encoder = commandBuffer.CreateRenderCommandEncoder(passDescriptor);
+        if (encoder == null) return;
 
         // Use array pipeline for animations, single texture pipeline for static images
         if (useArrayTexture)
@@ -644,12 +636,9 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
 
         encoder.DrawPrimitives(MTLPrimitiveType.TriangleStrip, 0, 4);
         encoder.EndEncoding();
-        encoder.Dispose();
 
         commandBuffer.PresentDrawable(drawable);
         commandBuffer.Commit();
-        // Note: After Commit(), Metal takes ownership of commandBuffer and drawable
-        // They should NOT be disposed here
     }
 
     // Drag and drop support
