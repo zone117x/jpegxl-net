@@ -19,6 +19,7 @@ public class MainWindow : NSWindow
     private List<float>? _frameDurations;  // Only store durations, pixels are on GPU
     private int _currentFrameIndex;
     private NSTimer? _animationTimer;
+    private DateTime _frameStartTime;
     private bool _isPlaying;
     private JxlBasicInfo? _currentInfo;
 
@@ -289,58 +290,48 @@ public class MainWindow : NSWindow
     }
 
     /// <summary>
-    /// Decodes an animated image directly into GPU-shared memory.
+    /// Decodes an animated image directly into GPU-shared memory using a single decoder.
     /// Returns only the frame durations - pixel data goes directly to GPU texture array.
     /// </summary>
     private List<float> DecodeAnimatedImageToGpu(byte[] data, JxlBasicInfo info)
     {
-
         var durations = new List<float>();
         var width = (int)info.Width;
         var height = (int)info.Height;
-        var pixelCount = width * height * 4;
 
         var options = new JxlDecodeOptions
         {
             PremultiplyAlpha = true
         };
 
-        // We need a scratch buffer to skip frames (decoder requires output buffer)
-        var scratchBuffer = new float[pixelCount];
-
-        // First pass: count frames and collect durations
-        using (var decoder = new JxlDecoder(options))
+        // First pass: collect frame metadata using SkipFrame (no pixel buffer needed!)
+        using (var metaDecoder = new JxlDecoder(options))
         {
-            decoder.SetInput(data);
-            decoder.SetPixelFormat(JxlPixelFormat.Rgba32F);
-            decoder.ReadInfo();
+            metaDecoder.SetInput(data);
+            metaDecoder.SetPixelFormat(JxlPixelFormat.Rgba32F);
+            metaDecoder.ReadInfo();
 
-            while (decoder.HasMoreFrames())
+            while (metaDecoder.HasMoreFrames())
             {
-                var evt = decoder.Process();
+                var evt = metaDecoder.Process();
 
                 while (evt == JxlDecoderEvent.NeedMoreInput || evt == JxlDecoderEvent.HaveBasicInfo)
-                {
-                    evt = decoder.Process();
-                }
+                    evt = metaDecoder.Process();
 
                 if (evt == JxlDecoderEvent.Complete)
                     break;
 
-                float duration = 100f;
                 if (evt == JxlDecoderEvent.HaveFrameHeader)
                 {
-                    var header = decoder.GetFrameHeader();
-                    duration = header.DurationMs > 0 ? header.DurationMs : 100f;
+                    var header = metaDecoder.GetFrameHeader();
+                    float duration = header.DurationMs > 0 ? header.DurationMs : 100f;
                     durations.Add(duration);
-                    evt = decoder.Process();
+                    evt = metaDecoder.Process();
                 }
 
-                // Must provide buffer to skip frame - decoder needs somewhere to write
+                // Skip frame without allocating pixel buffer
                 if (evt == JxlDecoderEvent.NeedOutputBuffer)
-                {
-                    decoder.ReadPixels(scratchBuffer.AsSpan());
-                }
+                    metaDecoder.SkipFrame();
 
                 if (durations.Count > 1000) break; // Safety limit
             }
@@ -348,53 +339,41 @@ public class MainWindow : NSWindow
 
         if (durations.Count == 0) return durations;
 
-        // Second pass: decode frames directly to GPU
-        _metalView!.DecodeAnimationDirectToGpu(durations.Count, width, height, (index, pixelSpan) =>
+        // Prepare GPU texture array
+        _metalView!.PrepareAnimationTextures(durations.Count, width, height);
+
+        // Second pass: decode all frames sequentially with a single decoder
+        using var decoder = new JxlDecoder(options);
+        decoder.SetInput(data);
+        decoder.SetPixelFormat(JxlPixelFormat.Rgba32F);
+        decoder.ReadInfo();
+
+        int frameIndex = 0;
+        while (decoder.HasMoreFrames() && frameIndex < durations.Count)
         {
+            var evt = decoder.Process();
 
-            // Create a new decoder for this frame
-            using var decoder = new JxlDecoder(options);
-            decoder.SetInput(data);
-            decoder.SetPixelFormat(JxlPixelFormat.Rgba32F);
-            decoder.ReadInfo();
+            while (evt == JxlDecoderEvent.NeedMoreInput || evt == JxlDecoderEvent.HaveBasicInfo)
+                evt = decoder.Process();
 
-            // Skip to the target frame
-            var currentFrame = 0;
-            while (decoder.HasMoreFrames())
+            if (evt == JxlDecoderEvent.Complete)
+                break;
+
+            if (evt == JxlDecoderEvent.HaveFrameHeader)
+                evt = decoder.Process();
+
+            if (evt == JxlDecoderEvent.NeedOutputBuffer)
             {
-                var evt = decoder.Process();
-
-                while (evt == JxlDecoderEvent.NeedMoreInput || evt == JxlDecoderEvent.HaveBasicInfo)
+                // Decode frame directly to GPU-shared memory
+                _metalView.DecodeFrameToGpu(frameIndex, pixelSpan =>
                 {
-                    evt = decoder.Process();
-                }
-
-                if (evt == JxlDecoderEvent.Complete)
-                    break;
-
-                if (evt == JxlDecoderEvent.HaveFrameHeader)
-                {
-                    evt = decoder.Process();
-                }
-
-                if (evt == JxlDecoderEvent.NeedOutputBuffer)
-                {
-                    if (currentFrame == index)
-                    {
-                        // Decode this frame directly to GPU-shared memory
-                        decoder.ReadPixels(pixelSpan);
-                        return;
-                    }
-                    else
-                    {
-                        // Skip this frame by decoding to scratch buffer
-                        decoder.ReadPixels(scratchBuffer.AsSpan());
-                    }
-                    currentFrame++;
-                }
+                    decoder.ReadPixels(pixelSpan);
+                });
+                frameIndex++;
             }
-        });
+        }
 
+        _metalView.FinishAnimationSetup();
         return durations;
     }
 
@@ -413,14 +392,16 @@ public class MainWindow : NSWindow
 
         StopAnimation();
 
-        var interval = Math.Max(0.016, _frameDurations[_currentFrameIndex] / 1000.0);
-        _animationTimer = NSTimer.CreateScheduledTimer(interval, true, timer => OnAnimationTick());
+        _frameStartTime = DateTime.UtcNow;
+        // Single timer at ~60fps, never recreated during playback
+        _animationTimer = NSTimer.CreateScheduledTimer(0.016, true, _ => OnAnimationTick());
         _isPlaying = true;
     }
 
     private void StopAnimation()
     {
         _animationTimer?.Invalidate();
+        _animationTimer?.Dispose();
         _animationTimer = null;
         _isPlaying = false;
     }
@@ -429,15 +410,14 @@ public class MainWindow : NSWindow
     {
         if (_frameDurations == null || _frameDurations.Count == 0) return;
 
-        _currentFrameIndex = (_currentFrameIndex + 1) % _frameDurations.Count;
-        DisplayFrame(_currentFrameIndex);
+        var elapsed = (DateTime.UtcNow - _frameStartTime).TotalMilliseconds;
+        var frameDuration = _frameDurations[_currentFrameIndex];
 
-        // Update timer interval for next frame
-        if (_animationTimer != null)
+        if (elapsed >= frameDuration)
         {
-            _animationTimer.Invalidate();
-            var nextDuration = _frameDurations[_currentFrameIndex] / 1000.0;
-            _animationTimer = NSTimer.CreateScheduledTimer(Math.Max(0.016, nextDuration), true, timer => OnAnimationTick());
+            _currentFrameIndex = (_currentFrameIndex + 1) % _frameDurations.Count;
+            DisplayFrame(_currentFrameIndex);
+            _frameStartTime = DateTime.UtcNow;
         }
     }
 

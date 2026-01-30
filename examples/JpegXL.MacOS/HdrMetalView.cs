@@ -386,15 +386,16 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         DisplayArrayFrame(0);
     }
 
+    // Shared buffer for sequential frame decoding
+    private IMTLBuffer? _decodingBuffer;
+    private nint _decodingBufferPtr;
+    private int _decodingPixelCount;
+
     /// <summary>
-    /// Decodes animation frames directly into GPU-shared memory, eliminating managed array allocations.
-    /// Each frame is decoded into a shared buffer and immediately uploaded to the texture array.
+    /// Prepares GPU resources for animation frame decoding.
+    /// Call this before DecodeFrameToGpu() for each frame.
     /// </summary>
-    /// <param name="frameCount">Number of frames to decode.</param>
-    /// <param name="width">Width of each frame in pixels.</param>
-    /// <param name="height">Height of each frame in pixels.</param>
-    /// <param name="decodeFrame">Action that decodes a specific frame into the provided Span.</param>
-    public void DecodeAnimationDirectToGpu(int frameCount, int width, int height, Action<int, Span<float>> decodeFrame)
+    public void PrepareAnimationTextures(int frameCount, int width, int height)
     {
         if (_device == null || frameCount == 0) return;
 
@@ -422,41 +423,60 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         _animationTextureArray?.Dispose();
         _animationTextureArray = _device.CreateTexture(descriptor);
 
-        // Create a single shared buffer for decoding (reused for each frame)
-        var pixelCount = width * height * 4;
-        var bufferSize = (nuint)(pixelCount * sizeof(float));
-        using var sharedBuffer = _device.CreateBuffer(bufferSize, MTLResourceOptions.StorageModeShared);
-        if (sharedBuffer == null) return;
-
-        var cpuPtr = sharedBuffer.Contents;
-        Span<float> pixelSpan;
-        unsafe
-        {
-            pixelSpan = new Span<float>((void*)cpuPtr, pixelCount);
-        }
-
-        var bytesPerRow = (nuint)(width * 4 * sizeof(float));
-        var bytesPerImage = (nuint)(width * height * 4 * sizeof(float));
-
-        // Decode each frame directly to shared buffer, then upload to texture array
-        for (int i = 0; i < frameCount; i++)
-        {
-            // Decode frame into shared buffer
-            decodeFrame(i, pixelSpan);
-
-            // Upload to texture array slice (unified memory - very fast on Apple Silicon)
-            _animationTextureArray?.ReplaceRegion(
-                new MTLRegion(new MTLOrigin(0, 0, 0), new MTLSize(width, height, 1)),
-                0,
-                (nuint)i,
-                cpuPtr,
-                bytesPerRow,
-                bytesPerImage);
-        }
+        // Create shared buffer for decoding (reused for each frame)
+        _decodingPixelCount = width * height * 4;
+        var bufferSize = (nuint)(_decodingPixelCount * sizeof(float));
+        _decodingBuffer?.Dispose();
+        _decodingBuffer = _device.CreateBuffer(bufferSize, MTLResourceOptions.StorageModeShared);
+        _decodingBufferPtr = _decodingBuffer?.Contents ?? nint.Zero;
 
         // Create buffer for frame index uniform
         _frameIndexBuffer?.Dispose();
         _frameIndexBuffer = _device.CreateBuffer((nuint)sizeof(int), MTLResourceOptions.StorageModeShared);
+    }
+
+    /// <summary>
+    /// Decodes a single frame directly into GPU-shared memory.
+    /// Call PrepareAnimationTextures() first, then call this for each frame in sequence.
+    /// </summary>
+    public void DecodeFrameToGpu(int frameIndex, Action<Span<float>> decodeAction)
+    {
+        if (_animationTextureArray == null || _decodingBuffer == null || _decodingBufferPtr == nint.Zero)
+            return;
+
+        // Create span pointing to shared buffer
+        Span<float> pixelSpan;
+        unsafe
+        {
+            pixelSpan = new Span<float>((void*)_decodingBufferPtr, _decodingPixelCount);
+        }
+
+        // Decode frame into shared buffer
+        decodeAction(pixelSpan);
+
+        // Upload to texture array slice
+        var bytesPerRow = (nuint)(_imageWidth * 4 * sizeof(float));
+        var bytesPerImage = (nuint)(_imageWidth * _imageHeight * 4 * sizeof(float));
+        _animationTextureArray.ReplaceRegion(
+            new MTLRegion(new MTLOrigin(0, 0, 0), new MTLSize(_imageWidth, _imageHeight, 1)),
+            0,
+            (nuint)frameIndex,
+            _decodingBufferPtr,
+            bytesPerRow,
+            bytesPerImage);
+    }
+
+    /// <summary>
+    /// Finishes animation setup and displays the first frame.
+    /// Call after all frames have been decoded with DecodeFrameToGpu().
+    /// </summary>
+    public void FinishAnimationSetup()
+    {
+        // Dispose decoding buffer - no longer needed
+        _decodingBuffer?.Dispose();
+        _decodingBuffer = null;
+        _decodingBufferPtr = nint.Zero;
+        _decodingPixelCount = 0;
 
         // Display first frame
         DisplayArrayFrame(0);
@@ -559,16 +579,25 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         if (drawable == null) return;
 
         var commandBuffer = _commandQueue.CommandBuffer();
-        if (commandBuffer == null) return;
+        if (commandBuffer == null)
+        {
+            drawable.Dispose();
+            return;
+        }
 
-        var passDescriptor = new MTLRenderPassDescriptor();
+        using var passDescriptor = new MTLRenderPassDescriptor();
         passDescriptor.ColorAttachments[0].Texture = drawable.Texture;
         passDescriptor.ColorAttachments[0].LoadAction = MTLLoadAction.Clear;
         passDescriptor.ColorAttachments[0].StoreAction = MTLStoreAction.Store;
         passDescriptor.ColorAttachments[0].ClearColor = new MTLClearColor(0.1, 0.1, 0.1, 1.0);
 
         var encoder = commandBuffer.CreateRenderCommandEncoder(passDescriptor);
-        if (encoder == null) return;
+        if (encoder == null)
+        {
+            commandBuffer.Dispose();
+            drawable.Dispose();
+            return;
+        }
 
         // Use array pipeline for animations, single texture pipeline for static images
         if (useArrayTexture)
@@ -615,9 +644,12 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
 
         encoder.DrawPrimitives(MTLPrimitiveType.TriangleStrip, 0, 4);
         encoder.EndEncoding();
+        encoder.Dispose();
 
         commandBuffer.PresentDrawable(drawable);
         commandBuffer.Commit();
+        // Note: After Commit(), Metal takes ownership of commandBuffer and drawable
+        // They should NOT be disposed here
     }
 
     // Drag and drop support
@@ -653,6 +685,18 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
     {
         _imageTexture?.Dispose();
         _imageTexture = null;
+
+        // Dispose animation resources
+        _animationTextureArray?.Dispose();
+        _animationTextureArray = null;
+        _frameIndexBuffer?.Dispose();
+        _frameIndexBuffer = null;
+        _decodingBuffer?.Dispose();
+        _decodingBuffer = null;
+        _decodingBufferPtr = nint.Zero;
+        _decodingPixelCount = 0;
+        _animationFrameCount = 0;
+
         _imageWidth = 0;
         _imageHeight = 0;
         _isHdr = false;
@@ -667,6 +711,12 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
             _vertexBuffer?.Dispose();
             _pipelineState?.Dispose();
             _commandQueue?.Dispose();
+
+            // Dispose animation resources
+            _animationTextureArray?.Dispose();
+            _frameIndexBuffer?.Dispose();
+            _arrayPipelineState?.Dispose();
+            _decodingBuffer?.Dispose();
         }
         base.Dispose(disposing);
     }

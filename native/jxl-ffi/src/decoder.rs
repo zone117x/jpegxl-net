@@ -539,6 +539,61 @@ pub unsafe extern "C" fn jxl_decoder_has_more_frames(
     }
 }
 
+/// Skips the current frame without decoding pixels.
+///
+/// Call this after `jxl_decoder_process` returns `NeedOutputBuffer` when you
+/// only need frame metadata (duration, name, etc.) and don't need the pixels.
+/// This is much faster than `jxl_decoder_read_pixels` as it doesn't decode
+/// pixel data.
+///
+/// After successful completion, call `jxl_decoder_process` again to
+/// get `FrameComplete` or continue with the next frame.
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_skip_frame(
+    decoder: *mut NativeDecoderHandle,
+) -> JxlDecoderEvent {
+    let inner = get_decoder_mut!(decoder, JxlDecoderEvent::Error);
+
+    clear_last_error();
+
+    // Take ownership of decoder state
+    let state = std::mem::replace(&mut inner.state, DecoderState::Processing);
+
+    let decoder_with_frame = match state {
+        DecoderState::WithFrameInfo(d) => d,
+        other => {
+            inner.state = other;
+            set_last_error("Must call jxl_decoder_process until NeedOutputBuffer first");
+            return JxlDecoderEvent::Error;
+        }
+    };
+
+    // Skip frame without decoding pixels
+    let mut input_slice: &[u8] = &inner.data[inner.data_offset..];
+    let len_before = input_slice.len();
+    let result = decoder_with_frame.skip_frame(&mut input_slice);
+    inner.data_offset += len_before - input_slice.len();
+
+    match result {
+        Ok(ProcessingResult::Complete { result }) => {
+            inner.state = DecoderState::WithImageInfo(result);
+            JxlDecoderEvent::FrameComplete
+        }
+        Ok(ProcessingResult::NeedsMoreInput { fallback, .. }) => {
+            inner.state = DecoderState::WithFrameInfo(fallback);
+            JxlDecoderEvent::NeedMoreInput
+        }
+        Err(e) => {
+            inner.reset_state();
+            set_last_error(format!("Skip frame error: {}", e));
+            JxlDecoderEvent::Error
+        }
+    }
+}
+
 // ============================================================================
 // Extra Channels
 // ============================================================================

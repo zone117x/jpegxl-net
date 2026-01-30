@@ -177,6 +177,23 @@ namespace JpegXL.Net
         public static extern bool jxl_decoder_has_more_frames(NativeDecoderHandle* decoder);
 
         /// <summary>
+        ///  Skips the current frame without decoding pixels.
+        ///
+        ///  Call this after `jxl_decoder_process` returns `NeedOutputBuffer` when you
+        ///  only need frame metadata (duration, name, etc.) and don't need the pixels.
+        ///  This is much faster than `jxl_decoder_read_pixels` as it doesn't decode
+        ///  pixel data.
+        ///
+        ///  After successful completion, call `jxl_decoder_process` again to
+        ///  get `FrameComplete` or continue with the next frame.
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_skip_frame", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlDecoderEvent jxl_decoder_skip_frame(NativeDecoderHandle* decoder);
+
+        /// <summary>
         ///  Calculates the required buffer size for a specific extra channel.
         ///
         ///  # Arguments

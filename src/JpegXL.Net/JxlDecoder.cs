@@ -463,6 +463,29 @@ public sealed unsafe class JxlDecoder : IDisposable
     }
 
     /// <summary>
+    /// Skips the current frame without decoding pixels.
+    /// </summary>
+    /// <returns>The event indicating what happened.</returns>
+    /// <remarks>
+    /// Call this method after <see cref="Process"/> returns <see cref="JxlDecoderEvent.NeedOutputBuffer"/>
+    /// when you only need frame metadata (duration, name, etc.) and don't need the pixel data.
+    /// This is more efficient than calling <see cref="ReadPixels"/> with a scratch buffer.
+    /// </remarks>
+    /// <exception cref="JxlException">Thrown if skipping fails.</exception>
+    public JxlDecoderEvent SkipFrame()
+    {
+        ThrowIfDisposed();
+
+        var evt = NativeMethods.jxl_decoder_skip_frame(_handle);
+        if (evt == JxlDecoderEvent.Error)
+        {
+            var message = GetLastError();
+            throw new JxlException(JxlStatus.Error, message);
+        }
+        return evt;
+    }
+
+    /// <summary>
     /// Gets the required buffer size for a specific extra channel.
     /// </summary>
     /// <param name="index">The extra channel index (0-based).</param>
