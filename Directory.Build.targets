@@ -6,7 +6,7 @@
 
   <PropertyGroup>
     <!-- Base path to native Rust build output (relative to solution root) -->
-    <JxlrsNativeBuildRoot>$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildProjectDirectory), 'Directory.Build.targets'))/native/jxlrs/target</JxlrsNativeBuildRoot>
+    <JxlrsNativeBuildRoot>$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildProjectDirectory), 'Directory.Build.targets'))/native/jxl-ffi/target</JxlrsNativeBuildRoot>
 
     <!-- Determine the Rust target triple based on current platform -->
     <JxlrsRustTarget Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">x86_64-pc-windows-msvc</JxlrsRustTarget>
@@ -17,9 +17,9 @@
     <JxlrsRustTarget Condition="$([MSBuild]::IsOSPlatform('OSX')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">aarch64-apple-darwin</JxlrsRustTarget>
 
     <!-- Determine native library file name -->
-    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Windows'))">jxlrs.dll</JxlrsNativeLibraryName>
-    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libjxlrs.so</JxlrsNativeLibraryName>
-    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libjxlrs.dylib</JxlrsNativeLibraryName>
+    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Windows'))">jxl_ffi.dll</JxlrsNativeLibraryName>
+    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libjxl_ffi.so</JxlrsNativeLibraryName>
+    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libjxl_ffi.dylib</JxlrsNativeLibraryName>
 
     <!-- Full path to native library in Rust build output (with target triple) -->
     <JxlrsTargetNativePath>$(JxlrsNativeBuildRoot)/$(JxlrsRustTarget)/release/$(JxlrsNativeLibraryName)</JxlrsTargetNativePath>
@@ -54,6 +54,6 @@
   </Target>
 
   <Target Name="WarnJxlrsNativeLibraryMissing" AfterTargets="Build" Condition="!Exists('$(JxlrsLocalNativePath)')">
-    <Warning Text="Native library not found at $(JxlrsLocalNativePath). Run 'native/jxlrs/build-native.sh' to build native libraries." />
+    <Warning Text="Native library not found at $(JxlrsLocalNativePath). Run 'native/jxl-ffi/build-native.sh' to build native libraries." />
   </Target>
 </Project>

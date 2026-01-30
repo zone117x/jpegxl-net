@@ -12,7 +12,7 @@ namespace JpegXL.Net.Native
 {
     internal static unsafe partial class NativeMethods
     {
-        const string __DllName = "jxlrs";
+        const string __DllName = "jxl_ffi";
 
 
 

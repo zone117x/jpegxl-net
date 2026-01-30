@@ -28,9 +28,9 @@ get_rust_target() {
 # Get library name for RID
 get_lib_name() {
     case "$1" in
-        win-*) echo "jxlrs.dll" ;;
-        linux-*) echo "libjxlrs.so" ;;
-        osx-*) echo "libjxlrs.dylib" ;;
+        win-*) echo "jxl_ffi.dll" ;;
+        linux-*) echo "libjxl_ffi.so" ;;
+        osx-*) echo "libjxl_ffi.dylib" ;;
         *) echo "" ;;
     esac
 }
@@ -190,7 +190,7 @@ fi
 echo ""
 echo "Copying C header..."
 mkdir -p "$OUTPUT_DIR/include"
-cp include/jxlrs.h "$OUTPUT_DIR/include/"
+cp include/jxl_ffi.h "$OUTPUT_DIR/include/"
 
 echo ""
 echo "=========================================="

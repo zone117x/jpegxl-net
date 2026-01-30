@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NATIVE_ROOT="$SCRIPT_DIR/native/jxlrs/target"
+NATIVE_ROOT="$SCRIPT_DIR/native/jxl-ffi/target"
 RUNTIMES_ROOT="$SCRIPT_DIR/src/JpegXL.Net/runtimes"
 
 echo "Collecting native libraries into runtimes folders..."
@@ -29,16 +29,16 @@ copy_if_exists() {
 }
 
 # Windows
-copy_if_exists "x86_64-pc-windows-msvc" "win-x64" "jxlrs.dll"
-copy_if_exists "aarch64-pc-windows-msvc" "win-arm64" "jxlrs.dll"
+copy_if_exists "x86_64-pc-windows-msvc" "win-x64" "jxl_ffi.dll"
+copy_if_exists "aarch64-pc-windows-msvc" "win-arm64" "jxl_ffi.dll"
 
 # Linux
-copy_if_exists "x86_64-unknown-linux-gnu" "linux-x64" "libjxlrs.so"
-copy_if_exists "aarch64-unknown-linux-gnu" "linux-arm64" "libjxlrs.so"
+copy_if_exists "x86_64-unknown-linux-gnu" "linux-x64" "libjxl_ffi.so"
+copy_if_exists "aarch64-unknown-linux-gnu" "linux-arm64" "libjxl_ffi.so"
 
 # macOS
-copy_if_exists "x86_64-apple-darwin" "osx-x64" "libjxlrs.dylib"
-copy_if_exists "aarch64-apple-darwin" "osx-arm64" "libjxlrs.dylib"
+copy_if_exists "x86_64-apple-darwin" "osx-x64" "libjxl_ffi.dylib"
+copy_if_exists "aarch64-apple-darwin" "osx-arm64" "libjxl_ffi.dylib"
 
 echo ""
 echo "Done. Native libraries collected:"

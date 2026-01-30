@@ -2,4 +2,6 @@
   <Project Path="src/JpegXL.Net/JpegXL.Net.csproj" />
   <Project Path="src/JpegXL.Net.Generators/JpegXL.Net.Generators.csproj" />
   <Project Path="test/JpegXL.Net.Tests/JpegXL.Net.Tests.csproj" />
+  <Project Path="examples/JpegXL.Viewer/JpegXL.Viewer.csproj" />
+  <Project Path="examples/JpegXL.MacOS/JpegXL.MacOS.csproj" />
 </Solution>

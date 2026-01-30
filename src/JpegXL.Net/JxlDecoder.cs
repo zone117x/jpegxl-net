@@ -18,7 +18,7 @@ using NativeStatus = Native.JxlStatus;
 /// JPEG XL decoder for decoding JXL images.
 /// </summary>
 /// <remarks>
-/// This class wraps the native jxlrs decoder and provides a managed interface
+/// This class wraps the native jxl_ffi decoder and provides a managed interface
 /// for decoding JPEG XL images. It implements <see cref="IDisposable"/> and
 /// should be disposed when no longer needed.
 /// </remarks>

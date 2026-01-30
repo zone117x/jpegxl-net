@@ -6,9 +6,9 @@
 
   <PropertyGroup>
     <!-- Determine the RID-specific native library name and path -->
-    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Windows'))">jxlrs.dll</JxlrsNativeLibraryName>
-    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libjxlrs.so</JxlrsNativeLibraryName>
-    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libjxlrs.dylib</JxlrsNativeLibraryName>
+    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Windows'))">jxl_ffi.dll</JxlrsNativeLibraryName>
+    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libjxl_ffi.so</JxlrsNativeLibraryName>
+    <JxlrsNativeLibraryName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libjxl_ffi.dylib</JxlrsNativeLibraryName>
 
     <!-- Determine the RID -->
     <JxlrsRuntimeIdentifier Condition="$([MSBuild]::IsOSPlatform('Windows')) And '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'X64'">win-x64</JxlrsRuntimeIdentifier>

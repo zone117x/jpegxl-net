@@ -21,21 +21,21 @@ case "$OS" in
             arm64) RUST_TARGET="aarch64-apple-darwin" ;;
             x86_64) RUST_TARGET="x86_64-apple-darwin" ;;
         esac
-        NATIVE_LIB="libjxlrs.dylib"
+        NATIVE_LIB="libjxl_ffi.dylib"
         ;;
     Linux)
         case "$ARCH" in
             aarch64) RUST_TARGET="aarch64-unknown-linux-gnu" ;;
             x86_64) RUST_TARGET="x86_64-unknown-linux-gnu" ;;
         esac
-        NATIVE_LIB="libjxlrs.so"
+        NATIVE_LIB="libjxl_ffi.so"
         ;;
     MINGW*|MSYS*|CYGWIN*)
         case "$ARCH" in
             aarch64) RUST_TARGET="aarch64-pc-windows-msvc" ;;
             *) RUST_TARGET="x86_64-pc-windows-msvc" ;;
         esac
-        NATIVE_LIB="jxlrs.dll"
+        NATIVE_LIB="jxl_ffi.dll"
         ;;
     *)
         echo "Unsupported OS: $OS"
@@ -63,7 +63,7 @@ echo "  ✓ Cleaned stale native libraries"
 # Step 3: Build native Rust library
 echo ""
 echo "Step 3: Building native Rust library..."
-cd native/jxlrs
+cd native/jxl-ffi
 
 # Build for the specific target (required for Directory.Build.targets)
 echo "  Building for $RUST_TARGET..."
@@ -102,7 +102,7 @@ esac
 
 RUNTIME_DIR="src/JpegXL.Net/runtimes/$RID/native"
 mkdir -p "$RUNTIME_DIR"
-cp "native/jxlrs/target/$RUST_TARGET/release/$NATIVE_LIB" "$RUNTIME_DIR/"
+cp "native/jxl-ffi/target/$RUST_TARGET/release/$NATIVE_LIB" "$RUNTIME_DIR/"
 echo "  ✓ Copied to $RUNTIME_DIR"
 
 # Step 5: Build .NET solution
@@ -122,5 +122,5 @@ echo "======================================"
 echo "  Full rebuild complete!"
 echo "======================================"
 echo ""
-echo "Native library: native/jxlrs/target/$RUST_TARGET/release/$NATIVE_LIB"
+echo "Native library: native/jxl-ffi/target/$RUST_TARGET/release/$NATIVE_LIB"
 echo ""

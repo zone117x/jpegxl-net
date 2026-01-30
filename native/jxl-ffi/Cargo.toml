@@ -1,5 +1,5 @@
 [package]
-name = "jxlrs"
+name = "jxl-ffi"
 version = "0.1.0"
 edition = "2024"
 license = "BSD-3-Clause"
@@ -7,7 +7,7 @@ description = "C-API bindings for jxl-rs JPEG XL decoder"
 repository = "https://github.com/user/jpegxl-net"
 
 [lib]
-name = "jxlrs"
+name = "jxl_ffi"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]

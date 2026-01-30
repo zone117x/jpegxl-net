@@ -6,7 +6,7 @@ fn main() {
         .input_extern_file("src/decoder.rs")
         .input_extern_file("src/error.rs")
         .input_extern_file("src/types.rs")
-        .csharp_dll_name("jxlrs")
+        .csharp_dll_name("jxl_ffi")
         .csharp_namespace("JpegXL.Net.Native")
         .csharp_class_name("NativeMethods")
         .csharp_class_accessibility("internal") // Internal - public types generated via Source Generator

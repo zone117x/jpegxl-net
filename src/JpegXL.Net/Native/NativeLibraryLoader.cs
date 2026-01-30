@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 namespace JpegXL.Net.Native;
 
 /// <summary>
-/// Handles loading the native jxlrs library from the runtimes folder.
+/// Handles loading the native jxl_ffi library from the runtimes folder.
 /// </summary>
 internal static class NativeLibraryLoader
 {
@@ -37,7 +37,7 @@ internal static class NativeLibraryLoader
 #if NET5_0_OR_GREATER
     private static IntPtr ResolveLibrary(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
     {
-        if (libraryName != "jxlrs")
+        if (libraryName != "jxl_ffi")
         {
             return IntPtr.Zero;
         }
@@ -88,10 +88,10 @@ internal static class NativeLibraryLoader
     private static string GetPlatformLibraryName()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return "jxlrs.dll";
+            return "jxl_ffi.dll";
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            return "libjxlrs.dylib";
-        return "libjxlrs.so";
+            return "libjxl_ffi.dylib";
+        return "libjxl_ffi.so";
     }
 
     private static string GetRuntimeIdentifier()

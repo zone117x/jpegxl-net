@@ -49,18 +49,18 @@ jobs:
 
       - name: Build (native)
         if: matrix.rid == 'linux-x64'
-        working-directory: native/jxlrs
+        working-directory: native/jxl-ffi
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Build (cross)
         if: matrix.rid == 'linux-arm64'
-        working-directory: native/jxlrs
+        working-directory: native/jxl-ffi
         run: cross build --release --target ${{ matrix.target }}
 
       - name: Package artifact
         run: |
           mkdir -p artifacts/runtimes/${{ matrix.rid }}/native
-          cp native/jxlrs/target/${{ matrix.target }}/release/libjxlrs.so artifacts/runtimes/${{ matrix.rid }}/native/
+          cp native/jxl-ffi/target/${{ matrix.target }}/release/libjxl_ffi.so artifacts/runtimes/${{ matrix.rid }}/native/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -86,14 +86,14 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build
-        working-directory: native/jxlrs
+        working-directory: native/jxl-ffi
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package artifact
         shell: bash
         run: |
           mkdir -p artifacts/runtimes/${{ matrix.rid }}/native
-          cp native/jxlrs/target/${{ matrix.target }}/release/jxlrs.dll artifacts/runtimes/${{ matrix.rid }}/native/
+          cp native/jxl-ffi/target/${{ matrix.target }}/release/jxl_ffi.dll artifacts/runtimes/${{ matrix.rid }}/native/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -114,14 +114,14 @@ jobs:
           targets: aarch64-pc-windows-msvc
 
       - name: Build
-        working-directory: native/jxlrs
+        working-directory: native/jxl-ffi
         run: cargo build --release --target aarch64-pc-windows-msvc
 
       - name: Package artifact
         shell: bash
         run: |
           mkdir -p artifacts/runtimes/win-arm64/native
-          cp native/jxlrs/target/aarch64-pc-windows-msvc/release/jxlrs.dll artifacts/runtimes/win-arm64/native/
+          cp native/jxl-ffi/target/aarch64-pc-windows-msvc/release/jxl_ffi.dll artifacts/runtimes/win-arm64/native/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -149,13 +149,13 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build
-        working-directory: native/jxlrs
+        working-directory: native/jxl-ffi
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package artifact
         run: |
           mkdir -p artifacts/runtimes/${{ matrix.rid }}/native
-          cp native/jxlrs/target/${{ matrix.target }}/release/libjxlrs.dylib artifacts/runtimes/${{ matrix.rid }}/native/
+          cp native/jxl-ffi/target/${{ matrix.target }}/release/libjxl_ffi.dylib artifacts/runtimes/${{ matrix.rid }}/native/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -181,7 +181,7 @@ jobs:
       - name: Copy header file
         run: |
           mkdir -p merged-artifacts/include
-          cp native/jxlrs/include/jxlrs.h merged-artifacts/include/ || echo "Header will be generated"
+          cp native/jxl-ffi/include/jxl_ffi.h merged-artifacts/include/ || echo "Header will be generated"
 
       - name: Display structure
         run: find merged-artifacts -type f | head -50
