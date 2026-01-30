@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using AppKit;
 using CoreGraphics;
@@ -23,6 +24,9 @@ public class MainWindow : NSWindow
     private bool _isPlaying;
     private JxlBasicInfo? _currentInfo;
 
+    // Memory monitoring
+    private NSTimer? _memoryTimer;
+
     public MainWindow() : base(
         new CGRect(100, 100, 900, 700),
         NSWindowStyle.Titled | NSWindowStyle.Closable | NSWindowStyle.Miniaturizable | NSWindowStyle.Resizable,
@@ -33,6 +37,24 @@ public class MainWindow : NSWindow
         MinSize = new CGSize(400, 300);
 
         CreateUI();
+        #if DEBUG
+        StartMemoryMonitor();
+        #endif
+    }
+
+    private void StartMemoryMonitor()
+    {
+        _memoryTimer = NSTimer.CreateScheduledTimer(2.0, true, OnMemoryTick);
+    }
+
+    private static void OnMemoryTick(NSTimer _)
+    {
+        using var process = Process.GetCurrentProcess();
+        var totalMB = process.WorkingSet64 / 1024.0 / 1024.0;
+        var managedMB = GC.GetTotalMemory(false) / 1024.0 / 1024.0;
+        var unmanagedMB = totalMB - managedMB;
+
+        Console.WriteLine($"[Memory] Total: {totalMB:F1} MB | Managed: {managedMB:F1} MB | Unmanaged: {unmanagedMB:F1} MB");
     }
 
     private void CreateUI()
@@ -394,7 +416,7 @@ public class MainWindow : NSWindow
 
         _frameStartTime = DateTime.UtcNow;
         // Single timer at ~60fps, never recreated during playback
-        _animationTimer = NSTimer.CreateScheduledTimer(0.016, true, _ => OnAnimationTick());
+        _animationTimer = NSTimer.CreateScheduledTimer(0.016, true, OnAnimationTick);
         _isPlaying = true;
     }
 
@@ -406,7 +428,7 @@ public class MainWindow : NSWindow
         _isPlaying = false;
     }
 
-    private void OnAnimationTick()
+    private void OnAnimationTick(NSTimer _)
     {
         if (_frameDurations == null || _frameDurations.Count == 0) return;
 
@@ -416,7 +438,11 @@ public class MainWindow : NSWindow
         if (elapsed >= frameDuration)
         {
             _currentFrameIndex = (_currentFrameIndex + 1) % _frameDurations.Count;
-            DisplayFrame(_currentFrameIndex);
+            // Use autorelease pool to ensure Metal/Cocoa objects are cleaned up promptly
+            using (new NSAutoreleasePool())
+            {
+                DisplayFrame(_currentFrameIndex);
+            }
             _frameStartTime = DateTime.UtcNow;
         }
     }
@@ -446,6 +472,9 @@ public class MainWindow : NSWindow
         if (disposing)
         {
             StopAnimation();
+            _memoryTimer?.Invalidate();
+            _memoryTimer?.Dispose();
+            _memoryTimer = null;
             _metalView?.Dispose();
         }
         base.Dispose(disposing);

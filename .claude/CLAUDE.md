@@ -24,7 +24,7 @@ Use `examples/JpegXL.MacOS/run.sh` for iterative development:
 ./examples/JpegXL.MacOS/run.sh --release
 ```
 
-The script builds, codesigns, and runs the app with a test animation file.
+The script kills the previously running app (if any), builds, codesigns, and runs the app with a test animation file.
 
 **Optional flags:**
 - `--log` - Log stdout to `examples/JpegXL.MacOS/logs/run.txt` (existing logs are renamed with unix timestamp)
