@@ -1,5 +1,4 @@
 using JpegXL.Net;
-using JpegXL.Net.Native;
 
 namespace JpegXL.Net.Tests;
 

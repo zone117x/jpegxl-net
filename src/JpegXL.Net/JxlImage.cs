@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license.
 
 using System;
-using JpegXL.Net.Native;
 
 namespace JpegXL.Net;
 

@@ -86,15 +86,15 @@ struct DecoderInner {
     /// Desired output pixel format.
     pixel_format: JxlPixelFormat,
     /// Decoder options (stored for reset).
-    options: JxlDecoderOptionsC,
+    options: JxlDecodeOptions,
 }
 
 impl DecoderInner {
     fn new() -> Self {
-        Self::with_options(JxlDecoderOptionsC::default())
+        Self::with_options(JxlDecodeOptions::default())
     }
 
-    fn with_options(options: JxlDecoderOptionsC) -> Self {
+    fn with_options(options: JxlDecodeOptions) -> Self {
         Self {
             state: DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&options))),
             data: Vec::new(),
@@ -150,10 +150,10 @@ pub extern "C" fn jxl_decoder_create() -> *mut NativeDecoderHandle {
 /// The decoder must be destroyed with `jxl_decoder_destroy`.
 ///
 /// # Safety
-/// If `options` is not null, it must point to a valid `JxlDecoderOptionsC` struct.
+/// If `options` is not null, it must point to a valid `JxlDecodeOptions` struct.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jxl_decoder_create_with_options(
-    options: *const JxlDecoderOptionsC,
+    options: *const JxlDecodeOptions,
 ) -> *mut NativeDecoderHandle {
     clear_last_error();
 
@@ -298,8 +298,8 @@ pub unsafe extern "C" fn jxl_decoder_process(
             }
 
             // Set pixel format before processing frame
-            // Skip extra channels unless decode_extra_channels is enabled
-            let skip_extra = !inner.options.decode_extra_channels;
+            // Skip extra channels unless DecodeExtraChannels is enabled
+            let skip_extra = !inner.options.DecodeExtraChannels;
             let pixel_format = convert_to_jxl_pixel_format(&inner.pixel_format, &inner.extra_channels, skip_extra);
             decoder_with_info.set_pixel_format(pixel_format);
 
@@ -480,7 +480,7 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels(
 
     clear_last_error();
 
-    let height = info.height as usize;
+    let height = info.Height as usize;
     let bytes_per_row = calculate_bytes_per_row(info, &inner.pixel_format);
 
     // Take ownership of decoder state
@@ -570,9 +570,9 @@ pub unsafe extern "C" fn jxl_decoder_get_extra_channel_buffer_size(
     }
 
     // Extra channels are single-plane, so calculate based on width * height * bytes_per_sample
-    let width = info.width as usize;
-    let height = info.height as usize;
-    let bytes_per_sample = bytes_per_sample(inner.pixel_format.data_format);
+    let width = info.Width as usize;
+    let height = info.Height as usize;
+    let bytes_per_sample = bytes_per_sample(inner.pixel_format.DataFormat);
     
     width * height * bytes_per_sample
 }
@@ -627,8 +627,8 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels_with_extra_channels(
 
     clear_last_error();
 
-    let height = info.height as usize;
-    let width = info.width as usize;
+    let height = info.Height as usize;
+    let width = info.Width as usize;
     let color_bytes_per_row = calculate_bytes_per_row(info, &inner.pixel_format);
     let num_extra = inner.extra_channels.len();
 
@@ -649,7 +649,7 @@ pub unsafe extern "C" fn jxl_decoder_read_pixels_with_extra_channels(
     let color_output = JxlOutputBuffer::new(color_slice, height, color_bytes_per_row);
     
     // Build extra channel buffers
-    let extra_bytes_per_sample = bytes_per_sample(inner.pixel_format.data_format);
+    let extra_bytes_per_sample = bytes_per_sample(inner.pixel_format.DataFormat);
     let extra_bytes_per_row = width * extra_bytes_per_sample;
     
     let extra_buffer_ptrs = if !extra_buffers.is_null() && num_extra_buffers > 0 {

@@ -76,13 +76,14 @@ pub enum JxlEndianness {
 /// Pixel format specification.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
+#[allow(non_snake_case)]
 pub struct JxlPixelFormat {
     /// Data format for each channel.
-    pub data_format: JxlDataFormat,
+    pub DataFormat: JxlDataFormat,
     /// Color channel layout.
-    pub color_type: JxlColorType,
+    pub ColorType: JxlColorType,
     /// Endianness for formats > 8 bits.
-    pub endianness: JxlEndianness,
+    pub Endianness: JxlEndianness,
 }
 
 /// Image orientation (EXIF-style).
@@ -123,45 +124,46 @@ pub enum JxlProgressiveMode {
 /// Fields are ordered by size (largest first) to minimize padding.
 #[repr(C)]
 #[derive(Debug, Clone)]
+#[allow(non_snake_case)]
 pub struct JxlBasicInfo {
     /// Image width in pixels.
-    pub width: u32,
+    pub Width: u32,
     /// Image height in pixels.
-    pub height: u32,
+    pub Height: u32,
     /// Bits per sample for integer formats.
-    pub bits_per_sample: u32,
+    pub BitsPerSample: u32,
     /// Exponent bits (0 for integer formats, >0 for float).
-    pub exponent_bits_per_sample: u32,
+    pub ExponentBitsPerSample: u32,
     /// Number of color channels (1 for grayscale, 3 for RGB).
-    pub num_color_channels: u32,
+    pub NumColorChannels: u32,
     /// Number of extra channels (alpha, depth, etc.).
-    pub num_extra_channels: u32,
+    pub NumExtraChannels: u32,
     /// Animation ticks per second numerator (0 if no animation).
-    pub animation_tps_numerator: u32,
+    pub AnimationTpsNumerator: u32,
     /// Animation ticks per second denominator (0 if no animation).
-    pub animation_tps_denominator: u32,
+    pub AnimationTpsDenominator: u32,
     /// Number of animation loops (0 = infinite).
-    pub animation_num_loops: u32,
+    pub AnimationNumLoops: u32,
     /// Preview image width (0 if no preview).
-    pub preview_width: u32,
+    pub PreviewWidth: u32,
     /// Preview image height (0 if no preview).
-    pub preview_height: u32,
+    pub PreviewHeight: u32,
     /// Intensity target for HDR (nits).
-    pub intensity_target: f32,
+    pub IntensityTarget: f32,
     /// Minimum nits for tone mapping.
-    pub min_nits: f32,
+    pub MinNits: f32,
     /// Whether linear_below is relative to max display luminance.
-    pub relative_to_max_display: bool,
+    pub RelativeToMaxDisplay: bool,
     /// Linear tone mapping threshold (nits, or ratio if relative_to_max_display).
-    pub linear_below: f32,
+    pub LinearBelow: f32,
     /// Image orientation.
-    pub orientation: JxlOrientation,
+    pub Orientation: JxlOrientation,
     /// Whether alpha is premultiplied.
-    pub alpha_premultiplied: bool,
+    pub AlphaPremultiplied: bool,
     /// Whether the image has animation.
-    pub have_animation: bool,
+    pub HaveAnimation: bool,
     /// Whether original color profile is used.
-    pub uses_original_profile: bool,
+    pub UsesOriginalProfile: bool,
 }
 
 /// Extra channel type.
@@ -192,60 +194,62 @@ pub enum JxlExtraChannelType {
 /// Fields are ordered by size (largest first) to minimize padding.
 #[repr(C)]
 #[derive(Debug, Clone)]
+#[allow(non_snake_case)]
 pub struct JxlExtraChannelInfo {
     /// Spot color values (RGBA, only for spot color channels).
-    pub spot_color: [f32; 4],
+    pub SpotColor: [f32; 4],
     /// Bits per sample.
-    pub bits_per_sample: u32,
+    pub BitsPerSample: u32,
     /// Exponent bits (for float channels).
-    pub exponent_bits_per_sample: u32,
+    pub ExponentBitsPerSample: u32,
     /// Channel name length in bytes (excluding null terminator).
-    pub name_length: u32,
+    pub NameLength: u32,
     /// Type of extra channel.
-    pub channel_type: JxlExtraChannelType,
+    pub ChannelType: JxlExtraChannelType,
     /// Whether alpha is associated/premultiplied (only for alpha channels).
-    pub alpha_associated: bool,
+    pub AlphaAssociated: bool,
 }
 
 /// Frame header information.
 /// Fields are ordered by size (largest first) to minimize padding.
 #[repr(C)]
 #[derive(Debug, Clone)]
+#[allow(non_snake_case)]
 pub struct JxlFrameHeader {
     /// Frame duration in milliseconds (for animation).
-    pub duration_ms: f32,
+    pub DurationMs: f32,
     /// Frame width in pixels.
-    pub frame_width: u32,
+    pub FrameWidth: u32,
     /// Frame height in pixels.
-    pub frame_height: u32,
+    pub FrameHeight: u32,
     /// Frame name length in bytes. Use jxl_decoder_get_frame_name to get the actual name.
-    pub name_length: u32,
+    pub NameLength: u32,
     /// Whether this is the last frame.
-    pub is_last: bool,
+    pub IsLast: bool,
 }
 
 impl Default for JxlBasicInfo {
     fn default() -> Self {
         Self {
-            width: 0,
-            height: 0,
-            bits_per_sample: 8,
-            exponent_bits_per_sample: 0,
-            num_color_channels: 3,
-            num_extra_channels: 0,
-            animation_tps_numerator: 0,
-            animation_tps_denominator: 0,
-            animation_num_loops: 0,
-            preview_width: 0,
-            preview_height: 0,
-            intensity_target: 255.0,
-            min_nits: 0.0,
-            relative_to_max_display: false,
-            linear_below: 0.0,
-            orientation: JxlOrientation::Identity,
-            alpha_premultiplied: false,
-            have_animation: false,
-            uses_original_profile: false,
+            Width: 0,
+            Height: 0,
+            BitsPerSample: 8,
+            ExponentBitsPerSample: 0,
+            NumColorChannels: 3,
+            NumExtraChannels: 0,
+            AnimationTpsNumerator: 0,
+            AnimationTpsDenominator: 0,
+            AnimationNumLoops: 0,
+            PreviewWidth: 0,
+            PreviewHeight: 0,
+            IntensityTarget: 255.0,
+            MinNits: 0.0,
+            RelativeToMaxDisplay: false,
+            LinearBelow: 0.0,
+            Orientation: JxlOrientation::Identity,
+            AlphaPremultiplied: false,
+            HaveAnimation: false,
+            UsesOriginalProfile: false,
         }
     }
 }
@@ -253,59 +257,60 @@ impl Default for JxlBasicInfo {
 impl Default for JxlPixelFormat {
     fn default() -> Self {
         Self {
-            data_format: JxlDataFormat::Uint8,
-            color_type: JxlColorType::Rgba,
-            endianness: JxlEndianness::Native,
+            DataFormat: JxlDataFormat::Uint8,
+            ColorType: JxlColorType::Rgba,
+            Endianness: JxlEndianness::Native,
         }
     }
 }
 
-/// Decoder options (C-compatible struct).
+/// Decoder options.
 /// All options should be set before decoding begins.
 /// Fields are ordered by size (largest first) to minimize padding.
 #[repr(C)]
 #[derive(Debug, Clone)]
-pub struct JxlDecoderOptionsC {
+#[allow(non_snake_case)]
+pub struct JxlDecodeOptions {
     /// Maximum number of pixels to decode.
     /// 0 = no limit.
-    pub pixel_limit: usize,
+    pub PixelLimit: usize,
     /// Desired intensity target for HDR content.
     /// 0 = use default (image's native intensity target).
-    pub desired_intensity_target: f32,
+    pub DesiredIntensityTarget: f32,
     /// Progressive decoding mode.
-    pub progressive_mode: JxlProgressiveMode,
+    pub ProgressiveMode: JxlProgressiveMode,
     /// Whether to adjust image orientation based on EXIF data.
-    pub adjust_orientation: bool,
+    pub AdjustOrientation: bool,
     /// Whether to render spot colors.
-    pub render_spot_colors: bool,
+    pub RenderSpotColors: bool,
     /// Whether to coalesce animation frames.
-    pub coalescing: bool,
+    pub Coalescing: bool,
     /// Whether to skip the preview image.
-    pub skip_preview: bool,
+    pub SkipPreview: bool,
     /// Whether to enable output rendering.
-    pub enable_output: bool,
+    pub EnableOutput: bool,
     /// Whether to use high precision mode for decoding.
-    pub high_precision: bool,
+    pub HighPrecision: bool,
     /// Whether to premultiply alpha in the output.
-    pub premultiply_alpha: bool,
+    pub PremultiplyAlpha: bool,
     /// Whether to decode extra channels into separate buffers.
-    pub decode_extra_channels: bool,
+    pub DecodeExtraChannels: bool,
 }
 
-impl Default for JxlDecoderOptionsC {
+impl Default for JxlDecodeOptions {
     fn default() -> Self {
         Self {
-            pixel_limit: 0,
-            desired_intensity_target: 0.0,
-            progressive_mode: JxlProgressiveMode::Pass,
-            adjust_orientation: true,
-            render_spot_colors: true,
-            coalescing: true,
-            skip_preview: true,
-            enable_output: true,
-            high_precision: false,
-            premultiply_alpha: false,
-            decode_extra_channels: false,
+            PixelLimit: 0,
+            DesiredIntensityTarget: 0.0,
+            ProgressiveMode: JxlProgressiveMode::Pass,
+            AdjustOrientation: true,
+            RenderSpotColors: true,
+            Coalescing: true,
+            SkipPreview: true,
+            EnableOutput: true,
+            HighPrecision: false,
+            PremultiplyAlpha: false,
+            DecodeExtraChannels: false,
         }
     }
 }

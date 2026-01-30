@@ -54,19 +54,5 @@
     <PackageReference Include="Microsoft.Bcl.HashCode" Version="1.1.1" />
   </ItemGroup>
 
-  <!-- Source Generator for public type generation -->
-  <PropertyGroup>
-    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
-    <CompilerGeneratedFilesOutputPath>Generated</CompilerGeneratedFilesOutputPath>
-  </PropertyGroup>
-  <ItemGroup>
-    <!-- Exclude generated files from compilation (they're already included via the generator) -->
-    <Compile Remove="$(CompilerGeneratedFilesOutputPath)/**/*.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="../JpegXL.Net.Generators/JpegXL.Net.Generators.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-  </ItemGroup>
 
 </Project>

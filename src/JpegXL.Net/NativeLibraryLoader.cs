@@ -3,7 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-namespace JpegXL.Net.Native;
+namespace JpegXL.Net;
 
 /// <summary>
 /// Handles loading the native jxl_ffi library from the runtimes folder.

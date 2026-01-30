@@ -8,9 +8,9 @@ using System;
 using System.Runtime.InteropServices;
 
 
-namespace JpegXL.Net.Native
+namespace JpegXL.Net
 {
-    internal static unsafe partial class NativeMethods
+    public static unsafe partial class NativeMethods
     {
         const string __DllName = "jxl_ffi";
 
@@ -23,7 +23,7 @@ namespace JpegXL.Net.Native
         ///  Format: (major &lt;&lt; 24) | (minor &lt;&lt; 16) | (patch &lt;&lt; 8)
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_version", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern uint jxl_version();
+        public static extern uint jxl_version();
 
         /// <summary>
         ///  Creates a new decoder instance with default options.
@@ -33,7 +33,7 @@ namespace JpegXL.Net.Native
         ///  The decoder must be destroyed with `jxl_decoder_destroy`.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_create", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern NativeDecoderHandle* jxl_decoder_create();
+        public static extern NativeDecoderHandle* jxl_decoder_create();
 
         /// <summary>
         ///  Creates a new decoder instance with the specified options.
@@ -49,10 +49,10 @@ namespace JpegXL.Net.Native
         ///  The decoder must be destroyed with `jxl_decoder_destroy`.
         ///
         ///  # Safety
-        ///  If `options` is not null, it must point to a valid `JxlDecoderOptionsC` struct.
+        ///  If `options` is not null, it must point to a valid `JxlDecodeOptions` struct.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_create_with_options", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern NativeDecoderHandle* jxl_decoder_create_with_options(JxlDecoderOptionsC* options);
+        public static extern NativeDecoderHandle* jxl_decoder_create_with_options(JxlDecodeOptions* options);
 
         /// <summary>
         ///  Destroys a decoder instance and frees its resources.
@@ -62,7 +62,7 @@ namespace JpegXL.Net.Native
         ///  After calling this function, the decoder pointer is invalid.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_destroy", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern void jxl_decoder_destroy(NativeDecoderHandle* decoder);
+        public static extern void jxl_decoder_destroy(NativeDecoderHandle* decoder);
 
         /// <summary>
         ///  Resets the decoder to its initial state, allowing it to decode a new image.
@@ -71,7 +71,7 @@ namespace JpegXL.Net.Native
         ///  The decoder pointer must be valid.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_reset", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_reset(NativeDecoderHandle* decoder);
+        public static extern JxlStatus jxl_decoder_reset(NativeDecoderHandle* decoder);
 
         /// <summary>
         ///  Appends input data to the decoder's buffer.
@@ -85,7 +85,7 @@ namespace JpegXL.Net.Native
         ///  - `data` must point to `size` readable bytes.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_append_input", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_append_input(NativeDecoderHandle* decoder, byte* data, System.UIntPtr size);
+        public static extern JxlStatus jxl_decoder_append_input(NativeDecoderHandle* decoder, byte* data, System.UIntPtr size);
 
         /// <summary>
         ///  Processes the current input data and returns the next decoder event.
@@ -104,7 +104,7 @@ namespace JpegXL.Net.Native
         ///  The decoder pointer must be valid.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_process", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlDecoderEvent jxl_decoder_process(NativeDecoderHandle* decoder);
+        public static extern JxlDecoderEvent jxl_decoder_process(NativeDecoderHandle* decoder);
 
         /// <summary>
         ///  Gets the basic image info (streaming API).
@@ -116,7 +116,7 @@ namespace JpegXL.Net.Native
         ///  - `info` must point to a writable `JxlBasicInfo`.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_basic_info", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_get_basic_info(NativeDecoderHandle* decoder, JxlBasicInfo* info);
+        public static extern JxlStatus jxl_decoder_get_basic_info(NativeDecoderHandle* decoder, JxlBasicInfo* info);
 
         /// <summary>
         ///  Gets the current frame header (streaming API).
@@ -128,7 +128,7 @@ namespace JpegXL.Net.Native
         ///  - `header` must point to a writable `JxlFrameHeader`.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_frame_header", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_get_frame_header(NativeDecoderHandle* decoder, JxlFrameHeader* header);
+        public static extern JxlStatus jxl_decoder_get_frame_header(NativeDecoderHandle* decoder, JxlFrameHeader* header);
 
         /// <summary>
         ///  Gets the current frame's name.
@@ -150,7 +150,7 @@ namespace JpegXL.Net.Native
         ///  - If `buffer` is not null, it must be valid for writes of `buffer_size` bytes.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_frame_name", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern uint jxl_decoder_get_frame_name(NativeDecoderHandle* decoder, byte* buffer, uint buffer_size);
+        public static extern uint jxl_decoder_get_frame_name(NativeDecoderHandle* decoder, byte* buffer, uint buffer_size);
 
         /// <summary>
         ///  Decodes pixels into the provided buffer (streaming API).
@@ -164,7 +164,7 @@ namespace JpegXL.Net.Native
         ///  - `buffer` must be valid for writes of `buffer_size` bytes.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_read_pixels", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlDecoderEvent jxl_decoder_read_pixels(NativeDecoderHandle* decoder, byte* buffer, System.UIntPtr buffer_size);
+        public static extern JxlDecoderEvent jxl_decoder_read_pixels(NativeDecoderHandle* decoder, byte* buffer, System.UIntPtr buffer_size);
 
         /// <summary>
         ///  Checks if the decoder has more frames to decode.
@@ -174,7 +174,7 @@ namespace JpegXL.Net.Native
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_has_more_frames", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         [return: MarshalAs(UnmanagedType.U1)]
-        internal static extern bool jxl_decoder_has_more_frames(NativeDecoderHandle* decoder);
+        public static extern bool jxl_decoder_has_more_frames(NativeDecoderHandle* decoder);
 
         /// <summary>
         ///  Calculates the required buffer size for a specific extra channel.
@@ -190,7 +190,7 @@ namespace JpegXL.Net.Native
         ///  `decoder` must be valid and basic info must be available (after `HaveBasicInfo` event).
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_extra_channel_buffer_size", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern System.UIntPtr jxl_decoder_get_extra_channel_buffer_size(NativeDecoderHandle* decoder, uint index);
+        public static extern System.UIntPtr jxl_decoder_get_extra_channel_buffer_size(NativeDecoderHandle* decoder, uint index);
 
         /// <summary>
         ///  Decodes pixels with extra channels into separate buffers.
@@ -213,7 +213,7 @@ namespace JpegXL.Net.Native
         ///  - Each non-null buffer must be valid for writes of its corresponding size.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_read_pixels_with_extra_channels", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlDecoderEvent jxl_decoder_read_pixels_with_extra_channels(NativeDecoderHandle* decoder, byte* color_buffer, System.UIntPtr color_buffer_size, byte** extra_buffers, System.UIntPtr* extra_buffer_sizes, System.UIntPtr num_extra_buffers);
+        public static extern JxlDecoderEvent jxl_decoder_read_pixels_with_extra_channels(NativeDecoderHandle* decoder, byte* color_buffer, System.UIntPtr color_buffer_size, byte** extra_buffers, System.UIntPtr* extra_buffer_sizes, System.UIntPtr num_extra_buffers);
 
         /// <summary>
         ///  Sets the desired output pixel format.
@@ -222,7 +222,7 @@ namespace JpegXL.Net.Native
         ///  The decoder pointer must be valid.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_set_pixel_format", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_set_pixel_format(NativeDecoderHandle* decoder, JxlPixelFormat* format);
+        public static extern JxlStatus jxl_decoder_set_pixel_format(NativeDecoderHandle* decoder, JxlPixelFormat* format);
 
         /// <summary>
         ///  Gets the number of extra channels.
@@ -230,7 +230,7 @@ namespace JpegXL.Net.Native
         ///  Must be called after basic info is available (after `HaveBasicInfo` event).
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_extra_channel_count", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern uint jxl_decoder_get_extra_channel_count(NativeDecoderHandle* decoder);
+        public static extern uint jxl_decoder_get_extra_channel_count(NativeDecoderHandle* decoder);
 
         /// <summary>
         ///  Gets info about an extra channel.
@@ -241,7 +241,7 @@ namespace JpegXL.Net.Native
         ///  - `index` must be less than the extra channel count.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_extra_channel_info", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlStatus jxl_decoder_get_extra_channel_info(NativeDecoderHandle* decoder, uint index, JxlExtraChannelInfo* info);
+        public static extern JxlStatus jxl_decoder_get_extra_channel_info(NativeDecoderHandle* decoder, uint index, JxlExtraChannelInfo* info);
 
         /// <summary>
         ///  Calculates the required buffer size for decoded pixels.
@@ -250,7 +250,7 @@ namespace JpegXL.Net.Native
         ///  `decoder` must be valid and basic info must be available (after `HaveBasicInfo` event).
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_buffer_size", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern System.UIntPtr jxl_decoder_get_buffer_size(NativeDecoderHandle* decoder);
+        public static extern System.UIntPtr jxl_decoder_get_buffer_size(NativeDecoderHandle* decoder);
 
         /// <summary>
         ///  Checks if data appears to be a JPEG XL file.
@@ -261,7 +261,7 @@ namespace JpegXL.Net.Native
         ///  `data` must be valid for reads of `size` bytes.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_signature_check", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern JxlSignature jxl_signature_check(byte* data, System.UIntPtr size);
+        public static extern JxlSignature jxl_signature_check(byte* data, System.UIntPtr size);
 
         /// <summary>
         ///  Gets the last error message.
@@ -279,13 +279,13 @@ namespace JpegXL.Net.Native
         ///  The buffer must be valid for writes of `buffer_size` bytes.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_get_last_error", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern System.UIntPtr jxl_get_last_error(byte* buffer, System.UIntPtr buffer_size);
+        public static extern System.UIntPtr jxl_get_last_error(byte* buffer, System.UIntPtr buffer_size);
 
         /// <summary>
         ///  Clears the last error message.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_clear_last_error", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        internal static extern void jxl_clear_last_error();
+        public static extern void jxl_clear_last_error();
 
 
     }
@@ -294,7 +294,7 @@ namespace JpegXL.Net.Native
     ///  Opaque decoder handle.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    internal unsafe partial struct NativeDecoderHandle
+    public unsafe partial struct NativeDecoderHandle
     {
         public fixed byte _private[1];
     }
@@ -303,20 +303,20 @@ namespace JpegXL.Net.Native
     ///  Pixel format specification.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    internal unsafe partial struct JxlPixelFormat
+    public unsafe partial struct JxlPixelFormat
     {
         /// <summary>
         ///  Data format for each channel.
         /// </summary>
-        public JxlDataFormat data_format;
+        public JxlDataFormat DataFormat;
         /// <summary>
         ///  Color channel layout.
         /// </summary>
-        public JxlColorType color_type;
+        public JxlColorType ColorType;
         /// <summary>
         ///  Endianness for formats &gt; 8 bits.
         /// </summary>
-        public JxlEndianness endianness;
+        public JxlEndianness Endianness;
     }
 
     /// <summary>
@@ -324,84 +324,84 @@ namespace JpegXL.Net.Native
     ///  Fields are ordered by size (largest first) to minimize padding.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    internal unsafe partial struct JxlBasicInfo
+    public unsafe partial struct JxlBasicInfo
     {
         /// <summary>
         ///  Image width in pixels.
         /// </summary>
-        public uint width;
+        public uint Width;
         /// <summary>
         ///  Image height in pixels.
         /// </summary>
-        public uint height;
+        public uint Height;
         /// <summary>
         ///  Bits per sample for integer formats.
         /// </summary>
-        public uint bits_per_sample;
+        public uint BitsPerSample;
         /// <summary>
         ///  Exponent bits (0 for integer formats, &gt;0 for float).
         /// </summary>
-        public uint exponent_bits_per_sample;
+        public uint ExponentBitsPerSample;
         /// <summary>
         ///  Number of color channels (1 for grayscale, 3 for RGB).
         /// </summary>
-        public uint num_color_channels;
+        public uint NumColorChannels;
         /// <summary>
         ///  Number of extra channels (alpha, depth, etc.).
         /// </summary>
-        public uint num_extra_channels;
+        public uint NumExtraChannels;
         /// <summary>
         ///  Animation ticks per second numerator (0 if no animation).
         /// </summary>
-        public uint animation_tps_numerator;
+        public uint AnimationTpsNumerator;
         /// <summary>
         ///  Animation ticks per second denominator (0 if no animation).
         /// </summary>
-        public uint animation_tps_denominator;
+        public uint AnimationTpsDenominator;
         /// <summary>
         ///  Number of animation loops (0 = infinite).
         /// </summary>
-        public uint animation_num_loops;
+        public uint AnimationNumLoops;
         /// <summary>
         ///  Preview image width (0 if no preview).
         /// </summary>
-        public uint preview_width;
+        public uint PreviewWidth;
         /// <summary>
         ///  Preview image height (0 if no preview).
         /// </summary>
-        public uint preview_height;
+        public uint PreviewHeight;
         /// <summary>
         ///  Intensity target for HDR (nits).
         /// </summary>
-        public float intensity_target;
+        public float IntensityTarget;
         /// <summary>
         ///  Minimum nits for tone mapping.
         /// </summary>
-        public float min_nits;
+        public float MinNits;
         /// <summary>
         ///  Whether linear_below is relative to max display luminance.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool relative_to_max_display;
+        [MarshalAs(UnmanagedType.U1)] public bool RelativeToMaxDisplay;
         /// <summary>
         ///  Linear tone mapping threshold (nits, or ratio if relative_to_max_display).
         /// </summary>
-        public float linear_below;
+        public float LinearBelow;
         /// <summary>
         ///  Image orientation.
         /// </summary>
-        public JxlOrientation orientation;
+        public JxlOrientation Orientation;
         /// <summary>
         ///  Whether alpha is premultiplied.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool alpha_premultiplied;
+        [MarshalAs(UnmanagedType.U1)] public bool AlphaPremultiplied;
         /// <summary>
         ///  Whether the image has animation.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool have_animation;
+        [MarshalAs(UnmanagedType.U1)] public bool HaveAnimation;
         /// <summary>
         ///  Whether original color profile is used.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool uses_original_profile;
+        [MarshalAs(UnmanagedType.U1)] public bool UsesOriginalProfile;
     }
 
     /// <summary>
@@ -409,32 +409,32 @@ namespace JpegXL.Net.Native
     ///  Fields are ordered by size (largest first) to minimize padding.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    internal unsafe partial struct JxlExtraChannelInfo
+    public unsafe partial struct JxlExtraChannelInfo
     {
         /// <summary>
         ///  Spot color values (RGBA, only for spot color channels).
         /// </summary>
-        public fixed float spot_color[4];
+        public fixed float SpotColor[4];
         /// <summary>
         ///  Bits per sample.
         /// </summary>
-        public uint bits_per_sample;
+        public uint BitsPerSample;
         /// <summary>
         ///  Exponent bits (for float channels).
         /// </summary>
-        public uint exponent_bits_per_sample;
+        public uint ExponentBitsPerSample;
         /// <summary>
         ///  Channel name length in bytes (excluding null terminator).
         /// </summary>
-        public uint name_length;
+        public uint NameLength;
         /// <summary>
         ///  Type of extra channel.
         /// </summary>
-        public JxlExtraChannelType channel_type;
+        public JxlExtraChannelType ChannelType;
         /// <summary>
         ///  Whether alpha is associated/premultiplied (only for alpha channels).
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool alpha_associated;
+        [MarshalAs(UnmanagedType.U1)] public bool AlphaAssociated;
     }
 
     /// <summary>
@@ -442,91 +442,91 @@ namespace JpegXL.Net.Native
     ///  Fields are ordered by size (largest first) to minimize padding.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    internal unsafe partial struct JxlFrameHeader
+    public unsafe partial struct JxlFrameHeader
     {
         /// <summary>
         ///  Frame duration in milliseconds (for animation).
         /// </summary>
-        public float duration_ms;
+        public float DurationMs;
         /// <summary>
         ///  Frame width in pixels.
         /// </summary>
-        public uint frame_width;
+        public uint FrameWidth;
         /// <summary>
         ///  Frame height in pixels.
         /// </summary>
-        public uint frame_height;
+        public uint FrameHeight;
         /// <summary>
         ///  Frame name length in bytes. Use jxl_decoder_get_frame_name to get the actual name.
         /// </summary>
-        public uint name_length;
+        public uint NameLength;
         /// <summary>
         ///  Whether this is the last frame.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool is_last;
+        [MarshalAs(UnmanagedType.U1)] public bool IsLast;
     }
 
     /// <summary>
-    ///  Decoder options (C-compatible struct).
+    ///  Decoder options.
     ///  All options should be set before decoding begins.
     ///  Fields are ordered by size (largest first) to minimize padding.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    internal unsafe partial struct JxlDecoderOptionsC
+    public unsafe partial struct JxlDecodeOptions
     {
         /// <summary>
         ///  Maximum number of pixels to decode.
         ///  0 = no limit.
         /// </summary>
-        public System.UIntPtr pixel_limit;
+        public System.UIntPtr PixelLimit;
         /// <summary>
         ///  Desired intensity target for HDR content.
         ///  0 = use default (image's native intensity target).
         /// </summary>
-        public float desired_intensity_target;
+        public float DesiredIntensityTarget;
         /// <summary>
         ///  Progressive decoding mode.
         /// </summary>
-        public JxlProgressiveMode progressive_mode;
+        public JxlProgressiveMode ProgressiveMode;
         /// <summary>
         ///  Whether to adjust image orientation based on EXIF data.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool adjust_orientation;
+        [MarshalAs(UnmanagedType.U1)] public bool AdjustOrientation;
         /// <summary>
         ///  Whether to render spot colors.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool render_spot_colors;
+        [MarshalAs(UnmanagedType.U1)] public bool RenderSpotColors;
         /// <summary>
         ///  Whether to coalesce animation frames.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool coalescing;
+        [MarshalAs(UnmanagedType.U1)] public bool Coalescing;
         /// <summary>
         ///  Whether to skip the preview image.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool skip_preview;
+        [MarshalAs(UnmanagedType.U1)] public bool SkipPreview;
         /// <summary>
         ///  Whether to enable output rendering.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool enable_output;
+        [MarshalAs(UnmanagedType.U1)] public bool EnableOutput;
         /// <summary>
         ///  Whether to use high precision mode for decoding.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool high_precision;
+        [MarshalAs(UnmanagedType.U1)] public bool HighPrecision;
         /// <summary>
         ///  Whether to premultiply alpha in the output.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool premultiply_alpha;
+        [MarshalAs(UnmanagedType.U1)] public bool PremultiplyAlpha;
         /// <summary>
         ///  Whether to decode extra channels into separate buffers.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool decode_extra_channels;
+        [MarshalAs(UnmanagedType.U1)] public bool DecodeExtraChannels;
     }
 
 
     /// <summary>
     ///  Status codes returned by decoder functions.
     /// </summary>
-    internal enum JxlStatus : uint
+    public enum JxlStatus : uint
     {
         /// <summary>
         ///  Operation completed successfully.
@@ -557,7 +557,7 @@ namespace JpegXL.Net.Native
     /// <summary>
     ///  Pixel data format.
     /// </summary>
-    internal enum JxlDataFormat : uint
+    public enum JxlDataFormat : uint
     {
         /// <summary>
         ///  8-bit unsigned integer per channel.
@@ -580,7 +580,7 @@ namespace JpegXL.Net.Native
     /// <summary>
     ///  Color channel layout.
     /// </summary>
-    internal enum JxlColorType : uint
+    public enum JxlColorType : uint
     {
         /// <summary>
         ///  Single grayscale channel.
@@ -611,7 +611,7 @@ namespace JpegXL.Net.Native
     /// <summary>
     ///  Endianness for multi-byte pixel formats.
     /// </summary>
-    internal enum JxlEndianness : uint
+    public enum JxlEndianness : uint
     {
         /// <summary>
         ///  Use native endianness of the platform.
@@ -630,7 +630,7 @@ namespace JpegXL.Net.Native
     /// <summary>
     ///  Image orientation (EXIF-style).
     /// </summary>
-    internal enum JxlOrientation : uint
+    public enum JxlOrientation : uint
     {
         /// <summary>
         ///  Normal orientation.
@@ -669,7 +669,7 @@ namespace JpegXL.Net.Native
     /// <summary>
     ///  Progressive decoding mode.
     /// </summary>
-    internal enum JxlProgressiveMode : uint
+    public enum JxlProgressiveMode : uint
     {
         /// <summary>
         ///  Renders all pixels in every call to Process.
@@ -688,7 +688,7 @@ namespace JpegXL.Net.Native
     /// <summary>
     ///  Extra channel type.
     /// </summary>
-    internal enum JxlExtraChannelType : uint
+    public enum JxlExtraChannelType : uint
     {
         /// <summary>
         ///  Alpha/transparency channel.
@@ -732,7 +732,7 @@ namespace JpegXL.Net.Native
     ///  Events returned by the streaming decoder's process function.
     ///  These indicate what stage the decoder has reached.
     /// </summary>
-    internal enum JxlDecoderEvent : uint
+    public enum JxlDecoderEvent : uint
     {
         /// <summary>
         ///  An error occurred. Call `jxl_get_last_error` for details.
@@ -767,7 +767,7 @@ namespace JpegXL.Net.Native
     /// <summary>
     ///  Signature check result.
     /// </summary>
-    internal enum JxlSignature : uint
+    public enum JxlSignature : uint
     {
         /// <summary>
         ///  Not enough data to determine.

@@ -21,30 +21,30 @@ pub(crate) type UpstreamDataFormat = jxl::api::JxlDataFormat;
 // ============================================================================
 
 /// Converts C-compatible options to upstream decoder options.
-pub(crate) fn convert_options_to_upstream(c_options: &JxlDecoderOptionsC) -> JxlDecoderOptions {
+pub(crate) fn convert_options_to_upstream(c_options: &JxlDecodeOptions) -> JxlDecoderOptions {
     let mut options = JxlDecoderOptions::default();
-    options.adjust_orientation = c_options.adjust_orientation;
-    options.render_spot_colors = c_options.render_spot_colors;
-    options.coalescing = c_options.coalescing;
-    options.desired_intensity_target = if c_options.desired_intensity_target > 0.0 {
-        Some(c_options.desired_intensity_target)
+    options.adjust_orientation = c_options.AdjustOrientation;
+    options.render_spot_colors = c_options.RenderSpotColors;
+    options.coalescing = c_options.Coalescing;
+    options.desired_intensity_target = if c_options.DesiredIntensityTarget > 0.0 {
+        Some(c_options.DesiredIntensityTarget)
     } else {
         None
     };
-    options.skip_preview = c_options.skip_preview;
-    options.progressive_mode = match c_options.progressive_mode {
+    options.skip_preview = c_options.SkipPreview;
+    options.progressive_mode = match c_options.ProgressiveMode {
         JxlProgressiveMode::Eager => UpstreamProgressiveMode::Eager,
         JxlProgressiveMode::Pass => UpstreamProgressiveMode::Pass,
         JxlProgressiveMode::FullFrame => UpstreamProgressiveMode::FullFrame,
     };
-    options.enable_output = c_options.enable_output;
-    options.pixel_limit = if c_options.pixel_limit > 0 {
-        Some(c_options.pixel_limit)
+    options.enable_output = c_options.EnableOutput;
+    options.pixel_limit = if c_options.PixelLimit > 0 {
+        Some(c_options.PixelLimit)
     } else {
         None
     };
-    options.high_precision = c_options.high_precision;
-    options.premultiply_output = c_options.premultiply_alpha;
+    options.high_precision = c_options.HighPrecision;
+    options.premultiply_output = c_options.PremultiplyAlpha;
     options
 }
 
@@ -73,15 +73,15 @@ fn samples_per_pixel(color_type: JxlColorType) -> usize {
 
 /// Calculates the bytes per row for the given image info and pixel format.
 pub(crate) fn calculate_bytes_per_row(info: &JxlBasicInfo, pixel_format: &JxlPixelFormat) -> usize {
-    let width = info.width as usize;
-    let bps = bytes_per_sample(pixel_format.data_format);
-    let spp = samples_per_pixel(pixel_format.color_type);
+    let width = info.Width as usize;
+    let bps = bytes_per_sample(pixel_format.DataFormat);
+    let spp = samples_per_pixel(pixel_format.ColorType);
     width * spp * bps
 }
 
 /// Calculates the required buffer size for the given image info and pixel format.
 pub(crate) fn calculate_buffer_size(info: &JxlBasicInfo, pixel_format: &JxlPixelFormat) -> usize {
-    let height = info.height as usize;
+    let height = info.Height as usize;
     calculate_bytes_per_row(info, pixel_format) * height
 }
 
@@ -107,25 +107,25 @@ pub(crate) fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlBasicInfo 
     };
 
     JxlBasicInfo {
-        width: info.size.0 as u32,
-        height: info.size.1 as u32,
-        bits_per_sample: bits,
-        exponent_bits_per_sample: exp_bits,
-        num_color_channels: 3, // RGB, grayscale handled by color_type
-        num_extra_channels: info.extra_channels.len() as u32,
-        animation_tps_numerator: anim_num,
-        animation_tps_denominator: anim_den,
-        animation_num_loops: anim_loops,
-        preview_width: preview_w as u32,
-        preview_height: preview_h as u32,
-        intensity_target: info.tone_mapping.intensity_target,
-        min_nits: info.tone_mapping.min_nits,
-        relative_to_max_display: info.tone_mapping.relative_to_max_display,
-        linear_below: info.tone_mapping.linear_below,
-        orientation: convert_orientation(info.orientation),
-        alpha_premultiplied: false, // TODO: Check actual value from extra channels
-        have_animation: info.animation.is_some(),
-        uses_original_profile: info.uses_original_profile,
+        Width: info.size.0 as u32,
+        Height: info.size.1 as u32,
+        BitsPerSample: bits,
+        ExponentBitsPerSample: exp_bits,
+        NumColorChannels: 3, // RGB, grayscale handled by color_type
+        NumExtraChannels: info.extra_channels.len() as u32,
+        AnimationTpsNumerator: anim_num,
+        AnimationTpsDenominator: anim_den,
+        AnimationNumLoops: anim_loops,
+        PreviewWidth: preview_w as u32,
+        PreviewHeight: preview_h as u32,
+        IntensityTarget: info.tone_mapping.intensity_target,
+        MinNits: info.tone_mapping.min_nits,
+        RelativeToMaxDisplay: info.tone_mapping.relative_to_max_display,
+        LinearBelow: info.tone_mapping.linear_below,
+        Orientation: convert_orientation(info.orientation),
+        AlphaPremultiplied: false, // TODO: Check actual value from extra channels
+        HaveAnimation: info.animation.is_some(),
+        UsesOriginalProfile: info.uses_original_profile,
     }
 }
 
@@ -144,11 +144,11 @@ fn convert_orientation(orientation: Orientation) -> JxlOrientation {
 
 pub(crate) fn convert_frame_header(header: &jxl::api::JxlFrameHeader, is_last: bool) -> JxlFrameHeader {
     JxlFrameHeader {
-        duration_ms: header.duration.unwrap_or(0.0) as f32,
-        frame_width: header.size.0 as u32,
-        frame_height: header.size.1 as u32,
-        name_length: header.name.len() as u32,
-        is_last,
+        DurationMs: header.duration.unwrap_or(0.0) as f32,
+        FrameWidth: header.size.0 as u32,
+        FrameHeight: header.size.1 as u32,
+        NameLength: header.name.len() as u32,
+        IsLast: is_last,
     }
 }
 
@@ -165,12 +165,12 @@ pub(crate) fn convert_extra_channel_info(channel: &jxl::api::JxlExtraChannel) ->
     };
 
     JxlExtraChannelInfo {
-        spot_color: [0.0; 4],
-        bits_per_sample: 8, // Default, actual value may need to be retrieved differently
-        exponent_bits_per_sample: 0,
-        name_length: 0,
-        channel_type,
-        alpha_associated: channel.alpha_associated,
+        SpotColor: [0.0; 4],
+        BitsPerSample: 8, // Default, actual value may need to be retrieved differently
+        ExponentBitsPerSample: 0,
+        NameLength: 0,
+        ChannelType: channel_type,
+        AlphaAssociated: channel.alpha_associated,
     }
 }
 
@@ -179,7 +179,7 @@ pub(crate) fn convert_to_jxl_pixel_format(
     extra_channels: &[JxlExtraChannelInfo],
     skip_extra_channels: bool,
 ) -> UpstreamPixelFormat {
-    let color_type = match format.color_type {
+    let color_type = match format.ColorType {
         JxlColorType::Grayscale => UpstreamColorType::Grayscale,
         JxlColorType::GrayscaleAlpha => UpstreamColorType::GrayscaleAlpha,
         JxlColorType::Rgb => UpstreamColorType::Rgb,
@@ -188,13 +188,13 @@ pub(crate) fn convert_to_jxl_pixel_format(
         JxlColorType::Bgra => UpstreamColorType::Bgra,
     };
 
-    let endianness = match format.endianness {
+    let endianness = match format.Endianness {
         JxlEndianness::Native => Endianness::native(),
         JxlEndianness::LittleEndian => Endianness::LittleEndian,
         JxlEndianness::BigEndian => Endianness::BigEndian,
     };
 
-    let data_format = match format.data_format {
+    let data_format = match format.DataFormat {
         JxlDataFormat::Uint8 => Some(UpstreamDataFormat::U8 { bit_depth: 8 }),
         JxlDataFormat::Uint16 => Some(UpstreamDataFormat::U16 {
             endianness,
@@ -206,7 +206,7 @@ pub(crate) fn convert_to_jxl_pixel_format(
 
     // Determine if the color type already includes alpha
     let color_includes_alpha = matches!(
-        format.color_type,
+        format.ColorType,
         JxlColorType::Rgba | JxlColorType::Bgra | JxlColorType::GrayscaleAlpha
     );
 
@@ -214,7 +214,7 @@ pub(crate) fn convert_to_jxl_pixel_format(
     let extra_channel_format = if skip_extra_channels {
         vec![None; extra_channels.len()]
     } else {
-        let extra_format = match format.data_format {
+        let extra_format = match format.DataFormat {
             JxlDataFormat::Uint8 => Some(UpstreamDataFormat::U8 { bit_depth: 8 }),
             JxlDataFormat::Uint16 => Some(UpstreamDataFormat::U16 {
                 endianness,
@@ -233,7 +233,7 @@ pub(crate) fn convert_to_jxl_pixel_format(
                 // If color type includes alpha and this is the first alpha channel, skip it
                 // (it's already part of the color output)
                 if color_includes_alpha
-                    && ec.channel_type == JxlExtraChannelType::Alpha
+                    && ec.ChannelType == JxlExtraChannelType::Alpha
                     && !first_alpha_skipped
                 {
                     first_alpha_skipped = true;
