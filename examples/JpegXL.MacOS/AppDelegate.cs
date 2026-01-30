@@ -10,6 +10,9 @@ public class AppDelegate : NSApplicationDelegate
 
     public override void DidFinishLaunching(NSNotification notification)
     {
+        // Bring app to foreground (required when launched from terminal)
+        NSApplication.SharedApplication.Activate();
+
         _mainWindow = new MainWindow();
         _mainWindow.MakeKeyAndOrderFront(this);
 

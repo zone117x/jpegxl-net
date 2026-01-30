@@ -4,6 +4,7 @@
     <OutputType>Exe</OutputType>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationId>net.jpegxl.viewer</ApplicationId>
     <ApplicationTitle>JPEG XL Viewer</ApplicationTitle>
     <ApplicationVersion>1.0</ApplicationVersion>

@@ -265,6 +265,68 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
     }
 
     /// <summary>
+    /// Decodes an image directly into GPU-shared memory, eliminating managed array allocation.
+    /// On Apple Silicon, this uses unified memory accessible by both CPU and GPU.
+    /// </summary>
+    /// <param name="width">Width of the image in pixels.</param>
+    /// <param name="height">Height of the image in pixels.</param>
+    /// <param name="decodeAction">Action that receives a Span to decode pixels into.</param>
+    public void DecodeDirectToGpu(int width, int height, Action<Span<float>> decodeAction)
+    {
+        if (_device == null) return;
+
+        _imageWidth = width;
+        _imageHeight = height;
+        _isHdr = true;
+
+        // Clear animation state
+        _animationTextureArray?.Dispose();
+        _animationTextureArray = null;
+        _animationFrameCount = 0;
+
+        var pixelCount = width * height * 4;
+        var bufferSize = (nuint)(pixelCount * sizeof(float));
+
+        // Create shared buffer - on Apple Silicon this is unified memory
+        using var sharedBuffer = _device.CreateBuffer(bufferSize, MTLResourceOptions.StorageModeShared);
+        if (sharedBuffer == null) return;
+
+        // Get CPU pointer and wrap in Span for decoding
+        var cpuPtr = sharedBuffer.Contents;
+        Span<float> pixelSpan;
+        unsafe
+        {
+            pixelSpan = new Span<float>((void*)cpuPtr, pixelCount);
+        }
+
+        // Decode directly into GPU-shared memory
+        decodeAction(pixelSpan);
+
+        // Create texture from the shared buffer
+        // On Apple Silicon, this is very fast as it's already in unified memory
+        var textureDescriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
+            MTLPixelFormat.RGBA32Float,
+            (nuint)width,
+            (nuint)height,
+            false);
+        textureDescriptor.Usage = MTLTextureUsage.ShaderRead;
+        textureDescriptor.StorageMode = MTLStorageMode.Shared;
+
+        _imageTexture?.Dispose();
+        _imageTexture = _device.CreateTexture(textureDescriptor);
+
+        // Copy from shared buffer to texture
+        // On unified memory architecture, this is essentially a metadata operation
+        _imageTexture?.ReplaceRegion(
+            new MTLRegion(new MTLOrigin(0, 0, 0), new MTLSize(width, height, 1)),
+            0,
+            cpuPtr,
+            (nuint)(width * 4 * sizeof(float)));
+
+        Render();
+    }
+
+    /// <summary>
     /// Uploads all animation frames to a GPU texture array for efficient playback.
     /// </summary>
     /// <param name="frames">List of float[] pixel data for each frame.</param>
@@ -314,6 +376,82 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
             {
                 handle.Free();
             }
+        }
+
+        // Create buffer for frame index uniform
+        _frameIndexBuffer?.Dispose();
+        _frameIndexBuffer = _device.CreateBuffer((nuint)sizeof(int), MTLResourceOptions.StorageModeShared);
+
+        // Display first frame
+        DisplayArrayFrame(0);
+    }
+
+    /// <summary>
+    /// Decodes animation frames directly into GPU-shared memory, eliminating managed array allocations.
+    /// Each frame is decoded into a shared buffer and immediately uploaded to the texture array.
+    /// </summary>
+    /// <param name="frameCount">Number of frames to decode.</param>
+    /// <param name="width">Width of each frame in pixels.</param>
+    /// <param name="height">Height of each frame in pixels.</param>
+    /// <param name="decodeFrame">Action that decodes a specific frame into the provided Span.</param>
+    public void DecodeAnimationDirectToGpu(int frameCount, int width, int height, Action<int, Span<float>> decodeFrame)
+    {
+        if (_device == null || frameCount == 0) return;
+
+        _imageWidth = width;
+        _imageHeight = height;
+        _isHdr = true;
+        _animationFrameCount = frameCount;
+        _currentArrayFrameIndex = 0;
+
+        // Clear single-image state
+        _imageTexture?.Dispose();
+        _imageTexture = null;
+
+        // Create texture array descriptor
+        var descriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
+            MTLPixelFormat.RGBA32Float,
+            (nuint)width,
+            (nuint)height,
+            false);
+        descriptor.TextureType = MTLTextureType.k2DArray;
+        descriptor.ArrayLength = (nuint)frameCount;
+        descriptor.Usage = MTLTextureUsage.ShaderRead;
+        descriptor.StorageMode = MTLStorageMode.Shared;
+
+        _animationTextureArray?.Dispose();
+        _animationTextureArray = _device.CreateTexture(descriptor);
+
+        // Create a single shared buffer for decoding (reused for each frame)
+        var pixelCount = width * height * 4;
+        var bufferSize = (nuint)(pixelCount * sizeof(float));
+        using var sharedBuffer = _device.CreateBuffer(bufferSize, MTLResourceOptions.StorageModeShared);
+        if (sharedBuffer == null) return;
+
+        var cpuPtr = sharedBuffer.Contents;
+        Span<float> pixelSpan;
+        unsafe
+        {
+            pixelSpan = new Span<float>((void*)cpuPtr, pixelCount);
+        }
+
+        var bytesPerRow = (nuint)(width * 4 * sizeof(float));
+        var bytesPerImage = (nuint)(width * height * 4 * sizeof(float));
+
+        // Decode each frame directly to shared buffer, then upload to texture array
+        for (int i = 0; i < frameCount; i++)
+        {
+            // Decode frame into shared buffer
+            decodeFrame(i, pixelSpan);
+
+            // Upload to texture array slice (unified memory - very fast on Apple Silicon)
+            _animationTextureArray?.ReplaceRegion(
+                new MTLRegion(new MTLOrigin(0, 0, 0), new MTLSize(width, height, 1)),
+                0,
+                (nuint)i,
+                cpuPtr,
+                bytesPerRow,
+                bytesPerImage);
         }
 
         // Create buffer for frame index uniform

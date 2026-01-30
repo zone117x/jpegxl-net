@@ -12,17 +12,48 @@ JpegXL.Net is a .NET library for decoding JPEG XL images. It wraps the jxl-rs Ru
 - **Example app**: Run `examples/JpegXL.Viewer/run-animation-test.sh` to test the viewer
 - **Do NOT** use `cargo build` directly - the rebuild script handles cross-platform targets and copies libraries correctly
 
+## macOS Viewer Development
+
+Use `examples/JpegXL.MacOS/run.sh` for iterative development:
+
+```bash
+# Debug build (default)
+./examples/JpegXL.MacOS/run.sh
+
+# Release build
+./examples/JpegXL.MacOS/run.sh --release
+```
+
+The script builds, codesigns, and runs the app with a test animation file.
+
+**Optional flags:**
+- `--log` - Log stdout to `examples/JpegXL.MacOS/logs/run.txt` (existing logs are renamed with unix timestamp)
+- `--kill-after=<seconds>` - Auto-kill the app after N seconds (useful for automated testing)
+
+```bash
+# Run for 5 seconds with logging
+./examples/JpegXL.MacOS/run.sh --log-file --kill-after=5
+```
+
+**Development loop:**
+1. Modify C# code
+2. Run `./examples/JpegXL.MacOS/run.sh`
+3. View app behavior (use `--log-file` to capture `Console.WriteLine` output)
+4. Repeat
+
+**Note:** If you modify Rust code in `native/jxl-ffi/`, you must run `./rebuild-all.sh` first to recompile the native library before using `run.sh`.
+
 ## Architecture
 
 ### Native Layer (native/jxl-ffi/)
 - Rust FFI wrapper around jxl-rs library
 - `build.rs` uses csbindgen to auto-generate C# bindings
-- Generated bindings go to `src/JpegXL.Net/Native/NativeMethods.g.cs`
+- Generated bindings go to `src/JpegXL.Net/NativeMethods.g.cs`
 
 ### C# Layer (src/JpegXL.Net/)
 - `JxlDecoder` - Low-level streaming decoder API
 - `JxlImage` - High-level one-shot decode API
-- Source generator in `src/JpegXL.Net.Generators/` creates public wrapper types from native types
+- `*.Extensions.cs` files add helper methods to generated types (e.g., `JxlBasicInfo.IsHdr`)
 
 ### Key Design Principles
 - The native FFI layer should be minimal - just thin wrappers

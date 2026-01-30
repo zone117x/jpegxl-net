@@ -1,37 +1,61 @@
 #!/bin/bash
 set -e
 
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+TEST_FILE="$PROJECT_ROOT/jxl-rs/jxl/resources/test/conformance_test_images/animation_icos4d_5.jxl"
 
-# Check if Xcode is installed (not just Command Line Tools)
-XCODE_PATH=$(xcode-select -p 2>/dev/null)
-if [[ "$XCODE_PATH" == *"CommandLineTools"* ]] && [[ ! -d "/Applications/Xcode.app" ]]; then
-    echo "Error: Full Xcode installation is required (not just Command Line Tools)."
-    echo ""
-    echo "1. Install Xcode from the Mac App Store"
-    echo "2. Run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
-    exit 1
+CONFIG="Debug"
+KILL_AFTER=""
+LOG_FILE=""
+
+for arg in "$@"; do
+    case $arg in
+        --release)
+            CONFIG="Release"
+            ;;
+        --kill-after=*)
+            KILL_AFTER="${arg#*=}"
+            ;;
+        --log-file|--log)
+            LOG_FILE="$SCRIPT_DIR/logs/run.txt"
+            ;;
+    esac
+done
+
+RID="osx-arm64"
+APP_PATH="$SCRIPT_DIR/bin/$CONFIG/net10.0-macos/$RID/JPEG XL Viewer.app"
+EXE_PATH="$APP_PATH/Contents/MacOS/JpegXL.MacOS"
+
+pkill -f "JpegXL.MacOS" 2>/dev/null || true
+dotnet build -c "$CONFIG" -r "$RID" "$SCRIPT_DIR/JpegXL.MacOS.csproj" -v q
+codesign --force --deep --sign - "$APP_PATH"
+
+# Setup logging if requested
+if [[ -n "$LOG_FILE" ]]; then
+    mkdir -p "$SCRIPT_DIR/logs"
+    if [[ -f "$LOG_FILE" ]]; then
+        mv "$LOG_FILE" "$SCRIPT_DIR/logs/run-$(date +%s).txt"
+    fi
 fi
-
-# Check if macos workload is installed
-if ! dotnet workload list 2>/dev/null | grep -q "macos"; then
-    echo "The macOS workload is not installed."
-    echo "Please run: sudo dotnet workload install macos"
-    exit 1
-fi
-
-# Build
-dotnet build
 
 # Run the app
-APP_PATH="bin/Debug/net10.0-macos/osx-arm64/JPEG XL Viewer.app"
-if [[ -d "$APP_PATH" ]]; then
-    if [[ -n "$1" ]]; then
-        open "$APP_PATH" --args "$@"
+if [[ -n "$KILL_AFTER" ]]; then
+    if [[ -n "$LOG_FILE" ]]; then
+        "$EXE_PATH" "$TEST_FILE" 2>&1 | tee "$LOG_FILE" &
+        TEE_PID=$!
+        APP_PID=$(pgrep -n "JpegXL.MacOS")
+        sleep "$KILL_AFTER"
+        kill $APP_PID 2>/dev/null || true
+        kill $TEE_PID 2>/dev/null || true
     else
-        open "$APP_PATH"
+        "$EXE_PATH" "$TEST_FILE" &
+        APP_PID=$!
+        sleep "$KILL_AFTER"
+        kill $APP_PID 2>/dev/null || true
     fi
+elif [[ -n "$LOG_FILE" ]]; then
+    "$EXE_PATH" "$TEST_FILE" 2>&1 | tee "$LOG_FILE"
 else
-    echo "App bundle not found at: $APP_PATH"
-    exit 1
+    "$EXE_PATH" "$TEST_FILE"
 fi
