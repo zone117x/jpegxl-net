@@ -16,8 +16,15 @@ public class HdrMetalView : NSView
     private IMTLDevice? _device;
     private IMTLCommandQueue? _commandQueue;
     private IMTLRenderPipelineState? _pipelineState;
+    private IMTLRenderPipelineState? _arrayPipelineState;
     private IMTLTexture? _imageTexture;
     private IMTLBuffer? _vertexBuffer;
+
+    // Animation texture array support
+    private IMTLTexture? _animationTextureArray;
+    private IMTLBuffer? _frameIndexBuffer;
+    private int _animationFrameCount;
+    private int _currentArrayFrameIndex;
 
     private int _imageWidth;
     private int _imageHeight;
@@ -133,6 +140,15 @@ fragment float4 fragmentShader(VertexOut in [[stage_in]], texture2d<float> tex [
     // RGB is already premultiplied at decode time, just output with opaque alpha
     return float4(color.rgb, 1.0);
 }
+
+// Fragment shader for texture array (animation frames)
+fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
+                                     texture2d_array<float> tex [[texture(0)]],
+                                     constant int& frameIndex [[buffer(0)]]) {
+    constexpr sampler s(mag_filter::linear, min_filter::linear);
+    float4 color = tex.sample(s, in.texCoord, frameIndex);
+    return float4(color.rgb, 1.0);
+}
 ";
 
         NSError? error;
@@ -171,6 +187,22 @@ fragment float4 fragmentShader(VertexOut in [[stage_in]], texture2d<float> tex [
         if (_pipelineState == null || error != null)
         {
             Console.WriteLine($"Failed to create pipeline state: {error?.LocalizedDescription}");
+        }
+
+        // Create pipeline state for texture array (animation)
+        var fragmentArrayFunction = library.CreateFunction("fragmentShaderArray");
+        var arrayPipelineDescriptor = new MTLRenderPipelineDescriptor
+        {
+            VertexFunction = vertexFunction,
+            FragmentFunction = fragmentArrayFunction,
+            VertexDescriptor = vertexDescriptor
+        };
+        arrayPipelineDescriptor.ColorAttachments[0].PixelFormat = MTLPixelFormat.RGBA16Float;
+
+        _arrayPipelineState = _device.CreateRenderPipelineState(arrayPipelineDescriptor, out error);
+        if (_arrayPipelineState == null || error != null)
+        {
+            Console.WriteLine($"Failed to create array pipeline state: {error?.LocalizedDescription}");
         }
     }
 
@@ -223,7 +255,88 @@ fragment float4 fragmentShader(VertexOut in [[stage_in]], texture2d<float> tex [
         _imageHeight = height;
         _isHdr = true;
 
+        // Clear animation state when setting a single image
+        _animationTextureArray?.Dispose();
+        _animationTextureArray = null;
+        _animationFrameCount = 0;
+
         CreateTextureFromFloat32(pixels, width, height);
+        Render();
+    }
+
+    /// <summary>
+    /// Uploads all animation frames to a GPU texture array for efficient playback.
+    /// </summary>
+    /// <param name="frames">List of float[] pixel data for each frame.</param>
+    /// <param name="width">Width of each frame in pixels.</param>
+    /// <param name="height">Height of each frame in pixels.</param>
+    public void SetAnimationFrames(IReadOnlyList<float[]> frames, int width, int height)
+    {
+        if (_device == null || frames.Count == 0) return;
+
+        _imageWidth = width;
+        _imageHeight = height;
+        _isHdr = true;
+        _animationFrameCount = frames.Count;
+        _currentArrayFrameIndex = 0;
+
+        // Create texture array descriptor
+        var descriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
+            MTLPixelFormat.RGBA32Float,
+            (nuint)width,
+            (nuint)height,
+            false);
+        descriptor.TextureType = MTLTextureType.k2DArray;
+        descriptor.ArrayLength = (nuint)frames.Count;
+        descriptor.Usage = MTLTextureUsage.ShaderRead;
+        descriptor.StorageMode = MTLStorageMode.Shared;
+
+        _animationTextureArray?.Dispose();
+        _animationTextureArray = _device.CreateTexture(descriptor);
+
+        // Upload all frames to the texture array
+        var bytesPerRow = (nuint)(width * 4 * sizeof(float));
+        var bytesPerImage = (nuint)(width * height * 4 * sizeof(float));
+        for (int i = 0; i < frames.Count; i++)
+        {
+            var handle = GCHandle.Alloc(frames[i], GCHandleType.Pinned);
+            try
+            {
+                _animationTextureArray?.ReplaceRegion(
+                    new MTLRegion(new MTLOrigin(0, 0, 0), new MTLSize(width, height, 1)),
+                    0,
+                    (nuint)i,
+                    handle.AddrOfPinnedObject(),
+                    bytesPerRow,
+                    bytesPerImage);
+            }
+            finally
+            {
+                handle.Free();
+            }
+        }
+
+        // Create buffer for frame index uniform
+        _frameIndexBuffer?.Dispose();
+        _frameIndexBuffer = _device.CreateBuffer((nuint)sizeof(int), MTLResourceOptions.StorageModeShared);
+
+        // Display first frame
+        DisplayArrayFrame(0);
+    }
+
+    /// <summary>
+    /// Displays a specific frame from the animation texture array.
+    /// </summary>
+    /// <param name="index">The frame index to display.</param>
+    public void DisplayArrayFrame(int index)
+    {
+        if (_animationTextureArray == null || _frameIndexBuffer == null) return;
+
+        _currentArrayFrameIndex = index;
+
+        // Update frame index in buffer
+        Marshal.WriteInt32(_frameIndexBuffer.Contents, index);
+
         Render();
     }
 
@@ -289,8 +402,12 @@ fragment float4 fragmentShader(VertexOut in [[stage_in]], texture2d<float> tex [
     /// </summary>
     public void Render()
     {
+        // Check if we have either a single texture or an animation texture array
+        var useArrayTexture = _animationTextureArray != null && _arrayPipelineState != null && _frameIndexBuffer != null;
+        var useSingleTexture = _imageTexture != null && _pipelineState != null;
+
         if (_metalLayer == null || _device == null || _commandQueue == null ||
-            _pipelineState == null || _vertexBuffer == null || _imageTexture == null)
+            _vertexBuffer == null || (!useArrayTexture && !useSingleTexture))
         {
             return;
         }
@@ -315,7 +432,19 @@ fragment float4 fragmentShader(VertexOut in [[stage_in]], texture2d<float> tex [
         var encoder = commandBuffer.CreateRenderCommandEncoder(passDescriptor);
         if (encoder == null) return;
 
-        encoder.SetRenderPipelineState(_pipelineState);
+        // Use array pipeline for animations, single texture pipeline for static images
+        if (useArrayTexture)
+        {
+            encoder.SetRenderPipelineState(_arrayPipelineState!);
+            encoder.SetFragmentTexture(_animationTextureArray!, 0);
+            encoder.SetFragmentBuffer(_frameIndexBuffer!, 0, 0);
+        }
+        else
+        {
+            encoder.SetRenderPipelineState(_pipelineState!);
+            encoder.SetFragmentTexture(_imageTexture!, 0);
+        }
+
         encoder.SetVertexBuffer(_vertexBuffer, 0, 0);
 
         // Calculate scale to maintain aspect ratio and apply zoom
@@ -346,7 +475,6 @@ fragment float4 fragmentShader(VertexOut in [[stage_in]], texture2d<float> tex [
             uniformHandle.Free();
         }
 
-        encoder.SetFragmentTexture(_imageTexture, 0);
         encoder.DrawPrimitives(MTLPrimitiveType.TriangleStrip, 0, 4);
         encoder.EndEncoding();
 

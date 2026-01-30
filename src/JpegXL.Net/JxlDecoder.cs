@@ -65,12 +65,12 @@ public sealed unsafe class JxlDecoder : IDisposable
     /// <summary>
     /// Gets whether the image has an alpha channel.
     /// </summary>
-    public bool HasAlpha => (_basicInfo?.NumExtraChannels ?? 0) > 0;
+    public bool HasAlpha => _basicInfo?.HasAlpha ?? false;
 
     /// <summary>
     /// Gets whether the image is animated.
     /// </summary>
-    public bool IsAnimated => _basicInfo?.HaveAnimation ?? false;
+    public bool IsAnimated => _basicInfo?.IsAnimated ?? false;
 
     /// <summary>
     /// Sets the input data for decoding.
@@ -347,7 +347,7 @@ public sealed unsafe class JxlDecoder : IDisposable
             var message = GetLastError();
             throw new JxlException(JxlStatus.Error, message);
         }
-        return (JxlDecoderEvent)evt;
+        return evt;
     }
 
     /// <summary>
@@ -442,8 +442,24 @@ public sealed unsafe class JxlDecoder : IDisposable
                 var message = GetLastError();
                 throw new JxlException(JxlStatus.Error, message);
             }
-            return (JxlDecoderEvent)evt;
+            return evt;
         }
+    }
+
+    /// <summary>
+    /// Decodes pixels directly into a typed buffer.
+    /// </summary>
+    /// <typeparam name="T">The unmanaged element type (e.g., float for Rgba32F format).</typeparam>
+    /// <param name="buffer">The output buffer to write decoded pixels to.</param>
+    /// <returns>The event indicating what happened during pixel decoding.</returns>
+    /// <remarks>
+    /// This method allows decoding directly into a typed buffer without intermediate copies.
+    /// For example, when using <see cref="JxlPixelFormat.Rgba32F"/>, you can decode directly
+    /// into a <c>Span&lt;float&gt;</c> instead of a <c>Span&lt;byte&gt;</c>.
+    /// </remarks>
+    public JxlDecoderEvent ReadPixels<T>(Span<T> buffer) where T : unmanaged
+    {
+        return ReadPixels(MemoryMarshal.AsBytes(buffer));
     }
 
     /// <summary>
@@ -515,7 +531,7 @@ public sealed unsafe class JxlDecoder : IDisposable
                     var message = GetLastError();
                     throw new JxlException(JxlStatus.Error, message);
                 }
-                return (JxlDecoderEvent)evt;
+                return evt;
             }
         }
         finally
@@ -571,7 +587,7 @@ public sealed unsafe class JxlDecoder : IDisposable
         if (status != JxlStatus.Success)
         {
             var message = GetLastError();
-            throw new JxlException((JxlStatus)status, message);
+            throw new JxlException(status, message);
         }
     }
 

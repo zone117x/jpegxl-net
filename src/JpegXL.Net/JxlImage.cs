@@ -195,7 +195,7 @@ public sealed class JxlImage : IDisposable
     {
         fixed (byte* ptr = data)
         {
-            return (JxlSignature)NativeMethods.jxl_signature_check(ptr, (UIntPtr)data.Length);
+            return NativeMethods.jxl_signature_check(ptr, (UIntPtr)data.Length);
         }
     }
 

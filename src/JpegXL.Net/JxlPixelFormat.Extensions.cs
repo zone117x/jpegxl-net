@@ -15,7 +15,7 @@ public partial struct JxlPixelFormat
     {
         DataFormat = JxlDataFormat.Uint8,
         ColorType = JxlColorType.Rgba,
-        Endianness = global::JpegXL.Net.JxlEndianness.Native
+        Endianness = JxlEndianness.Native
     };
 
     /// <summary>
@@ -25,7 +25,7 @@ public partial struct JxlPixelFormat
     {
         DataFormat = JxlDataFormat.Uint8,
         ColorType = JxlColorType.Rgba,
-        Endianness = global::JpegXL.Net.JxlEndianness.Native
+        Endianness = JxlEndianness.Native
     };
 
     /// <summary>
@@ -35,7 +35,7 @@ public partial struct JxlPixelFormat
     {
         DataFormat = JxlDataFormat.Uint8,
         ColorType = JxlColorType.Bgra,
-        Endianness = global::JpegXL.Net.JxlEndianness.Native
+        Endianness = JxlEndianness.Native
     };
 
     /// <summary>
@@ -45,7 +45,7 @@ public partial struct JxlPixelFormat
     {
         DataFormat = JxlDataFormat.Uint8,
         ColorType = JxlColorType.Rgb,
-        Endianness = global::JpegXL.Net.JxlEndianness.Native
+        Endianness = JxlEndianness.Native
     };
 
     /// <summary>
@@ -55,7 +55,7 @@ public partial struct JxlPixelFormat
     {
         DataFormat = JxlDataFormat.Uint16,
         ColorType = JxlColorType.Rgba,
-        Endianness = global::JpegXL.Net.JxlEndianness.Native
+        Endianness = JxlEndianness.Native
     };
 
     /// <summary>
@@ -65,7 +65,7 @@ public partial struct JxlPixelFormat
     {
         DataFormat = JxlDataFormat.Float32,
         ColorType = JxlColorType.Rgba,
-        Endianness = global::JpegXL.Net.JxlEndianness.Native
+        Endianness = JxlEndianness.Native
     };
 
     /// <summary>
@@ -75,6 +75,6 @@ public partial struct JxlPixelFormat
     {
         DataFormat = JxlDataFormat.Float32,
         ColorType = JxlColorType.Bgra,
-        Endianness = global::JpegXL.Net.JxlEndianness.Native
+        Endianness = JxlEndianness.Native
     };
 }

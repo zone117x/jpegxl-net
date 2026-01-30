@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using AppKit;
 using CoreGraphics;
 using Foundation;
@@ -214,11 +215,20 @@ public class MainWindow : NSWindow
                 if (_frames.Count > 0)
                 {
                     _currentFrameIndex = 0;
-                    DisplayFrame(0);
 
                     if (_frames.Count > 1)
                     {
+                        // Upload all frames to GPU texture array for zero-copy playback
+                        _metalView!.SetAnimationFrames(
+                            _frames.Select(f => f.Pixels).ToList(),
+                            (int)info.Width,
+                            (int)info.Height);
                         StartAnimation();
+                    }
+                    else
+                    {
+                        // Single frame - use regular texture
+                        DisplayFrame(0);
                     }
 
                     var formatStr = isHdr ? "HDR" : "Animated";
@@ -278,7 +288,9 @@ public class MainWindow : NSWindow
         // The Metal view handles the linear color space conversion
 
         var image = JxlImage.Decode(data, JxlPixelFormat.Rgba32F, options);
-        return ConvertToFloatArray(image.GetPixelArray(), (int)info.Width, (int)info.Height);
+        // Cast byte[] to float[] - the data is already in float format
+        var bytes = image.GetPixelArray();
+        return MemoryMarshal.Cast<byte, float>(bytes.AsSpan()).ToArray();
     }
 
     private List<AnimationFrame> DecodeAnimatedImage(byte[] data, JxlBasicInfo info, bool isHdr)
@@ -286,8 +298,10 @@ public class MainWindow : NSWindow
         var frames = new List<AnimationFrame>();
         var width = (int)info.Width;
         var height = (int)info.Height;
-        var bufferSize = width * height * 4 * sizeof(float);
-        var pixels = new byte[bufferSize];
+        var pixelCount = width * height * 4;
+
+        // Decode directly to float[] - no intermediate byte[] conversion needed
+        var pixels = new float[pixelCount];
 
         var options = new JxlDecodeOptions
         {
@@ -322,12 +336,13 @@ public class MainWindow : NSWindow
 
             if (evt == JxlDecoderEvent.NeedOutputBuffer)
             {
-                evt = decoder.ReadPixels(pixels);
+                // Decode directly to float[] using the generic ReadPixels<T>
+                evt = decoder.ReadPixels(pixels.AsSpan());
 
                 if (evt == JxlDecoderEvent.FrameComplete)
                 {
-                    var floatPixels = ConvertToFloatArray(pixels, width, height);
-                    frames.Add(new AnimationFrame(floatPixels, duration > 0 ? duration : 100f));
+                    // Clone the buffer for storage (pixels buffer is reused)
+                    frames.Add(new AnimationFrame(pixels.ToArray(), duration > 0 ? duration : 100f));
                 }
             }
 
@@ -337,19 +352,21 @@ public class MainWindow : NSWindow
         return frames;
     }
 
-    private static float[] ConvertToFloatArray(byte[] bytes, int width, int height)
-    {
-        var floats = new float[width * height * 4];
-        Buffer.BlockCopy(bytes, 0, floats, 0, bytes.Length);
-        return floats;
-    }
-
     private void DisplayFrame(int index)
     {
         if (_frames == null || index >= _frames.Count || _currentInfo == null) return;
 
-        var frame = _frames[index];
-        _metalView!.SetImageHdr(frame.Pixels, (int)_currentInfo.Value.Width, (int)_currentInfo.Value.Height);
+        // Use GPU texture array for multi-frame animations (zero-copy frame switching)
+        if (_frames.Count > 1)
+        {
+            _metalView!.DisplayArrayFrame(index);
+        }
+        else
+        {
+            var frame = _frames[index];
+            _metalView!.SetImageHdr(frame.Pixels, (int)_currentInfo.Value.Width, (int)_currentInfo.Value.Height);
+        }
+
         _frameLabel!.StringValue = $"Frame {index + 1}/{_frames.Count}";
     }
 
