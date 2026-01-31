@@ -547,6 +547,10 @@ namespace JpegXL.Net
         ///  Whether to decode extra channels into separate buffers.
         /// </summary>
         [MarshalAs(UnmanagedType.U1)] public bool DecodeExtraChannels;
+        /// <summary>
+        ///  Desired output pixel format.
+        /// </summary>
+        public JxlPixelFormat PixelFormat;
     }
 
 
@@ -610,21 +614,21 @@ namespace JpegXL.Net
     public enum JxlColorType : uint
     {
         /// <summary>
+        ///  Red, green, blue, alpha (default for C# struct initialization).
+        /// </summary>
+        Rgba = 0,
+        /// <summary>
         ///  Single grayscale channel.
         /// </summary>
-        Grayscale = 0,
+        Grayscale = 1,
         /// <summary>
         ///  Grayscale + alpha.
         /// </summary>
-        GrayscaleAlpha = 1,
+        GrayscaleAlpha = 2,
         /// <summary>
         ///  Red, green, blue.
         /// </summary>
-        Rgb = 2,
-        /// <summary>
-        ///  Red, green, blue, alpha.
-        /// </summary>
-        Rgba = 3,
+        Rgb = 3,
         /// <summary>
         ///  Blue, green, red (Windows bitmap order).
         /// </summary>

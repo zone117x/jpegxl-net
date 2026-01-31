@@ -101,7 +101,7 @@ impl DecoderInner {
             data_offset: 0,
             basic_info: None,
             extra_channels: Vec::new(),
-            pixel_format: JxlPixelFormat::default(),
+            pixel_format: options.PixelFormat,
             options,
         }
     }

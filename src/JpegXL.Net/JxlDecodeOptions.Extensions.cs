@@ -25,6 +25,7 @@ public partial struct JxlDecodeOptions
     /// <item><description>HighPrecision: false</description></item>
     /// <item><description>PremultiplyAlpha: false</description></item>
     /// <item><description>DecodeExtraChannels: false</description></item>
+    /// <item><description>PixelFormat: RGBA8 (default)</description></item>
     /// </list>
     /// </remarks>
     public static JxlDecodeOptions Default => new()
@@ -40,5 +41,6 @@ public partial struct JxlDecodeOptions
         HighPrecision = false,
         PremultiplyAlpha = false,
         DecodeExtraChannels = false,
+        PixelFormat = JxlPixelFormat.Default,
     };
 }

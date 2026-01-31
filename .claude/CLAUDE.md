@@ -49,6 +49,7 @@ The script kills the previously running app (if any), builds, codesigns, and run
 - Rust FFI wrapper around jxl-rs library
 - `build.rs` uses csbindgen to auto-generate C# bindings
 - Generated bindings go to `src/JpegXL.Net/NativeMethods.g.cs`
+- Check csbindgen docs at `docs/csbindgen-README.md` for how the Rust<->C# interop works
 
 ### C# Layer (src/JpegXL.Net/)
 - `JxlDecoder` - Low-level streaming decoder API

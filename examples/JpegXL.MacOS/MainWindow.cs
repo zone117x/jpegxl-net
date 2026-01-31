@@ -219,7 +219,10 @@ public class MainWindow : NSWindow
             Console.WriteLine($"Loading image: {path}");
             var bytes = File.ReadAllBytes(path);
 
-            var options = new JxlDecodeOptions { PremultiplyAlpha = true };
+            var options = new JxlDecodeOptions {
+                PremultiplyAlpha = true,
+                PixelFormat = JxlPixelFormat.Rgba32F
+            };
 
             // Single decoder for entire load operation
             using var decoder = new JxlDecoder(options);
@@ -231,8 +234,6 @@ public class MainWindow : NSWindow
             var isHdr = info.IsHdr;
 
             _frameDurations = null;
-
-            decoder.SetPixelFormat(JxlPixelFormat.Rgba32F);
 
             if (info.IsAnimated)
             {

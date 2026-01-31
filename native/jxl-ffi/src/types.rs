@@ -47,14 +47,14 @@ pub enum JxlDataFormat {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JxlColorType {
+    /// Red, green, blue, alpha (default for C# struct initialization).
+    Rgba = 0,
     /// Single grayscale channel.
-    Grayscale = 0,
+    Grayscale = 1,
     /// Grayscale + alpha.
-    GrayscaleAlpha = 1,
+    GrayscaleAlpha = 2,
     /// Red, green, blue.
-    Rgb = 2,
-    /// Red, green, blue, alpha.
-    Rgba = 3,
+    Rgb = 3,
     /// Blue, green, red (Windows bitmap order).
     Bgr = 4,
     /// Blue, green, red, alpha.
@@ -295,6 +295,8 @@ pub struct JxlDecodeOptions {
     pub PremultiplyAlpha: bool,
     /// Whether to decode extra channels into separate buffers.
     pub DecodeExtraChannels: bool,
+    /// Desired output pixel format.
+    pub PixelFormat: JxlPixelFormat,
 }
 
 impl Default for JxlDecodeOptions {
@@ -311,6 +313,7 @@ impl Default for JxlDecodeOptions {
             HighPrecision: false,
             PremultiplyAlpha: false,
             DecodeExtraChannels: false,
+            PixelFormat: JxlPixelFormat::default(),
         }
     }
 }
