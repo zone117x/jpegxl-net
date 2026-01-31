@@ -408,8 +408,7 @@ pub unsafe extern "C" fn jxl_decoder_get_frame_header(
 
     if let Some(out_header) = unsafe { header.as_mut() } {
         let jxl_header = decoder_with_frame.frame_header();
-        // is_last is not known until frame decode completes
-        *out_header = convert_frame_header(&jxl_header, false);
+        *out_header = convert_frame_header(&jxl_header);
     }
 
     JxlStatus::Success

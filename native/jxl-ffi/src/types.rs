@@ -120,6 +120,21 @@ pub enum JxlProgressiveMode {
     FullFrame = 2,
 }
 
+/// Tone mapping parameters for HDR content.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+#[allow(non_snake_case)]
+pub struct JxlToneMapping {
+    /// Intensity target for HDR (nits).
+    pub IntensityTarget: f32,
+    /// Minimum nits for tone mapping.
+    pub MinNits: f32,
+    /// Linear tone mapping threshold (nits, or ratio if relative_to_max_display).
+    pub LinearBelow: f32,
+    /// Whether linear_below is relative to max display luminance.
+    pub RelativeToMaxDisplay: bool,
+}
+
 /// Basic image information (raw FFI struct).
 /// Fields are ordered by size (largest first) to minimize padding.
 #[repr(C)]
@@ -139,23 +154,17 @@ pub struct JxlBasicInfoRaw {
     /// Number of extra channels (alpha, depth, etc.).
     pub NumExtraChannels: u32,
     /// Animation ticks per second numerator (0 if no animation).
-    pub AnimationTpsNumerator: u32,
+    pub Animation_TpsNumerator: u32,
     /// Animation ticks per second denominator (0 if no animation).
-    pub AnimationTpsDenominator: u32,
+    pub Animation_TpsDenominator: u32,
     /// Number of animation loops (0 = infinite).
-    pub AnimationNumLoops: u32,
+    pub Animation_NumLoops: u32,
     /// Preview image width (0 if no preview).
-    pub PreviewWidth: u32,
+    pub Preview_Width: u32,
     /// Preview image height (0 if no preview).
-    pub PreviewHeight: u32,
-    /// Intensity target for HDR (nits).
-    pub IntensityTarget: f32,
-    /// Minimum nits for tone mapping.
-    pub MinNits: f32,
-    /// Whether linear_below is relative to max display luminance.
-    pub RelativeToMaxDisplay: bool,
-    /// Linear tone mapping threshold (nits, or ratio if relative_to_max_display).
-    pub LinearBelow: f32,
+    pub Preview_Height: u32,
+    /// Tone mapping parameters for HDR content.
+    pub ToneMapping: JxlToneMapping,
     /// Image orientation.
     pub Orientation: JxlOrientation,
     /// Whether alpha is premultiplied.
@@ -191,19 +200,13 @@ pub enum JxlExtraChannelType {
 }
 
 /// Information about an extra channel.
-/// Fields are ordered by size (largest first) to minimize padding.
+/// Note: jxl-rs API only exposes channel type and alpha_associated.
+/// Other fields like bits_per_sample, name, spot_color are in the lower-level
+/// ExtraChannelInfo but not exposed through the public API.
 #[repr(C)]
 #[derive(Debug, Clone)]
 #[allow(non_snake_case)]
 pub struct JxlExtraChannelInfo {
-    /// Spot color values (RGBA, only for spot color channels).
-    pub SpotColor: [f32; 4],
-    /// Bits per sample.
-    pub BitsPerSample: u32,
-    /// Exponent bits (for float channels).
-    pub ExponentBitsPerSample: u32,
-    /// Channel name length in bytes (excluding null terminator).
-    pub NameLength: u32,
     /// Type of extra channel.
     pub ChannelType: JxlExtraChannelType,
     /// Whether alpha is associated/premultiplied (only for alpha channels).
@@ -211,7 +214,8 @@ pub struct JxlExtraChannelInfo {
 }
 
 /// Frame header information.
-/// Fields are ordered by size (largest first) to minimize padding.
+/// Note: jxl-rs API exposes name, duration, and size.
+/// is_last is in the lower-level FrameHeader but not exposed through the API.
 #[repr(C)]
 #[derive(Debug, Clone)]
 #[allow(non_snake_case)]
@@ -224,8 +228,6 @@ pub struct JxlFrameHeader {
     pub FrameHeight: u32,
     /// Frame name length in bytes. Use jxl_decoder_get_frame_name to get the actual name.
     pub NameLength: u32,
-    /// Whether this is the last frame.
-    pub IsLast: bool,
 }
 
 impl Default for JxlBasicInfoRaw {
@@ -237,15 +239,17 @@ impl Default for JxlBasicInfoRaw {
             ExponentBitsPerSample: 0,
             NumColorChannels: 3,
             NumExtraChannels: 0,
-            AnimationTpsNumerator: 0,
-            AnimationTpsDenominator: 0,
-            AnimationNumLoops: 0,
-            PreviewWidth: 0,
-            PreviewHeight: 0,
-            IntensityTarget: 255.0,
-            MinNits: 0.0,
-            RelativeToMaxDisplay: false,
-            LinearBelow: 0.0,
+            Animation_TpsNumerator: 0,
+            Animation_TpsDenominator: 0,
+            Animation_NumLoops: 0,
+            Preview_Width: 0,
+            Preview_Height: 0,
+            ToneMapping: JxlToneMapping {
+                IntensityTarget: 255.0,
+                MinNits: 0.0,
+                LinearBelow: 0.0,
+                RelativeToMaxDisplay: false,
+            },
             Orientation: JxlOrientation::Identity,
             AlphaPremultiplied: false,
             IsAnimated: false,

@@ -378,27 +378,25 @@ public sealed unsafe class JxlDecoder : IDisposable
 
         // Build animation (if animated)
         JxlAnimation? animation = rawInfo.IsAnimated
-            ? new JxlAnimation(rawInfo.AnimationTpsNumerator, rawInfo.AnimationTpsDenominator, rawInfo.AnimationNumLoops)
+            ? new JxlAnimation(rawInfo.Animation_TpsNumerator, rawInfo.Animation_TpsDenominator, rawInfo.Animation_NumLoops)
             : null;
 
         // Build preview size (if present)
-        (nuint, nuint)? previewSize = rawInfo.PreviewWidth > 0 && rawInfo.PreviewHeight > 0
-            ? ((nuint)rawInfo.PreviewWidth, (nuint)rawInfo.PreviewHeight)
+        (nuint, nuint)? previewSize = rawInfo.Preview_Width > 0 && rawInfo.Preview_Height > 0
+            ? ((nuint)rawInfo.Preview_Width, (nuint)rawInfo.Preview_Height)
             : null;
 
         var info = new JxlBasicInfo
         {
             Size = (rawInfo.Width, rawInfo.Height),
+            NumColorChannels = rawInfo.NumColorChannels,
             BitDepth = bitDepth,
             Orientation = rawInfo.Orientation,
             ExtraChannels = extraChannels,
             Animation = animation,
             UsesOriginalProfile = rawInfo.UsesOriginalProfile,
-            ToneMapping = new JxlToneMapping(
-                rawInfo.IntensityTarget,
-                rawInfo.MinNits,
-                rawInfo.RelativeToMaxDisplay,
-                rawInfo.LinearBelow),
+            AlphaPremultiplied = rawInfo.AlphaPremultiplied,
+            ToneMapping = rawInfo.ToneMapping,
             PreviewSize = previewSize
         };
 
@@ -654,8 +652,7 @@ public sealed unsafe class JxlDecoder : IDisposable
                 DurationMs = 0,
                 FrameWidth = (uint)basicInfo.Size.Width,
                 FrameHeight = (uint)basicInfo.Size.Height,
-                NameLength = 0,
-                IsLast = true
+                NameLength = 0
             };
             return new JxlAnimationMetadata(
                 [staticFrame],

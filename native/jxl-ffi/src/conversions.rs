@@ -113,15 +113,17 @@ pub(crate) fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlBasicInfoR
         ExponentBitsPerSample: exp_bits,
         NumColorChannels: 3, // RGB, grayscale handled by color_type
         NumExtraChannels: info.extra_channels.len() as u32,
-        AnimationTpsNumerator: anim_num,
-        AnimationTpsDenominator: anim_den,
-        AnimationNumLoops: anim_loops,
-        PreviewWidth: preview_w as u32,
-        PreviewHeight: preview_h as u32,
-        IntensityTarget: info.tone_mapping.intensity_target,
-        MinNits: info.tone_mapping.min_nits,
-        RelativeToMaxDisplay: info.tone_mapping.relative_to_max_display,
-        LinearBelow: info.tone_mapping.linear_below,
+        Animation_TpsNumerator: anim_num,
+        Animation_TpsDenominator: anim_den,
+        Animation_NumLoops: anim_loops,
+        Preview_Width: preview_w as u32,
+        Preview_Height: preview_h as u32,
+        ToneMapping: JxlToneMapping {
+            IntensityTarget: info.tone_mapping.intensity_target,
+            MinNits: info.tone_mapping.min_nits,
+            LinearBelow: info.tone_mapping.linear_below,
+            RelativeToMaxDisplay: info.tone_mapping.relative_to_max_display,
+        },
         Orientation: convert_orientation(info.orientation),
         AlphaPremultiplied: false, // TODO: Check actual value from extra channels
         IsAnimated: info.animation.is_some(),
@@ -142,13 +144,12 @@ fn convert_orientation(orientation: Orientation) -> JxlOrientation {
     }
 }
 
-pub(crate) fn convert_frame_header(header: &jxl::api::JxlFrameHeader, is_last: bool) -> JxlFrameHeader {
+pub(crate) fn convert_frame_header(header: &jxl::api::JxlFrameHeader) -> JxlFrameHeader {
     JxlFrameHeader {
         DurationMs: header.duration.unwrap_or(0.0) as f32,
         FrameWidth: header.size.0 as u32,
         FrameHeight: header.size.1 as u32,
         NameLength: header.name.len() as u32,
-        IsLast: is_last,
     }
 }
 
@@ -165,10 +166,6 @@ pub(crate) fn convert_extra_channel_info(channel: &jxl::api::JxlExtraChannel) ->
     };
 
     JxlExtraChannelInfo {
-        SpotColor: [0.0; 4],
-        BitsPerSample: 8, // Default, actual value may need to be retrieved differently
-        ExponentBitsPerSample: 0,
-        NameLength: 0,
         ChannelType: channel_type,
         AlphaAssociated: channel.alpha_associated,
     }

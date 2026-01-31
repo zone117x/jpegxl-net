@@ -347,6 +347,30 @@ namespace JpegXL.Net
     }
 
     /// <summary>
+    ///  Tone mapping parameters for HDR content.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct JxlToneMapping
+    {
+        /// <summary>
+        ///  Intensity target for HDR (nits).
+        /// </summary>
+        public float IntensityTarget;
+        /// <summary>
+        ///  Minimum nits for tone mapping.
+        /// </summary>
+        public float MinNits;
+        /// <summary>
+        ///  Linear tone mapping threshold (nits, or ratio if relative_to_max_display).
+        /// </summary>
+        public float LinearBelow;
+        /// <summary>
+        ///  Whether linear_below is relative to max display luminance.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool RelativeToMaxDisplay;
+    }
+
+    /// <summary>
     ///  Basic image information (raw FFI struct).
     ///  Fields are ordered by size (largest first) to minimize padding.
     /// </summary>
@@ -380,39 +404,27 @@ namespace JpegXL.Net
         /// <summary>
         ///  Animation ticks per second numerator (0 if no animation).
         /// </summary>
-        public uint AnimationTpsNumerator;
+        public uint Animation_TpsNumerator;
         /// <summary>
         ///  Animation ticks per second denominator (0 if no animation).
         /// </summary>
-        public uint AnimationTpsDenominator;
+        public uint Animation_TpsDenominator;
         /// <summary>
         ///  Number of animation loops (0 = infinite).
         /// </summary>
-        public uint AnimationNumLoops;
+        public uint Animation_NumLoops;
         /// <summary>
         ///  Preview image width (0 if no preview).
         /// </summary>
-        public uint PreviewWidth;
+        public uint Preview_Width;
         /// <summary>
         ///  Preview image height (0 if no preview).
         /// </summary>
-        public uint PreviewHeight;
+        public uint Preview_Height;
         /// <summary>
-        ///  Intensity target for HDR (nits).
+        ///  Tone mapping parameters for HDR content.
         /// </summary>
-        public float IntensityTarget;
-        /// <summary>
-        ///  Minimum nits for tone mapping.
-        /// </summary>
-        public float MinNits;
-        /// <summary>
-        ///  Whether linear_below is relative to max display luminance.
-        /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool RelativeToMaxDisplay;
-        /// <summary>
-        ///  Linear tone mapping threshold (nits, or ratio if relative_to_max_display).
-        /// </summary>
-        public float LinearBelow;
+        public JxlToneMapping ToneMapping;
         /// <summary>
         ///  Image orientation.
         /// </summary>
@@ -433,27 +445,13 @@ namespace JpegXL.Net
 
     /// <summary>
     ///  Information about an extra channel.
-    ///  Fields are ordered by size (largest first) to minimize padding.
+    ///  Note: jxl-rs API only exposes channel type and alpha_associated.
+    ///  Other fields like bits_per_sample, name, spot_color are in the lower-level
+    ///  ExtraChannelInfo but not exposed through the public API.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public unsafe partial struct JxlExtraChannelInfo
     {
-        /// <summary>
-        ///  Spot color values (RGBA, only for spot color channels).
-        /// </summary>
-        public fixed float SpotColor[4];
-        /// <summary>
-        ///  Bits per sample.
-        /// </summary>
-        public uint BitsPerSample;
-        /// <summary>
-        ///  Exponent bits (for float channels).
-        /// </summary>
-        public uint ExponentBitsPerSample;
-        /// <summary>
-        ///  Channel name length in bytes (excluding null terminator).
-        /// </summary>
-        public uint NameLength;
         /// <summary>
         ///  Type of extra channel.
         /// </summary>
@@ -466,7 +464,8 @@ namespace JpegXL.Net
 
     /// <summary>
     ///  Frame header information.
-    ///  Fields are ordered by size (largest first) to minimize padding.
+    ///  Note: jxl-rs API exposes name, duration, and size.
+    ///  is_last is in the lower-level FrameHeader but not exposed through the API.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public unsafe partial struct JxlFrameHeader
@@ -487,10 +486,6 @@ namespace JpegXL.Net
         ///  Frame name length in bytes. Use jxl_decoder_get_frame_name to get the actual name.
         /// </summary>
         public uint NameLength;
-        /// <summary>
-        ///  Whether this is the last frame.
-        /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool IsLast;
     }
 
     /// <summary>

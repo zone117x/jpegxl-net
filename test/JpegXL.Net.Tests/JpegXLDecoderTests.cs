@@ -444,8 +444,7 @@ public class JxlDecoderTests
         for (int i = 0; i < info.ExtraChannels.Count; i++)
         {
             var channelInfo = decoder.GetExtraChannelInfo(i);
-            Console.WriteLine($"Extra channel {i}: Type={channelInfo.ChannelType}, BitsPerSample={channelInfo.BitsPerSample}");
-            Assert.IsTrue(channelInfo.BitsPerSample > 0, $"Channel {i} should have valid bits per sample");
+            Console.WriteLine($"Extra channel {i}: Type={channelInfo.ChannelType}, AlphaAssociated={channelInfo.AlphaAssociated}");
         }
     }
 
@@ -575,7 +574,6 @@ public class JxlDecoderTests
         Assert.IsFalse(basicInfo.IsAnimated, "Should not be animated");
         Assert.AreEqual(1, metadata.FrameCount, "Static image should have 1 frame");
         Assert.AreEqual(0, metadata.Frames[0].DurationMs, "Static image frame should have 0 duration");
-        Assert.IsTrue(metadata.Frames[0].IsLast, "Single frame should be marked as last");
 
         Console.WriteLine($"ParseFrameMetadata (static): {basicInfo.Size.Width}x{basicInfo.Size.Height}");
     }
@@ -594,5 +592,131 @@ public class JxlDecoderTests
         Assert.IsTrue(ex.Message.Contains("exceeded limit"), $"Expected limit exceeded message, got: {ex.Message}");
 
         Console.WriteLine($"ParseFrameMetadata correctly threw: {ex.Message}");
+    }
+
+    [TestMethod]
+    public void ToneMapping_HdrPqFile_HasHighIntensityTarget()
+    {
+        // Arrange - HDR PQ (Perceptual Quantizer) test file
+        var data = File.ReadAllBytes("TestData/hdr_pq_test.jxl");
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+
+        // Act
+        var info = decoder.ReadInfo();
+
+        // Assert - HDR files should have IntensityTarget > 255 nits (SDR max)
+        Assert.IsTrue(info.ToneMapping.IntensityTarget > 255f,
+            $"HDR PQ file should have IntensityTarget > 255, got {info.ToneMapping.IntensityTarget}");
+        Assert.IsTrue(info.IsHdr, "IsHdr should be true for HDR PQ file");
+
+        Console.WriteLine($"HDR PQ ToneMapping: IntensityTarget={info.ToneMapping.IntensityTarget}, " +
+            $"MinNits={info.ToneMapping.MinNits}, LinearBelow={info.ToneMapping.LinearBelow}, " +
+            $"RelativeToMaxDisplay={info.ToneMapping.RelativeToMaxDisplay}");
+    }
+
+    [TestMethod]
+    public void ToneMapping_HdrHlgFile_HasHighIntensityTarget()
+    {
+        // Arrange - HDR HLG (Hybrid Log-Gamma) test file
+        var data = File.ReadAllBytes("TestData/hdr_hlg_test.jxl");
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+
+        // Act
+        var info = decoder.ReadInfo();
+
+        // Assert - HDR files should have IntensityTarget > 255 nits (SDR max)
+        Assert.IsTrue(info.ToneMapping.IntensityTarget > 255f,
+            $"HDR HLG file should have IntensityTarget > 255, got {info.ToneMapping.IntensityTarget}");
+        Assert.IsTrue(info.IsHdr, "IsHdr should be true for HDR HLG file");
+
+        Console.WriteLine($"HDR HLG ToneMapping: IntensityTarget={info.ToneMapping.IntensityTarget}, " +
+            $"MinNits={info.ToneMapping.MinNits}, LinearBelow={info.ToneMapping.LinearBelow}, " +
+            $"RelativeToMaxDisplay={info.ToneMapping.RelativeToMaxDisplay}");
+    }
+
+    [TestMethod]
+    public void ToneMapping_SdrFile_HasStandardIntensityTarget()
+    {
+        // Arrange - Standard SDR file
+        var data = File.ReadAllBytes("TestData/dice.jxl");
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+
+        // Act
+        var info = decoder.ReadInfo();
+
+        // Assert - SDR files should have IntensityTarget <= 255 nits
+        Assert.IsTrue(info.ToneMapping.IntensityTarget <= 255f,
+            $"SDR file should have IntensityTarget <= 255, got {info.ToneMapping.IntensityTarget}");
+        Assert.IsFalse(info.IsHdr, "IsHdr should be false for SDR file");
+
+        Console.WriteLine($"SDR ToneMapping: IntensityTarget={info.ToneMapping.IntensityTarget}, " +
+            $"MinNits={info.ToneMapping.MinNits}, LinearBelow={info.ToneMapping.LinearBelow}, " +
+            $"RelativeToMaxDisplay={info.ToneMapping.RelativeToMaxDisplay}");
+    }
+
+    [TestMethod]
+    public void ExtraChannel_SpotFile_HasSpotColorChannelType()
+    {
+        // Arrange - Spot color test file from jxl-rs conformance tests
+        var data = File.ReadAllBytes("TestData/spot.jxl");
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+
+        // Act
+        var info = decoder.ReadInfo();
+
+        // Assert - File should have extra channels including spot color
+        Assert.IsTrue(info.ExtraChannels.Count > 0,
+            $"Spot file should have extra channels, got {info.ExtraChannels.Count}");
+
+        // Find spot color channel(s) by type
+        var spotChannelCount = 0;
+        for (int i = 0; i < info.ExtraChannels.Count; i++)
+        {
+            var channelInfo = decoder.GetExtraChannelInfo(i);
+            Console.WriteLine($"Extra channel {i}: Type={channelInfo.ChannelType}, " +
+                $"AlphaAssociated={channelInfo.AlphaAssociated}");
+
+            if (channelInfo.ChannelType == JxlExtraChannelType.SpotColor)
+            {
+                spotChannelCount++;
+            }
+        }
+
+        // Note: jxl-rs API doesn't expose spot color RGBA values, only the channel type
+        Assert.IsTrue(spotChannelCount > 0, "Spot file should have at least one SpotColor channel type");
+        Console.WriteLine($"Found {spotChannelCount} spot color channel(s)");
+    }
+
+    [TestMethod]
+    public void BasicInfo_NewFields_ArePopulated()
+    {
+        // Arrange - Use a file with various metadata
+        var data = File.ReadAllBytes("TestData/dice.jxl");
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+
+        // Act
+        var info = decoder.ReadInfo();
+
+        // Assert - New fields should have reasonable values
+        Assert.IsTrue(info.NumColorChannels == 1 || info.NumColorChannels == 3,
+            $"NumColorChannels should be 1 (grayscale) or 3 (RGB), got {info.NumColorChannels}");
+
+        // AlphaPremultiplied is a bool, just verify it's accessible
+        Console.WriteLine($"NumColorChannels={info.NumColorChannels}, AlphaPremultiplied={info.AlphaPremultiplied}");
+
+        // ToneMapping struct should be accessible
+        Console.WriteLine($"ToneMapping: IntensityTarget={info.ToneMapping.IntensityTarget}, " +
+            $"MinNits={info.ToneMapping.MinNits}, LinearBelow={info.ToneMapping.LinearBelow}, " +
+            $"RelativeToMaxDisplay={info.ToneMapping.RelativeToMaxDisplay}");
     }
 }
