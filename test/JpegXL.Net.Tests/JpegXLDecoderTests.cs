@@ -142,10 +142,11 @@ public class JxlDecoderTests
         // Act
         using var image = JxlImage.Decode(data);
 
-        // Assert
-        Assert.IsTrue(image.Width > 0);
-        Assert.IsTrue(image.Height > 0);
-        Assert.IsTrue(image.Pixels.Length > 0);
+        // Assert - dice.jxl has known dimensions
+        Assert.AreEqual(800, image.Width, "dice.jxl should be 800 pixels wide");
+        Assert.AreEqual(600, image.Height, "dice.jxl should be 600 pixels tall");
+        Assert.AreEqual(4, image.BytesPerPixel, "Default format is RGBA8 (4 bytes per pixel)");
+        Assert.AreEqual(800 * 600 * 4, image.Pixels.Length, "Pixel buffer size should match dimensions");
     }
 
     [TestMethod]
@@ -175,10 +176,11 @@ public class JxlDecoderTests
         decoder.SetInput(data);
         var info = decoder.ReadInfo();
 
-        // Assert
-        Assert.IsTrue(info.Size.Width > 0);
-        Assert.IsTrue(info.Size.Height > 0);
-        Assert.IsTrue(info.BitDepth.BitsPerSample > 0);
+        // Assert - dice.jxl has known properties
+        Assert.AreEqual(800u, info.Size.Width, "dice.jxl should be 800 pixels wide");
+        Assert.AreEqual(600u, info.Size.Height, "dice.jxl should be 600 pixels tall");
+        Assert.AreEqual(8u, info.BitDepth.BitsPerSample, "dice.jxl should be 8-bit");
+        Assert.IsFalse(info.IsAnimated, "dice.jxl should not be animated");
     }
 
     [TestMethod]
@@ -422,7 +424,9 @@ public class JxlDecoderTests
         // Assert - animation_spline.jxl should have multiple frames
         Assert.IsTrue(frameCount > 1, $"Expected multiple frames, got {frameCount}");
         Assert.AreEqual(frameCount, frameDurations.Count, "Should have duration for each frame");
-        Console.WriteLine($"Decoded {frameCount} frames with durations: [{string.Join(", ", frameDurations.Select(d => $"{d:F3}s"))}]");
+
+        // All frame durations should be positive for an animated image
+        Assert.IsTrue(frameDurations.All(d => d > 0), "All frame durations should be positive");
     }
 
     [TestMethod]
@@ -440,12 +444,19 @@ public class JxlDecoderTests
         // Assert - file should have extra channels
         Assert.IsTrue(info.ExtraChannels.Count > 0, $"Expected extra channels, got {info.ExtraChannels.Count}");
 
-        // Get extra channel info
+        // Get extra channel info and verify types are valid
         for (int i = 0; i < info.ExtraChannels.Count; i++)
         {
             var channelInfo = decoder.GetExtraChannelInfo(i);
-            Console.WriteLine($"Extra channel {i}: Type={channelInfo.ChannelType}, AlphaAssociated={channelInfo.AlphaAssociated}");
+            // Verify channel type is a defined enum value
+            Assert.IsTrue(Enum.IsDefined(channelInfo.ChannelType),
+                $"Extra channel {i} should have a valid channel type");
         }
+
+        // First extra channel should be Alpha for this test file
+        var firstChannel = decoder.GetExtraChannelInfo(0);
+        Assert.AreEqual(JxlExtraChannelType.Alpha, firstChannel.ChannelType,
+            "First extra channel should be Alpha");
     }
 
     [TestMethod]
@@ -473,7 +484,6 @@ public class JxlDecoderTests
         {
             var channelInfo = decoder.GetExtraChannelInfo(i);
             extraChannelTypes.Add(channelInfo.ChannelType);
-            Console.WriteLine($"Extra channel {i}: Type={channelInfo.ChannelType}");
         }
         
         // Process until we need output buffer
@@ -496,7 +506,8 @@ public class JxlDecoderTests
         var numNonAlphaExtras = extraChannelTypes.Count(t => t != JxlExtraChannelType.Alpha);
         var numAlphaExtras = extraChannelTypes.Count(t => t == JxlExtraChannelType.Alpha);
         
-        Console.WriteLine($"Extra channels: {extraChannelTypes.Count} total, {numAlphaExtras} alpha, {numNonAlphaExtras} non-alpha");
+        // Verify channel type counts
+        Assert.IsTrue(numAlphaExtras >= 1, "Should have at least one alpha channel");
         
         // For images with only alpha extra channels (which are included in RGBA output),
         // we can call ReadPixelsWithExtraChannels with an empty extra buffer array
@@ -516,12 +527,23 @@ public class JxlDecoderTests
             }
         }
         Assert.IsTrue(hasColorData, "Color buffer should contain non-zero pixel data");
-        
+
         // Verify that the color buffer has 4 channels (RGBA)
         // The alpha data should be in the color buffer's 4th channel
         Assert.AreEqual((int)info.Size.Width * (int)info.Size.Height * 4, colorBuffer.Length, "Color buffer should be RGBA (4 bytes per pixel)");
 
-        Console.WriteLine($"Decoded image {info.Size.Width}x{info.Size.Height} with alpha in RGBA color buffer");
+        // Verify alpha channel has meaningful data (not all 0 or all 255)
+        bool hasVariedAlpha = false;
+        byte firstAlpha = colorBuffer[3];
+        for (int i = 3; i < colorBuffer.Length; i += 4)
+        {
+            if (colorBuffer[i] != firstAlpha)
+            {
+                hasVariedAlpha = true;
+                break;
+            }
+        }
+        Assert.IsTrue(hasVariedAlpha || firstAlpha != 0, "Alpha channel should have meaningful data");
     }
 
     [TestMethod]
@@ -552,8 +574,10 @@ public class JxlDecoderTests
             Assert.IsTrue(frame.FrameHeight > 0, "Frame should have valid height");
         }
 
-        Console.WriteLine($"ParseFrameMetadata: {metadata.FrameCount} frames, total duration: {metadata.GetTotalDurationMs()}ms");
-        Console.WriteLine($"Frame durations: [{string.Join(", ", metadata.Frames.Select(f => $"{f.DurationMs}ms"))}]");
+        // Verify frame durations are consistent (all should be equal for this test file)
+        var firstDuration = metadata.Frames[0].DurationMs;
+        Assert.IsTrue(metadata.Frames.All(f => Math.Abs(f.DurationMs - firstDuration) < 0.01f),
+            "All frames should have equal duration in animation_spline.jxl");
     }
 
     [TestMethod]
@@ -575,7 +599,9 @@ public class JxlDecoderTests
         Assert.AreEqual(1, metadata.FrameCount, "Static image should have 1 frame");
         Assert.AreEqual(0, metadata.Frames[0].DurationMs, "Static image frame should have 0 duration");
 
-        Console.WriteLine($"ParseFrameMetadata (static): {basicInfo.Size.Width}x{basicInfo.Size.Height}");
+        // Verify dimensions are valid for dice.jxl
+        Assert.IsTrue(basicInfo.Size.Width > 0 && basicInfo.Size.Height > 0,
+            "Should have valid dimensions");
     }
 
     [TestMethod]
@@ -590,8 +616,6 @@ public class JxlDecoderTests
         // Act & Assert - limit to 2 frames should throw since animation has more
         var ex = Assert.ThrowsException<JxlException>(() => decoder.ParseFrameMetadata(maxFrames: 2));
         Assert.IsTrue(ex.Message.Contains("exceeded limit"), $"Expected limit exceeded message, got: {ex.Message}");
-
-        Console.WriteLine($"ParseFrameMetadata correctly threw: {ex.Message}");
     }
 
     [TestMethod]
@@ -611,9 +635,13 @@ public class JxlDecoderTests
             $"HDR PQ file should have IntensityTarget > 255, got {info.ToneMapping.IntensityTarget}");
         Assert.IsTrue(info.IsHdr, "IsHdr should be true for HDR PQ file");
 
-        Console.WriteLine($"HDR PQ ToneMapping: IntensityTarget={info.ToneMapping.IntensityTarget}, " +
-            $"MinNits={info.ToneMapping.MinNits}, LinearBelow={info.ToneMapping.LinearBelow}, " +
-            $"RelativeToMaxDisplay={info.ToneMapping.RelativeToMaxDisplay}");
+        // PQ content typically has intensity target in range 1000-10000 nits
+        Assert.IsTrue(info.ToneMapping.IntensityTarget >= 1000f && info.ToneMapping.IntensityTarget <= 10000f,
+            $"HDR PQ IntensityTarget should be in typical PQ range (1000-10000), got {info.ToneMapping.IntensityTarget}");
+
+        // MinNits should be non-negative
+        Assert.IsTrue(info.ToneMapping.MinNits >= 0f,
+            $"MinNits should be non-negative, got {info.ToneMapping.MinNits}");
     }
 
     [TestMethod]
@@ -633,9 +661,13 @@ public class JxlDecoderTests
             $"HDR HLG file should have IntensityTarget > 255, got {info.ToneMapping.IntensityTarget}");
         Assert.IsTrue(info.IsHdr, "IsHdr should be true for HDR HLG file");
 
-        Console.WriteLine($"HDR HLG ToneMapping: IntensityTarget={info.ToneMapping.IntensityTarget}, " +
-            $"MinNits={info.ToneMapping.MinNits}, LinearBelow={info.ToneMapping.LinearBelow}, " +
-            $"RelativeToMaxDisplay={info.ToneMapping.RelativeToMaxDisplay}");
+        // HLG typically uses 1000 nits as reference
+        Assert.IsTrue(info.ToneMapping.IntensityTarget >= 1000f,
+            $"HDR HLG IntensityTarget should be >= 1000 nits, got {info.ToneMapping.IntensityTarget}");
+
+        // MinNits should be non-negative
+        Assert.IsTrue(info.ToneMapping.MinNits >= 0f,
+            $"MinNits should be non-negative, got {info.ToneMapping.MinNits}");
     }
 
     [TestMethod]
@@ -655,9 +687,9 @@ public class JxlDecoderTests
             $"SDR file should have IntensityTarget <= 255, got {info.ToneMapping.IntensityTarget}");
         Assert.IsFalse(info.IsHdr, "IsHdr should be false for SDR file");
 
-        Console.WriteLine($"SDR ToneMapping: IntensityTarget={info.ToneMapping.IntensityTarget}, " +
-            $"MinNits={info.ToneMapping.MinNits}, LinearBelow={info.ToneMapping.LinearBelow}, " +
-            $"RelativeToMaxDisplay={info.ToneMapping.RelativeToMaxDisplay}");
+        // SDR typically uses ~80-100 nits
+        Assert.IsTrue(info.ToneMapping.IntensityTarget >= 0f,
+            $"IntensityTarget should be non-negative, got {info.ToneMapping.IntensityTarget}");
     }
 
     [TestMethod]
@@ -681,9 +713,6 @@ public class JxlDecoderTests
         for (int i = 0; i < info.ExtraChannels.Count; i++)
         {
             var channelInfo = decoder.GetExtraChannelInfo(i);
-            Console.WriteLine($"Extra channel {i}: Type={channelInfo.ChannelType}, " +
-                $"AlphaAssociated={channelInfo.AlphaAssociated}");
-
             if (channelInfo.ChannelType == JxlExtraChannelType.SpotColor)
             {
                 spotChannelCount++;
@@ -692,7 +721,6 @@ public class JxlDecoderTests
 
         // Note: jxl-rs API doesn't expose spot color RGBA values, only the channel type
         Assert.IsTrue(spotChannelCount > 0, "Spot file should have at least one SpotColor channel type");
-        Console.WriteLine($"Found {spotChannelCount} spot color channel(s)");
     }
 
     [TestMethod]
@@ -711,12 +739,360 @@ public class JxlDecoderTests
         Assert.IsTrue(info.NumColorChannels == 1 || info.NumColorChannels == 3,
             $"NumColorChannels should be 1 (grayscale) or 3 (RGB), got {info.NumColorChannels}");
 
-        // AlphaPremultiplied is a bool, just verify it's accessible
-        Console.WriteLine($"NumColorChannels={info.NumColorChannels}, AlphaPremultiplied={info.AlphaPremultiplied}");
+        // dice.jxl is an RGB image
+        Assert.AreEqual(3u, info.NumColorChannels, "dice.jxl should have 3 color channels (RGB)");
 
-        // ToneMapping struct should be accessible
-        Console.WriteLine($"ToneMapping: IntensityTarget={info.ToneMapping.IntensityTarget}, " +
-            $"MinNits={info.ToneMapping.MinNits}, LinearBelow={info.ToneMapping.LinearBelow}, " +
-            $"RelativeToMaxDisplay={info.ToneMapping.RelativeToMaxDisplay}");
+        // AlphaPremultiplied should be false for standard images
+        Assert.IsFalse(info.AlphaPremultiplied, "dice.jxl should not have premultiplied alpha");
+
+        // ToneMapping struct should have valid values
+        Assert.IsTrue(info.ToneMapping.IntensityTarget >= 0f, "IntensityTarget should be non-negative");
+        Assert.IsTrue(info.ToneMapping.MinNits >= 0f, "MinNits should be non-negative");
+    }
+
+    // =========================================================================
+    // FFI Alpha Channel Handling Tests
+    // =========================================================================
+
+    [TestMethod]
+    public void PixelFormat_RgbaWithAlphaChannel_IncludesAlphaInMainBuffer()
+    {
+        // When using RGBA format, alpha should be in the 4th channel of the main buffer
+        var data = File.ReadAllBytes("TestData/dice.jxl"); // Has alpha channel
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        var info = decoder.ReadInfo();
+
+        // dice.jxl should have an alpha extra channel
+        Assert.IsTrue(info.ExtraChannels.Count >= 1, "dice.jxl should have extra channels");
+        var hasAlpha = false;
+        for (int i = 0; i < info.ExtraChannels.Count; i++)
+        {
+            if (decoder.GetExtraChannelInfo(i).ChannelType == JxlExtraChannelType.Alpha)
+            {
+                hasAlpha = true;
+                break;
+            }
+        }
+        Assert.IsTrue(hasAlpha, "dice.jxl should have an alpha channel");
+
+        // Decode with RGBA format (default)
+        var pixels = decoder.GetPixels();
+        Assert.AreEqual((int)info.Size.Width * (int)info.Size.Height * 4, pixels.Length,
+            "RGBA decode should produce 4 bytes per pixel");
+
+        // Verify alpha channel has data (not all zeros)
+        bool hasAlphaData = false;
+        for (int i = 3; i < pixels.Length; i += 4)
+        {
+            if (pixels[i] != 0)
+            {
+                hasAlphaData = true;
+                break;
+            }
+        }
+        Assert.IsTrue(hasAlphaData, "Alpha channel should contain non-zero data");
+    }
+
+    [TestMethod]
+    public void PixelFormat_RgbWithAlphaChannel_ExcludesAlphaFromMainBuffer()
+    {
+        // When using RGB format (no alpha), output should be 3 bytes per pixel
+        var data = File.ReadAllBytes("TestData/dice.jxl"); // Has alpha channel
+
+        var format = new JxlPixelFormat
+        {
+            ColorType = JxlColorType.Rgb,
+            DataFormat = JxlDataFormat.Uint8,
+            Endianness = JxlEndianness.Native
+        };
+
+        using var decoder = new JxlDecoder();
+        decoder.SetPixelFormat(format);
+        decoder.SetInput(data);
+        var info = decoder.ReadInfo();
+
+        // Decode with RGB format
+        var pixels = decoder.GetPixels();
+        Assert.AreEqual((int)info.Size.Width * (int)info.Size.Height * 3, pixels.Length,
+            "RGB decode should produce 3 bytes per pixel");
+    }
+
+    // =========================================================================
+    // Streaming Robustness Tests
+    // =========================================================================
+
+    [TestMethod]
+    [DataRow(1, DisplayName = "1-byte chunks (extreme)")]
+    [DataRow(7, DisplayName = "7-byte chunks (prime)")]
+    [DataRow(64, DisplayName = "64-byte chunks")]
+    [DataRow(256, DisplayName = "256-byte chunks")]
+    [DataRow(1024, DisplayName = "1KB chunks")]
+    public void StreamingDecode_WithVariableChunkSizes_ProducesValidOutput(int chunkSize)
+    {
+        // Streaming decode with various chunk sizes should all work correctly
+        var fullData = File.ReadAllBytes("TestData/3x3_srgb_lossless.jxl");
+
+        using var decoder = new JxlDecoder();
+
+        int offset = 0;
+        JxlBasicInfo? info = null;
+        byte[]? pixels = null;
+        bool complete = false;
+        int maxIterations = 100000;
+        int iterations = 0;
+
+        while (!complete && iterations < maxIterations)
+        {
+            iterations++;
+            var evt = decoder.Process();
+
+            switch (evt)
+            {
+                case JxlDecoderEvent.NeedMoreInput:
+                    if (offset >= fullData.Length)
+                    {
+                        Assert.Fail("Decoder needs more input but all data sent");
+                    }
+                    int bytesToSend = Math.Min(chunkSize, fullData.Length - offset);
+                    decoder.AppendInput(fullData.AsSpan(offset, bytesToSend));
+                    offset += bytesToSend;
+                    break;
+
+                case JxlDecoderEvent.HaveBasicInfo:
+                    info = decoder.GetBasicInfo();
+                    break;
+
+                case JxlDecoderEvent.NeedOutputBuffer:
+                    pixels = new byte[decoder.GetBufferSize()];
+                    JxlDecoderEvent pixelEvt;
+                    do
+                    {
+                        pixelEvt = decoder.ReadPixels(pixels);
+                        if (pixelEvt == JxlDecoderEvent.NeedMoreInput)
+                        {
+                            if (offset >= fullData.Length)
+                            {
+                                Assert.Fail("ReadPixels needs more input but all data sent");
+                            }
+                            int more = Math.Min(chunkSize, fullData.Length - offset);
+                            decoder.AppendInput(fullData.AsSpan(offset, more));
+                            offset += more;
+                        }
+                    } while (pixelEvt == JxlDecoderEvent.NeedMoreInput && iterations++ < maxIterations);
+                    break;
+
+                case JxlDecoderEvent.FrameComplete:
+                case JxlDecoderEvent.HaveFrameHeader:
+                    break;
+
+                case JxlDecoderEvent.Complete:
+                    complete = true;
+                    break;
+
+                case JxlDecoderEvent.Error:
+                    Assert.Fail("Decoder error");
+                    break;
+            }
+        }
+
+        Assert.IsTrue(complete, $"Decode should complete with {chunkSize}-byte chunks");
+        Assert.IsNotNull(info);
+        Assert.AreEqual(3u, info.Size.Width);
+        Assert.AreEqual(3u, info.Size.Height);
+        Assert.IsNotNull(pixels);
+        Assert.AreEqual(3 * 3 * 4, pixels.Length);
+    }
+
+    [TestMethod]
+    public void Decode_StreamingVsOneShot_ProducesIdenticalPixels()
+    {
+        // Critical FFI test: streaming API must produce byte-identical output to one-shot decode
+        var data = File.ReadAllBytes("TestData/3x3_srgb_lossless.jxl");
+
+        // One-shot decode (reference)
+        using var oneShotImage = JxlImage.Decode(data);
+        var referencePixels = oneShotImage.GetPixelArray();
+
+        // Streaming decode
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        var streamingPixels = decoder.GetPixels();
+
+        // Must be byte-identical
+        Assert.AreEqual(referencePixels.Length, streamingPixels.Length,
+            "Streaming and one-shot should produce same buffer size");
+
+        for (int i = 0; i < referencePixels.Length; i++)
+        {
+            Assert.AreEqual(referencePixels[i], streamingPixels[i],
+                $"Pixel byte mismatch at index {i}: one-shot={referencePixels[i]}, streaming={streamingPixels[i]}");
+        }
+    }
+
+    // =========================================================================
+    // Signature Detection Edge Cases
+    // =========================================================================
+
+    [TestMethod]
+    public void CheckSignature_PartialContainer_ReturnsNotEnoughBytes()
+    {
+        // Only first 6 bytes of container signature (needs 12)
+        var partialData = new byte[] { 0x00, 0x00, 0x00, 0x0C, 0x4A, 0x58 };
+
+        var result = JxlImage.CheckSignature(partialData);
+
+        Assert.AreEqual(JxlSignature.NotEnoughBytes, result,
+            "Partial container signature should return NotEnoughBytes");
+    }
+
+    [TestMethod]
+    public void CheckSignature_PartialCodestream_ReturnsNotEnoughBytes()
+    {
+        // Only first byte of codestream signature (needs 2)
+        var partialData = new byte[] { 0xFF };
+
+        var result = JxlImage.CheckSignature(partialData);
+
+        Assert.AreEqual(JxlSignature.NotEnoughBytes, result,
+            "Partial codestream signature should return NotEnoughBytes");
+    }
+
+    [TestMethod]
+    public void CheckSignature_EmptyBuffer_ReturnsNotEnoughBytes()
+    {
+        var result = JxlImage.CheckSignature([]);
+
+        Assert.AreEqual(JxlSignature.NotEnoughBytes, result,
+            "Empty buffer should return NotEnoughBytes");
+    }
+
+    [TestMethod]
+    public void CheckSignature_ContainerWithTrailingData_ReturnsContainer()
+    {
+        // Valid container signature followed by extra bytes
+        var dataWithTrailing = new byte[]
+        {
+            0x00, 0x00, 0x00, 0x0C,
+            0x4A, 0x58, 0x4C, 0x20,
+            0x0D, 0x0A, 0x87, 0x0A,
+            0xFF, 0xFF, 0xFF, 0xFF // trailing data
+        };
+
+        var result = JxlImage.CheckSignature(dataWithTrailing);
+
+        Assert.AreEqual(JxlSignature.Container, result,
+            "Container signature with trailing data should still return Container");
+    }
+
+    // =========================================================================
+    // Error Handling Tests
+    // =========================================================================
+
+    [TestMethod]
+    public void Decode_InvalidSignature_ThrowsJxlException()
+    {
+        // PNG header (not JXL)
+        var pngData = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+
+        var ex = Assert.ThrowsException<JxlException>(() => JxlImage.Decode(pngData));
+        Assert.AreEqual(JxlStatus.Error, ex.Status);
+    }
+
+    [TestMethod]
+    public void Decode_TruncatedFile_ThrowsJxlException()
+    {
+        // Read a valid file and truncate it
+        var fullData = File.ReadAllBytes("TestData/dice.jxl");
+        var truncatedData = fullData[..(fullData.Length / 4)]; // Take only first 25%
+
+        Assert.ThrowsException<JxlException>(() => JxlImage.Decode(truncatedData));
+    }
+
+    [TestMethod]
+    public void Decode_EmptyFile_ThrowsJxlException()
+    {
+        Assert.ThrowsException<JxlException>(() => JxlImage.Decode([]));
+    }
+
+    [TestMethod]
+    public void Decode_CorruptedData_ThrowsJxlException()
+    {
+        // Take valid file and corrupt the middle
+        var data = File.ReadAllBytes("TestData/dice.jxl");
+        var corruptedData = (byte[])data.Clone();
+
+        // Corrupt bytes in the middle of the file
+        for (int i = data.Length / 2; i < data.Length / 2 + 100 && i < data.Length; i++)
+        {
+            corruptedData[i] = 0xFF;
+        }
+
+        Assert.ThrowsException<JxlException>(() => JxlImage.Decode(corruptedData));
+    }
+
+    // =========================================================================
+    // Animation Frame Content Validation
+    // =========================================================================
+
+    [TestMethod]
+    public void AnimatedDecode_FramesDiffer_PixelContentChanges()
+    {
+        // Verify that animation frames have different pixel content
+        var data = File.ReadAllBytes("TestData/animation_spline.jxl");
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        var info = decoder.ReadInfo();
+
+        Assert.IsTrue(info.IsAnimated, "Test file should be animated");
+
+        var bufferSize = (int)info.Size.Width * (int)info.Size.Height * 4;
+        var frame0Pixels = new byte[bufferSize];
+        var frame1Pixels = new byte[bufferSize];
+
+        // Decode frame 0
+        var evt = decoder.Process();
+        while (evt != JxlDecoderEvent.NeedOutputBuffer && evt != JxlDecoderEvent.Complete)
+        {
+            evt = decoder.Process();
+        }
+        if (evt == JxlDecoderEvent.NeedOutputBuffer)
+        {
+            decoder.ReadPixels(frame0Pixels);
+        }
+
+        // Move to next frame
+        Assert.IsTrue(decoder.HasMoreFrames(), "Should have more frames after first");
+
+        evt = decoder.Process();
+        while (evt != JxlDecoderEvent.NeedOutputBuffer && evt != JxlDecoderEvent.Complete)
+        {
+            if (evt == JxlDecoderEvent.HaveFrameHeader)
+            {
+                evt = decoder.Process();
+                continue;
+            }
+            evt = decoder.Process();
+        }
+        if (evt == JxlDecoderEvent.NeedOutputBuffer)
+        {
+            decoder.ReadPixels(frame1Pixels);
+        }
+
+        // Frames should differ (animation should have changing content)
+        bool framesDiffer = false;
+        for (int i = 0; i < frame0Pixels.Length; i++)
+        {
+            if (frame0Pixels[i] != frame1Pixels[i])
+            {
+                framesDiffer = true;
+                break;
+            }
+        }
+
+        Assert.IsTrue(framesDiffer, "Animation frames should have different pixel content");
     }
 }

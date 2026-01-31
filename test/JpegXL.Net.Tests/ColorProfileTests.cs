@@ -165,7 +165,9 @@ public class ColorProfileTests
         // Assert
         Assert.IsNotNull(str);
         Assert.IsTrue(str.Length > 0, "ToString should return non-empty string");
-        Console.WriteLine($"sRGB profile ToString: {str}");
+        // ToString should contain recognizable profile info
+        Assert.IsTrue(str.Contains("RGB") || str.Contains("sRGB") || str.Contains("D65"),
+            $"ToString should contain profile identifiers, got: {str}");
     }
 
     [TestMethod]
@@ -177,8 +179,8 @@ public class ColorProfileTests
 
         // Assert
         Assert.IsNotNull(description);
-        Assert.IsTrue(description.Length > 0, "Description should be non-empty");
-        Console.WriteLine($"sRGB profile description: {description}");
+        Assert.AreEqual("RGB_D65_SRG_Rel_SRG", description,
+            "sRGB profile should have standard encoded description");
     }
 
     [TestMethod]
@@ -214,8 +216,8 @@ public class ColorProfileTests
         // Assert
         Assert.IsNotNull(profile);
         Assert.IsFalse(profile.IsIcc);
-        Console.WriteLine($"Embedded profile: {profile}");
-        Console.WriteLine($"Channels: {profile.Channels}");
+        Assert.AreEqual(3, profile.Channels, "sRGB image should have 3 channels");
+        Assert.IsTrue(profile.IsRgb, "Should be RGB profile");
     }
 
     [TestMethod]
@@ -232,7 +234,8 @@ public class ColorProfileTests
 
         // Assert
         Assert.IsNotNull(profile);
-        Console.WriteLine($"Output profile: {profile}");
+        Assert.IsTrue(profile.Channels >= 1 && profile.Channels <= 4,
+            $"Output profile should have 1-4 channels, got {profile.Channels}");
     }
 
     [TestMethod]
@@ -301,8 +304,13 @@ public class ColorProfileTests
 
         // Assert - jxl-rs can convert simple profiles to ICC
         Assert.IsNotNull(iccData);
-        Assert.IsTrue(iccData.Length > 0, "ICC data should be non-empty");
-        Console.WriteLine($"sRGB profile converted to ICC: {iccData.Length} bytes");
+        Assert.IsTrue(iccData.Length > 128, "ICC data should be larger than header (128 bytes)");
+
+        // Validate ICC magic bytes: "acsp" at offset 36
+        Assert.AreEqual((byte)'a', iccData[36], "ICC magic byte 1 should be 'a'");
+        Assert.AreEqual((byte)'c', iccData[37], "ICC magic byte 2 should be 'c'");
+        Assert.AreEqual((byte)'s', iccData[38], "ICC magic byte 3 should be 's'");
+        Assert.AreEqual((byte)'p', iccData[39], "ICC magic byte 4 should be 'p'");
     }
 
     [TestMethod]
