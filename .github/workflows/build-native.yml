@@ -5,13 +5,13 @@ on:
     branches: [main]
     paths:
       - 'native/**'
-      - 'jxl-rs/**'
+      - 'native/jxl-rs/**'
       - '.github/workflows/build-native.yml'
   pull_request:
     branches: [main]
     paths:
       - 'native/**'
-      - 'jxl-rs/**'
+      - 'native/jxl-rs/**'
       - '.github/workflows/build-native.yml'
   workflow_dispatch:
   workflow_call:

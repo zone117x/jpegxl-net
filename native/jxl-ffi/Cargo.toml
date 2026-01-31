@@ -11,7 +11,7 @@ name = "jxl_ffi"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-jxl = { path = "../../jxl-rs/jxl" }
+jxl = { path = "../jxl-rs/jxl" }
 
 [build-dependencies]
 csbindgen = "1.9"

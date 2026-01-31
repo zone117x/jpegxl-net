@@ -145,7 +145,7 @@ JpegXL.Net wraps the Rust-based jxl-rs decoder through multiple layers:
 
 ### jxl-rs (Third-Party Decoder)
 
-The [jxl-rs](https://github.com/libjxl/jxl-rs) library is a pure Rust implementation of the JPEG XL decoder, included as a Git submodule at `jxl-rs/`. It provides a streaming decoding API with SIMD-accelerated transforms for high performance. Licensed under BSD-3-Clause.
+The [jxl-rs](https://github.com/libjxl/jxl-rs) library is a pure Rust implementation of the JPEG XL decoder, included as a Git submodule at `native/jxl-rs/`. It provides a streaming decoding API with SIMD-accelerated transforms for high performance. Licensed under BSD-3-Clause.
 
 ### jxl-ffi (Native FFI Layer)
 

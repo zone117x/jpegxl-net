@@ -3,7 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-TEST_FILE="$PROJECT_ROOT/jxl-rs/jxl/resources/test/conformance_test_images/animation_icos4d_5.jxl"
+TEST_FILE="$PROJECT_ROOT/native/jxl-rs/jxl/resources/test/conformance_test_images/animation_icos4d_5.jxl"
 
 CONFIG="Debug"
 KILL_AFTER=""
