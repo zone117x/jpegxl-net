@@ -66,8 +66,8 @@ public sealed class JxlImage : IDisposable
     private JxlImage(byte[] pixels, JxlBasicInfo info, JxlPixelFormat format)
     {
         _pixels = pixels;
-        Width = (int)info.Width;
-        Height = (int)info.Height;
+        Width = (int)info.Size.Width;
+        Height = (int)info.Size.Height;
         PixelFormat = format;
         BasicInfo = info;
     }

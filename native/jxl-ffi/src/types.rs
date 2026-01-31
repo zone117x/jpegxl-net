@@ -120,12 +120,12 @@ pub enum JxlProgressiveMode {
     FullFrame = 2,
 }
 
-/// Basic image information.
+/// Basic image information (raw FFI struct).
 /// Fields are ordered by size (largest first) to minimize padding.
 #[repr(C)]
 #[derive(Debug, Clone)]
 #[allow(non_snake_case)]
-pub struct JxlBasicInfo {
+pub struct JxlBasicInfoRaw {
     /// Image width in pixels.
     pub Width: u32,
     /// Image height in pixels.
@@ -228,7 +228,7 @@ pub struct JxlFrameHeader {
     pub IsLast: bool,
 }
 
-impl Default for JxlBasicInfo {
+impl Default for JxlBasicInfoRaw {
     fn default() -> Self {
         Self {
             Width: 0,

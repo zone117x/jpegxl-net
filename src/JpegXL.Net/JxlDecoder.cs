@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace JpegXL.Net;
@@ -54,26 +55,6 @@ public sealed unsafe class JxlDecoder : IDisposable
     public JxlBasicInfo? BasicInfo => _basicInfo;
 
     /// <summary>
-    /// Gets the image width in pixels.
-    /// </summary>
-    public int Width => (int)(_basicInfo?.Width ?? 0);
-
-    /// <summary>
-    /// Gets the image height in pixels.
-    /// </summary>
-    public int Height => (int)(_basicInfo?.Height ?? 0);
-
-    /// <summary>
-    /// Gets whether the image has an alpha channel.
-    /// </summary>
-    public bool HasAlpha => _basicInfo?.HasAlpha ?? false;
-
-    /// <summary>
-    /// Gets whether the image is animated.
-    /// </summary>
-    public bool IsAnimated => _basicInfo?.IsAnimated ?? false;
-
-    /// <summary>
     /// Sets the input data for decoding.
     /// </summary>
     /// <param name="data">The JXL-encoded image data.</param>
@@ -122,9 +103,9 @@ public sealed unsafe class JxlDecoder : IDisposable
         ThrowIfDisposed();
 
         // If we already have cached info, return it
-        if (_basicInfo.HasValue)
+        if (_basicInfo != null)
         {
-            return _basicInfo.Value;
+            return _basicInfo;
         }
 
         // Use streaming API to read info
@@ -199,7 +180,7 @@ public sealed unsafe class JxlDecoder : IDisposable
         ThrowIfDisposed();
 
         // Ensure we have basic info
-        if (!_basicInfo.HasValue)
+        if (_basicInfo == null)
         {
             ReadInfo();
         }
@@ -370,7 +351,7 @@ public sealed unsafe class JxlDecoder : IDisposable
     }
 
     /// <summary>
-    /// Gets the basic image information after <see cref="Process"/> returns 
+    /// Gets the basic image information after <see cref="Process"/> returns
     /// <see cref="JxlDecoderEvent.HaveBasicInfo"/>.
     /// </summary>
     /// <returns>The basic image information.</returns>
@@ -379,9 +360,47 @@ public sealed unsafe class JxlDecoder : IDisposable
     {
         ThrowIfDisposed();
 
-        JxlBasicInfo info;
-        var status = NativeMethods.jxl_decoder_get_basic_info(_handle, &info);
+        JxlBasicInfoRaw rawInfo;
+        var status = NativeMethods.jxl_decoder_get_basic_info(_handle, &rawInfo);
         ThrowIfFailed(status);
+
+        // Build extra channels list
+        var extraChannels = new List<JxlExtraChannelInfo>();
+        for (int i = 0; i < rawInfo.NumExtraChannels; i++)
+        {
+            extraChannels.Add(GetExtraChannelInfo(i));
+        }
+
+        // Build bit depth
+        JxlBitDepth bitDepth = rawInfo.ExponentBitsPerSample > 0
+            ? new JxlBitDepth.Float(Bits: rawInfo.BitsPerSample, ExponentBitsPerSample: rawInfo.ExponentBitsPerSample)
+            : new JxlBitDepth.Int(Bits: rawInfo.BitsPerSample);
+
+        // Build animation (if animated)
+        JxlAnimation? animation = rawInfo.IsAnimated
+            ? new JxlAnimation(rawInfo.AnimationTpsNumerator, rawInfo.AnimationTpsDenominator, rawInfo.AnimationNumLoops)
+            : null;
+
+        // Build preview size (if present)
+        (nuint, nuint)? previewSize = rawInfo.PreviewWidth > 0 && rawInfo.PreviewHeight > 0
+            ? ((nuint)rawInfo.PreviewWidth, (nuint)rawInfo.PreviewHeight)
+            : null;
+
+        var info = new JxlBasicInfo
+        {
+            Size = (rawInfo.Width, rawInfo.Height),
+            BitDepth = bitDepth,
+            Orientation = rawInfo.Orientation,
+            ExtraChannels = extraChannels,
+            Animation = animation,
+            UsesOriginalProfile = rawInfo.UsesOriginalProfile,
+            ToneMapping = new JxlToneMapping(
+                rawInfo.IntensityTarget,
+                rawInfo.MinNits,
+                rawInfo.RelativeToMaxDisplay,
+                rawInfo.LinearBelow),
+            PreviewSize = previewSize
+        };
 
         _basicInfo = info;
         return info;
@@ -633,8 +652,8 @@ public sealed unsafe class JxlDecoder : IDisposable
             var staticFrame = new JxlFrameHeader
             {
                 DurationMs = 0,
-                FrameWidth = basicInfo.Width,
-                FrameHeight = basicInfo.Height,
+                FrameWidth = (uint)basicInfo.Size.Width,
+                FrameHeight = (uint)basicInfo.Size.Height,
                 NameLength = 0,
                 IsLast = true
             };

@@ -123,10 +123,10 @@ namespace JpegXL.Net
         ///
         ///  # Safety
         ///  - `decoder` must be valid.
-        ///  - `info` must point to a writable `JxlBasicInfo`.
+        ///  - `info` must point to a writable `JxlBasicInfoRaw`.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_basic_info", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        public static extern JxlStatus jxl_decoder_get_basic_info(NativeDecoderHandle* decoder, JxlBasicInfo* info);
+        public static extern JxlStatus jxl_decoder_get_basic_info(NativeDecoderHandle* decoder, JxlBasicInfoRaw* info);
 
         /// <summary>
         ///  Gets the current frame header (streaming API).
@@ -347,11 +347,11 @@ namespace JpegXL.Net
     }
 
     /// <summary>
-    ///  Basic image information.
+    ///  Basic image information (raw FFI struct).
     ///  Fields are ordered by size (largest first) to minimize padding.
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe partial struct JxlBasicInfo
+    public unsafe partial struct JxlBasicInfoRaw
     {
         /// <summary>
         ///  Image width in pixels.

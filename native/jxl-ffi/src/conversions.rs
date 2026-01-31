@@ -72,7 +72,7 @@ fn samples_per_pixel(color_type: JxlColorType) -> usize {
 }
 
 /// Calculates the bytes per row for the given image info and pixel format.
-pub(crate) fn calculate_bytes_per_row(info: &JxlBasicInfo, pixel_format: &JxlPixelFormat) -> usize {
+pub(crate) fn calculate_bytes_per_row(info: &JxlBasicInfoRaw, pixel_format: &JxlPixelFormat) -> usize {
     let width = info.Width as usize;
     let bps = bytes_per_sample(pixel_format.DataFormat);
     let spp = samples_per_pixel(pixel_format.ColorType);
@@ -80,7 +80,7 @@ pub(crate) fn calculate_bytes_per_row(info: &JxlBasicInfo, pixel_format: &JxlPix
 }
 
 /// Calculates the required buffer size for the given image info and pixel format.
-pub(crate) fn calculate_buffer_size(info: &JxlBasicInfo, pixel_format: &JxlPixelFormat) -> usize {
+pub(crate) fn calculate_buffer_size(info: &JxlBasicInfoRaw, pixel_format: &JxlPixelFormat) -> usize {
     let height = info.Height as usize;
     calculate_bytes_per_row(info, pixel_format) * height
 }
@@ -89,7 +89,7 @@ pub(crate) fn calculate_buffer_size(info: &JxlBasicInfo, pixel_format: &JxlPixel
 // Type Conversions
 // ============================================================================
 
-pub(crate) fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlBasicInfo {
+pub(crate) fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlBasicInfoRaw {
     let (anim_num, anim_den, anim_loops) = info
         .animation
         .as_ref()
@@ -98,15 +98,15 @@ pub(crate) fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlBasicInfo 
     let (preview_w, preview_h) = info.preview_size.unwrap_or((0, 0));
 
     // Determine bits_per_sample and exponent_bits
-    let (bits, exp_bits) = match &info.bit_depth {
-        jxl::api::JxlBitDepth::Int { bits_per_sample } => (*bits_per_sample, 0),
+    let (bits, exp_bits) = match info.bit_depth {
+        jxl::api::JxlBitDepth::Int { bits_per_sample } => (bits_per_sample, 0),
         jxl::api::JxlBitDepth::Float {
             bits_per_sample,
             exponent_bits_per_sample,
-        } => (*bits_per_sample, *exponent_bits_per_sample),
+        } => (bits_per_sample, exponent_bits_per_sample),
     };
 
-    JxlBasicInfo {
+    JxlBasicInfoRaw {
         Width: info.size.0 as u32,
         Height: info.size.1 as u32,
         BitsPerSample: bits,

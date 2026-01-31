@@ -176,9 +176,9 @@ public class JxlDecoderTests
         var info = decoder.ReadInfo();
 
         // Assert
-        Assert.IsTrue(info.Width > 0);
-        Assert.IsTrue(info.Height > 0);
-        Assert.IsTrue(info.BitsPerSample > 0);
+        Assert.IsTrue(info.Size.Width > 0);
+        Assert.IsTrue(info.Size.Height > 0);
+        Assert.IsTrue(info.BitDepth.BitsPerSample > 0);
     }
 
     [TestMethod]
@@ -336,8 +336,8 @@ public class JxlDecoderTests
 
         // Assert
         Assert.IsNotNull(info, "BasicInfo should be available after streaming decode");
-        Assert.IsTrue(info.Value.Width > 0);
-        Assert.IsTrue(info.Value.Height > 0);
+        Assert.IsTrue(info.Size.Width > 0);
+        Assert.IsTrue(info.Size.Height > 0);
         Assert.IsNotNull(pixels, "Pixels should be decoded");
         Assert.IsTrue(pixels.Length > 0);
         Assert.IsTrue(complete, "Decode should complete");
@@ -375,13 +375,13 @@ public class JxlDecoderTests
         // Get image info first
         var info = decoder.ReadInfo();
         Assert.IsTrue(info.IsAnimated, "Test file should be animated");
-        Assert.IsTrue(info.AnimationTpsNumerator > 0, "Should have animation TPS");
-        
+        Assert.IsTrue(info.Animation!.Value.TpsNumerator > 0, "Should have animation TPS");
+
         // Decode frames
         var frameCount = 0;
         var frameDurations = new List<float>();
         var bytesPerPixel = 4; // RGBA
-        var bufferSize = (int)(info.Width * info.Height) * bytesPerPixel;
+        var bufferSize = (int)info.Size.Width * (int)info.Size.Height * bytesPerPixel;
         var pixels = new byte[bufferSize];
         
         while (decoder.HasMoreFrames())
@@ -438,10 +438,10 @@ public class JxlDecoderTests
         var info = decoder.ReadInfo();
         
         // Assert - file should have extra channels
-        Assert.IsTrue(info.NumExtraChannels > 0, $"Expected extra channels, got {info.NumExtraChannels}");
-        
+        Assert.IsTrue(info.ExtraChannels.Count > 0, $"Expected extra channels, got {info.ExtraChannels.Count}");
+
         // Get extra channel info
-        for (int i = 0; i < (int)info.NumExtraChannels; i++)
+        for (int i = 0; i < info.ExtraChannels.Count; i++)
         {
             var channelInfo = decoder.GetExtraChannelInfo(i);
             Console.WriteLine($"Extra channel {i}: Type={channelInfo.ChannelType}, BitsPerSample={channelInfo.BitsPerSample}");
@@ -466,11 +466,11 @@ public class JxlDecoderTests
         
         // Get image info
         var info = decoder.ReadInfo();
-        Assert.IsTrue(info.NumExtraChannels > 0, "Test file should have extra channels");
-        
+        Assert.IsTrue(info.ExtraChannels.Count > 0, "Test file should have extra channels");
+
         // Get extra channel info to understand what we have
         var extraChannelTypes = new List<JxlExtraChannelType>();
-        for (int i = 0; i < (int)info.NumExtraChannels; i++)
+        for (int i = 0; i < info.ExtraChannels.Count; i++)
         {
             var channelInfo = decoder.GetExtraChannelInfo(i);
             extraChannelTypes.Add(channelInfo.ChannelType);
@@ -520,9 +520,9 @@ public class JxlDecoderTests
         
         // Verify that the color buffer has 4 channels (RGBA)
         // The alpha data should be in the color buffer's 4th channel
-        Assert.AreEqual((int)(info.Width * info.Height * 4), colorBuffer.Length, "Color buffer should be RGBA (4 bytes per pixel)");
-        
-        Console.WriteLine($"Decoded image {info.Width}x{info.Height} with alpha in RGBA color buffer");
+        Assert.AreEqual((int)info.Size.Width * (int)info.Size.Height * 4, colorBuffer.Length, "Color buffer should be RGBA (4 bytes per pixel)");
+
+        Console.WriteLine($"Decoded image {info.Size.Width}x{info.Size.Height} with alpha in RGBA color buffer");
     }
 
     [TestMethod]
@@ -536,12 +536,14 @@ public class JxlDecoderTests
 
         // Act
         var metadata = decoder.ParseFrameMetadata();
+        var basicInfo = decoder.BasicInfo;
 
         // Assert
-        Assert.IsTrue(metadata.BasicInfo.IsAnimated, "Should be animated");
+        Assert.IsNotNull(basicInfo, "BasicInfo should be available after ParseFrameMetadata");
+        Assert.IsTrue(basicInfo.IsAnimated, "Should be animated");
         Assert.IsTrue(metadata.FrameCount > 1, $"Expected multiple frames, got {metadata.FrameCount}");
         Assert.AreEqual(metadata.Frames.Count, metadata.FrameCount, "FrameCount should match Frames.Count");
-        Assert.IsTrue(metadata.TotalDurationMs > 0, "Should have positive total duration");
+        Assert.IsTrue(metadata.GetTotalDurationMs() > 0, "Should have positive total duration");
         Assert.IsNull(metadata.FrameNames, "FrameNames should be null when includeNames is false");
 
         // All frames should have valid dimensions
@@ -551,7 +553,7 @@ public class JxlDecoderTests
             Assert.IsTrue(frame.FrameHeight > 0, "Frame should have valid height");
         }
 
-        Console.WriteLine($"ParseFrameMetadata: {metadata.FrameCount} frames, total duration: {metadata.TotalDurationMs}ms");
+        Console.WriteLine($"ParseFrameMetadata: {metadata.FrameCount} frames, total duration: {metadata.GetTotalDurationMs()}ms");
         Console.WriteLine($"Frame durations: [{string.Join(", ", metadata.Frames.Select(f => $"{f.DurationMs}ms"))}]");
     }
 
@@ -566,14 +568,16 @@ public class JxlDecoderTests
 
         // Act
         var metadata = decoder.ParseFrameMetadata();
+        var basicInfo = decoder.BasicInfo;
 
         // Assert
-        Assert.IsFalse(metadata.BasicInfo.IsAnimated, "Should not be animated");
+        Assert.IsNotNull(basicInfo, "BasicInfo should be available after ParseFrameMetadata");
+        Assert.IsFalse(basicInfo.IsAnimated, "Should not be animated");
         Assert.AreEqual(1, metadata.FrameCount, "Static image should have 1 frame");
         Assert.AreEqual(0, metadata.Frames[0].DurationMs, "Static image frame should have 0 duration");
         Assert.IsTrue(metadata.Frames[0].IsLast, "Single frame should be marked as last");
 
-        Console.WriteLine($"ParseFrameMetadata (static): {metadata.BasicInfo.Width}x{metadata.BasicInfo.Height}");
+        Console.WriteLine($"ParseFrameMetadata (static): {basicInfo.Size.Width}x{basicInfo.Size.Height}");
     }
 
     [TestMethod]

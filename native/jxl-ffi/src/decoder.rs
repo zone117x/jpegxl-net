@@ -80,7 +80,7 @@ struct DecoderInner {
     /// Current read offset in data (tracks position between process calls).
     data_offset: usize,
     /// Cached basic info (needed for WithFrameInfo state which doesn't expose it).
-    basic_info: Option<JxlBasicInfo>,
+    basic_info: Option<JxlBasicInfoRaw>,
     /// Cached extra channel info (needed for pixel format conversion).
     extra_channels: Vec<JxlExtraChannelInfo>,
     /// Desired output pixel format.
@@ -367,11 +367,11 @@ pub unsafe extern "C" fn jxl_decoder_process(
 ///
 /// # Safety
 /// - `decoder` must be valid.
-/// - `info` must point to a writable `JxlBasicInfo`.
+/// - `info` must point to a writable `JxlBasicInfoRaw`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jxl_decoder_get_basic_info(
     decoder: *const NativeDecoderHandle,
-    info: *mut JxlBasicInfo,
+    info: *mut JxlBasicInfoRaw,
 ) -> JxlStatus {
     let inner = get_decoder_ref!(decoder, JxlStatus::InvalidArgument);
 

@@ -137,11 +137,11 @@ public partial class MainWindow : Window
                     }
 
                     var formatStr = isHdr ? "HDR" : "Animated";
-                    ImageInfoText!.Text = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {_frames.Count} frames | {formatStr}";
+                    ImageInfoText!.Text = $"{info.Size.Width}×{info.Size.Height} | {info.BitDepth.BitsPerSample}bpp | {_frames.Count} frames | {formatStr}";
                     HdrInfoText!.IsVisible = isHdr;
                     if (isHdr)
                     {
-                        HdrInfoText.Text = $"HDR: {info.IntensityTarget:F0} nits";
+                        HdrInfoText.Text = $"HDR: {info.ToneMapping.IntensityTarget:F0} nits";
                     }
                     StatusText.Text = $"Loaded: {Path.GetFileName(path)}";
                     UpdatePlayPauseButton();
@@ -165,11 +165,11 @@ public partial class MainWindow : Window
                 DropHint!.IsVisible = false;
 
                 var formatStr = isHdr ? "HDR" : (info.HasAlpha ? "RGBA" : "RGB");
-                ImageInfoText!.Text = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {formatStr}";
+                ImageInfoText!.Text = $"{info.Size.Width}×{info.Size.Height} | {info.BitDepth.BitsPerSample}bpp | {formatStr}";
                 HdrInfoText!.IsVisible = isHdr;
                 if (isHdr)
                 {
-                    HdrInfoText.Text = $"HDR: {info.IntensityTarget:F0} nits";
+                    HdrInfoText.Text = $"HDR: {info.ToneMapping.IntensityTarget:F0} nits";
                 }
                 StatusText.Text = $"Loaded: {Path.GetFileName(path)}";
                 UpdatePlayPauseButton();
@@ -189,8 +189,8 @@ public partial class MainWindow : Window
     private List<AnimationFrame> DecodeAnimatedImage(byte[] data, JxlBasicInfo info, bool isHdr)
     {
         var frames = new List<AnimationFrame>();
-        var width = (int)info.Width;
-        var height = (int)info.Height;
+        var width = (int)info.Size.Width;
+        var height = (int)info.Size.Height;
         var bufferSize = width * height * 4; // BGRA
         var pixels = new byte[bufferSize];
 

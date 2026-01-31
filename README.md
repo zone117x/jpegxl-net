@@ -65,9 +65,9 @@ decoder.SetInput(jxlData);
 
 // Read image info
 var info = decoder.ReadInfo();
-Console.WriteLine($"Image: {info.Width}x{info.Height}");
-Console.WriteLine($"Bits per sample: {info.BitsPerSample}");
-Console.WriteLine($"Extra channels: {info.NumExtraChannels}");
+Console.WriteLine($"Image: {info.Size.Width}x{info.Size.Height}");
+Console.WriteLine($"Bits per sample: {info.BitDepth.BitsPerSample}");
+Console.WriteLine($"Extra channels: {info.ExtraChannels.Count}");
 
 // Get pixel data
 byte[] pixels = decoder.GetPixels();

@@ -255,7 +255,7 @@ public class MainWindow : NSWindow
                     }
 
                     var formatStr = isHdr ? "HDR" : "Animated";
-                    _infoLabel!.StringValue = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {_frameDurations.Length} frames | {formatStr}";
+                    _infoLabel!.StringValue = $"{info.Size.Width}×{info.Size.Height} | {info.BitDepth.BitsPerSample}bpp | {_frameDurations.Length} frames | {formatStr}";
                 }
             }
             else
@@ -264,14 +264,14 @@ public class MainWindow : NSWindow
                 DecodeStaticImageToGpu(decoder, info);
 
                 var formatStr = isHdr ? "HDR" : (info.HasAlpha ? "RGBA" : "RGB");
-                _infoLabel!.StringValue = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {formatStr}";
+                _infoLabel!.StringValue = $"{info.Size.Width}×{info.Size.Height} | {info.BitDepth.BitsPerSample}bpp | {formatStr}";
             }
 
             // Show HDR info
             _hdrLabel!.Hidden = !isHdr;
             if (isHdr)
             {
-                _hdrLabel.StringValue = $"HDR: {info.IntensityTarget:F0} nits";
+                _hdrLabel.StringValue = $"HDR: {info.ToneMapping.IntensityTarget:F0} nits";
 
                 // Query EDR headroom
                 var screen = Screen ?? NSScreen.MainScreen;
@@ -303,8 +303,8 @@ public class MainWindow : NSWindow
     /// </summary>
     private void DecodeStaticImageToGpu(JxlDecoder decoder, JxlBasicInfo info)
     {
-        var width = (int)info.Width;
-        var height = (int)info.Height;
+        var width = (int)info.Size.Width;
+        var height = (int)info.Size.Height;
 
         // Decode directly into GPU-shared memory
         _metalView!.DecodeDirectToGpu(width, height, pixelSpan =>
@@ -320,8 +320,8 @@ public class MainWindow : NSWindow
     /// </summary>
     private float[] DecodeAnimatedImageToGpu(JxlDecoder decoder, JxlBasicInfo info, JxlAnimationMetadata metadata)
     {
-        var width = (int)info.Width;
-        var height = (int)info.Height;
+        var width = (int)info.Size.Width;
+        var height = (int)info.Size.Height;
         var frameCount = metadata.Frames.Count;
         var durations = metadata.GetFrameDurationsMs();
         
