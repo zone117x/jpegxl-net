@@ -356,3 +356,229 @@ pub enum JxlSignature {
     /// Valid JPEG XL container.
     Container = 3,
 }
+
+// ============================================================================
+// Color Profile Types
+// ============================================================================
+
+/// Opaque handle to a color profile.
+/// Must be freed with `jxl_color_profile_free`.
+#[repr(C)]
+pub struct JxlColorProfileHandle {
+    _private: [u8; 0],
+}
+
+/// Rendering intent for color management.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlRenderingIntent {
+    /// Perceptual rendering intent.
+    Perceptual = 0,
+    /// Relative colorimetric rendering intent.
+    Relative = 1,
+    /// Saturation rendering intent.
+    Saturation = 2,
+    /// Absolute colorimetric rendering intent.
+    Absolute = 3,
+}
+
+/// Tag for JxlWhitePointRaw discriminated union.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlWhitePointTag {
+    /// D65 standard illuminant.
+    D65 = 0,
+    /// Equal energy illuminant.
+    E = 1,
+    /// DCI-P3 theater white point.
+    Dci = 2,
+    /// Custom chromaticity coordinates.
+    Chromaticity = 3,
+}
+
+/// White point specification (tagged union).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(non_snake_case)]
+pub struct JxlWhitePointRaw {
+    /// Discriminator tag.
+    pub Tag: JxlWhitePointTag,
+    /// X chromaticity coordinate (only valid when Tag == Chromaticity).
+    pub Wx: f32,
+    /// Y chromaticity coordinate (only valid when Tag == Chromaticity).
+    pub Wy: f32,
+}
+
+/// Tag for JxlPrimariesRaw discriminated union.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlPrimariesTag {
+    /// sRGB/Rec.709 primaries.
+    Srgb = 0,
+    /// BT.2100/Rec.2020 primaries.
+    Bt2100 = 1,
+    /// DCI-P3 primaries.
+    P3 = 2,
+    /// Custom chromaticity coordinates.
+    Chromaticities = 3,
+}
+
+/// Color primaries specification (tagged union).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(non_snake_case)]
+pub struct JxlPrimariesRaw {
+    /// Discriminator tag.
+    pub Tag: JxlPrimariesTag,
+    /// Red X chromaticity (only valid when Tag == Chromaticities).
+    pub Rx: f32,
+    /// Red Y chromaticity (only valid when Tag == Chromaticities).
+    pub Ry: f32,
+    /// Green X chromaticity (only valid when Tag == Chromaticities).
+    pub Gx: f32,
+    /// Green Y chromaticity (only valid when Tag == Chromaticities).
+    pub Gy: f32,
+    /// Blue X chromaticity (only valid when Tag == Chromaticities).
+    pub Bx: f32,
+    /// Blue Y chromaticity (only valid when Tag == Chromaticities).
+    pub By: f32,
+}
+
+/// Tag for JxlTransferFunctionRaw discriminated union.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlTransferFunctionTag {
+    /// BT.709 transfer function.
+    Bt709 = 0,
+    /// Linear (gamma 1.0).
+    Linear = 1,
+    /// sRGB transfer function.
+    Srgb = 2,
+    /// Perceptual Quantizer (HDR).
+    Pq = 3,
+    /// DCI gamma (~2.6).
+    Dci = 4,
+    /// Hybrid Log-Gamma (HDR).
+    Hlg = 5,
+    /// Custom gamma value.
+    Gamma = 6,
+}
+
+/// Transfer function specification (tagged union).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(non_snake_case)]
+pub struct JxlTransferFunctionRaw {
+    /// Discriminator tag.
+    pub Tag: JxlTransferFunctionTag,
+    /// Gamma value (only valid when Tag == Gamma).
+    pub Gamma: f32,
+}
+
+/// Tag for JxlColorEncodingRaw discriminated union.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlColorEncodingTag {
+    /// RGB color space.
+    Rgb = 0,
+    /// Grayscale color space.
+    Grayscale = 1,
+    /// XYB color space (JPEG XL internal).
+    Xyb = 2,
+}
+
+/// Color encoding specification (tagged union).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(non_snake_case)]
+pub struct JxlColorEncodingRaw {
+    /// Discriminator tag.
+    pub Tag: JxlColorEncodingTag,
+    /// White point (valid for Rgb and Grayscale).
+    pub WhitePoint: JxlWhitePointRaw,
+    /// Color primaries (only valid for Rgb).
+    pub Primaries: JxlPrimariesRaw,
+    /// Transfer function (valid for Rgb and Grayscale, not Xyb).
+    pub TransferFunction: JxlTransferFunctionRaw,
+    /// Rendering intent.
+    pub RenderingIntent: JxlRenderingIntent,
+}
+
+/// Tag for JxlColorProfileRaw discriminated union.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlColorProfileTag {
+    /// ICC profile (raw bytes).
+    Icc = 0,
+    /// Simple parameterized color encoding.
+    Simple = 1,
+}
+
+/// Color profile specification (tagged union).
+/// For ICC profiles, the data is returned separately via pointer/length.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(non_snake_case)]
+pub struct JxlColorProfileRaw {
+    /// Discriminator tag.
+    pub Tag: JxlColorProfileTag,
+    /// ICC data length in bytes (only valid when Tag == Icc).
+    pub IccLength: usize,
+    /// Color encoding (only valid when Tag == Simple).
+    pub Encoding: JxlColorEncodingRaw,
+}
+
+impl Default for JxlWhitePointRaw {
+    fn default() -> Self {
+        Self {
+            Tag: JxlWhitePointTag::D65,
+            Wx: 0.0,
+            Wy: 0.0,
+        }
+    }
+}
+
+impl Default for JxlPrimariesRaw {
+    fn default() -> Self {
+        Self {
+            Tag: JxlPrimariesTag::Srgb,
+            Rx: 0.0,
+            Ry: 0.0,
+            Gx: 0.0,
+            Gy: 0.0,
+            Bx: 0.0,
+            By: 0.0,
+        }
+    }
+}
+
+impl Default for JxlTransferFunctionRaw {
+    fn default() -> Self {
+        Self {
+            Tag: JxlTransferFunctionTag::Srgb,
+            Gamma: 0.0,
+        }
+    }
+}
+
+impl Default for JxlColorEncodingRaw {
+    fn default() -> Self {
+        Self {
+            Tag: JxlColorEncodingTag::Rgb,
+            WhitePoint: JxlWhitePointRaw::default(),
+            Primaries: JxlPrimariesRaw::default(),
+            TransferFunction: JxlTransferFunctionRaw::default(),
+            RenderingIntent: JxlRenderingIntent::Perceptual,
+        }
+    }
+}
+
+impl Default for JxlColorProfileRaw {
+    fn default() -> Self {
+        Self {
+            Tag: JxlColorProfileTag::Simple,
+            IccLength: 0,
+            Encoding: JxlColorEncodingRaw::default(),
+        }
+    }
+}

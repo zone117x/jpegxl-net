@@ -280,6 +280,207 @@ namespace JpegXL.Net
         public static extern System.UIntPtr jxl_decoder_get_buffer_size(NativeDecoderHandle* decoder);
 
         /// <summary>
+        ///  Gets the embedded color profile from the image.
+        ///
+        ///  Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+        ///
+        ///  # Arguments
+        ///  * `decoder` - The decoder instance.
+        ///  * `profile_out` - Output for the profile raw data.
+        ///  * `icc_data_out` - Output pointer for ICC data (only set if profile is ICC type).
+        ///  * `handle_out` - Output for the profile handle (for calling helper methods).
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        ///  - `profile_out` must point to a writable `JxlColorProfileRaw`.
+        ///  - `icc_data_out` must point to a writable pointer.
+        ///  - `handle_out` must point to a writable pointer.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_embedded_color_profile", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlStatus jxl_decoder_get_embedded_color_profile(NativeDecoderHandle* decoder, JxlColorProfileRaw* profile_out, byte** icc_data_out, JxlColorProfileHandle** handle_out);
+
+        /// <summary>
+        ///  Gets the current output color profile.
+        ///
+        ///  Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+        ///
+        ///  # Safety
+        ///  Same as `jxl_decoder_get_embedded_color_profile`.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_output_color_profile", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlStatus jxl_decoder_get_output_color_profile(NativeDecoderHandle* decoder, JxlColorProfileRaw* profile_out, byte** icc_data_out, JxlColorProfileHandle** handle_out);
+
+        /// <summary>
+        ///  Sets the output color profile for decoding.
+        ///
+        ///  Must be called after `HaveBasicInfo` and before decoding pixels.
+        ///
+        ///  # Arguments
+        ///  * `decoder` - The decoder instance.
+        ///  * `profile` - The color profile raw data.
+        ///  * `icc_data` - ICC data pointer (required if profile tag is Icc).
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        ///  - `profile` must point to a valid `JxlColorProfileRaw`.
+        ///  - If profile is ICC, `icc_data` must point to `profile.IccLength` bytes.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_output_color_profile", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlStatus jxl_decoder_set_output_color_profile(NativeDecoderHandle* decoder, JxlColorProfileRaw* profile, byte* icc_data);
+
+        /// <summary>
+        ///  Frees a color profile handle.
+        ///
+        ///  # Safety
+        ///  The handle must have been created by a color profile function.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_profile_free", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern void jxl_color_profile_free(JxlColorProfileHandle* handle);
+
+        /// <summary>
+        ///  Clones a color profile handle.
+        ///
+        ///  # Returns
+        ///  A new handle that must be freed with `jxl_color_profile_free`, or null on failure.
+        ///
+        ///  # Safety
+        ///  The handle must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_profile_clone", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlColorProfileHandle* jxl_color_profile_clone(JxlColorProfileHandle* handle);
+
+        /// <summary>
+        ///  Attempts to get ICC profile data from a color profile.
+        ///
+        ///  Returns true if ICC data is available (either native or converted).
+        ///
+        ///  # Arguments
+        ///  * `handle` - The color profile handle.
+        ///  * `data_out` - Output pointer for ICC data.
+        ///  * `length_out` - Output for ICC data length.
+        ///
+        ///  # Safety
+        ///  - `handle` must be valid.
+        ///  - `data_out` and `length_out` must be writable.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_profile_try_as_icc", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.U1)]
+        public static extern bool jxl_color_profile_try_as_icc(JxlColorProfileHandle* handle, byte** data_out, System.UIntPtr* length_out);
+
+        /// <summary>
+        ///  Gets the number of color channels for a profile.
+        ///
+        ///  # Returns
+        ///  1 for grayscale, 3 for RGB, 4 for CMYK.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_profile_channels", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern uint jxl_color_profile_channels(JxlColorProfileHandle* handle);
+
+        /// <summary>
+        ///  Checks if a profile represents a CMYK color space.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_profile_is_cmyk", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.U1)]
+        public static extern bool jxl_color_profile_is_cmyk(JxlColorProfileHandle* handle);
+
+        /// <summary>
+        ///  Checks if the decoder can output to this profile without a CMS.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_profile_can_output_to", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.U1)]
+        public static extern bool jxl_color_profile_can_output_to(JxlColorProfileHandle* handle);
+
+        /// <summary>
+        ///  Checks if two profiles represent the same color encoding.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_profile_same_color_encoding", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.U1)]
+        public static extern bool jxl_color_profile_same_color_encoding(JxlColorProfileHandle* handle_a, JxlColorProfileHandle* handle_b);
+
+        /// <summary>
+        ///  Creates a copy of a profile with linear transfer function.
+        ///
+        ///  # Returns
+        ///  A new handle, or null if not possible (e.g., for ICC profiles).
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_profile_with_linear_tf", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlColorProfileHandle* jxl_color_profile_with_linear_tf(JxlColorProfileHandle* handle);
+
+        /// <summary>
+        ///  Gets the transfer function from a simple color profile.
+        ///
+        ///  # Returns
+        ///  True if the profile has a transfer function, false otherwise (ICC or XYB).
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_profile_get_transfer_function", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.U1)]
+        public static extern bool jxl_color_profile_get_transfer_function(JxlColorProfileHandle* handle, JxlTransferFunctionRaw* tf_out);
+
+        /// <summary>
+        ///  Gets the string representation of a color profile.
+        ///
+        ///  # Arguments
+        ///  * `handle` - The color profile handle.
+        ///  * `buffer` - Output buffer for the string, or null to query required size.
+        ///  * `buffer_size` - Size of the buffer in bytes.
+        ///
+        ///  # Returns
+        ///  The number of bytes written (excluding null terminator), or required size if buffer is null/too small.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_profile_to_string", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern System.UIntPtr jxl_color_profile_to_string(JxlColorProfileHandle* handle, byte* buffer, System.UIntPtr buffer_size);
+
+        /// <summary>
+        ///  Gets the description string for a color encoding.
+        ///
+        ///  This returns human-readable names like "sRGB", "DisplayP3", "Rec2100PQ" for known
+        ///  profiles, or a detailed encoding string for custom profiles.
+        ///
+        ///  # Returns
+        ///  The number of bytes written, or required size if buffer is null/too small.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_encoding_get_description", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern System.UIntPtr jxl_color_encoding_get_description(JxlColorEncodingRaw* encoding, byte* buffer, System.UIntPtr buffer_size);
+
+        /// <summary>
+        ///  Creates a color profile handle from a simple color encoding.
+        ///
+        ///  # Returns
+        ///  A new handle that must be freed with `jxl_color_profile_free`.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_profile_from_encoding", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlColorProfileHandle* jxl_color_profile_from_encoding(JxlColorEncodingRaw* encoding);
+
+        /// <summary>
+        ///  Creates a color profile handle from ICC data.
+        ///
+        ///  # Safety
+        ///  `icc_data` must point to `icc_length` readable bytes.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_profile_from_icc", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlColorProfileHandle* jxl_color_profile_from_icc(byte* icc_data, System.UIntPtr icc_length);
+
+        /// <summary>
+        ///  Creates a standard sRGB color encoding.
+        ///
+        ///  # Arguments
+        ///  * `grayscale` - If true, creates grayscale sRGB; otherwise RGB sRGB.
+        ///  * `encoding_out` - Output for the encoding data.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_encoding_srgb", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern void jxl_color_encoding_srgb([MarshalAs(UnmanagedType.U1)] bool grayscale, JxlColorEncodingRaw* encoding_out);
+
+        /// <summary>
+        ///  Creates a linear sRGB color encoding.
+        ///
+        ///  # Arguments
+        ///  * `grayscale` - If true, creates grayscale linear sRGB; otherwise RGB linear sRGB.
+        ///  * `encoding_out` - Output for the encoding data.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_color_encoding_linear_srgb", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern void jxl_color_encoding_linear_srgb([MarshalAs(UnmanagedType.U1)] bool grayscale, JxlColorEncodingRaw* encoding_out);
+
+        /// <summary>
         ///  Checks if data appears to be a JPEG XL file.
         ///
         ///  Only needs the first 12 bytes to determine.
@@ -548,6 +749,137 @@ namespace JpegXL.Net
         public JxlPixelFormat PixelFormat;
     }
 
+    /// <summary>
+    ///  Opaque handle to a color profile.
+    ///  Must be freed with `jxl_color_profile_free`.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct JxlColorProfileHandle
+    {
+        public fixed byte _private[1];
+    }
+
+    /// <summary>
+    ///  White point specification (tagged union).
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct JxlWhitePointRaw
+    {
+        /// <summary>
+        ///  Discriminator tag.
+        /// </summary>
+        public JxlWhitePointTag Tag;
+        /// <summary>
+        ///  X chromaticity coordinate (only valid when Tag == Chromaticity).
+        /// </summary>
+        public float Wx;
+        /// <summary>
+        ///  Y chromaticity coordinate (only valid when Tag == Chromaticity).
+        /// </summary>
+        public float Wy;
+    }
+
+    /// <summary>
+    ///  Color primaries specification (tagged union).
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct JxlPrimariesRaw
+    {
+        /// <summary>
+        ///  Discriminator tag.
+        /// </summary>
+        public JxlPrimariesTag Tag;
+        /// <summary>
+        ///  Red X chromaticity (only valid when Tag == Chromaticities).
+        /// </summary>
+        public float Rx;
+        /// <summary>
+        ///  Red Y chromaticity (only valid when Tag == Chromaticities).
+        /// </summary>
+        public float Ry;
+        /// <summary>
+        ///  Green X chromaticity (only valid when Tag == Chromaticities).
+        /// </summary>
+        public float Gx;
+        /// <summary>
+        ///  Green Y chromaticity (only valid when Tag == Chromaticities).
+        /// </summary>
+        public float Gy;
+        /// <summary>
+        ///  Blue X chromaticity (only valid when Tag == Chromaticities).
+        /// </summary>
+        public float Bx;
+        /// <summary>
+        ///  Blue Y chromaticity (only valid when Tag == Chromaticities).
+        /// </summary>
+        public float By;
+    }
+
+    /// <summary>
+    ///  Transfer function specification (tagged union).
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct JxlTransferFunctionRaw
+    {
+        /// <summary>
+        ///  Discriminator tag.
+        /// </summary>
+        public JxlTransferFunctionTag Tag;
+        /// <summary>
+        ///  Gamma value (only valid when Tag == Gamma).
+        /// </summary>
+        public float Gamma;
+    }
+
+    /// <summary>
+    ///  Color encoding specification (tagged union).
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct JxlColorEncodingRaw
+    {
+        /// <summary>
+        ///  Discriminator tag.
+        /// </summary>
+        public JxlColorEncodingTag Tag;
+        /// <summary>
+        ///  White point (valid for Rgb and Grayscale).
+        /// </summary>
+        public JxlWhitePointRaw WhitePoint;
+        /// <summary>
+        ///  Color primaries (only valid for Rgb).
+        /// </summary>
+        public JxlPrimariesRaw Primaries;
+        /// <summary>
+        ///  Transfer function (valid for Rgb and Grayscale, not Xyb).
+        /// </summary>
+        public JxlTransferFunctionRaw TransferFunction;
+        /// <summary>
+        ///  Rendering intent.
+        /// </summary>
+        public JxlRenderingIntent RenderingIntent;
+    }
+
+    /// <summary>
+    ///  Color profile specification (tagged union).
+    ///  For ICC profiles, the data is returned separately via pointer/length.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct JxlColorProfileRaw
+    {
+        /// <summary>
+        ///  Discriminator tag.
+        /// </summary>
+        public JxlColorProfileTag Tag;
+        /// <summary>
+        ///  ICC data length in bytes (only valid when Tag == Icc).
+        /// </summary>
+        public System.UIntPtr IccLength;
+        /// <summary>
+        ///  Color encoding (only valid when Tag == Simple).
+        /// </summary>
+        public JxlColorEncodingRaw Encoding;
+    }
+
 
     /// <summary>
     ///  Status codes returned by decoder functions.
@@ -811,6 +1143,144 @@ namespace JpegXL.Net
         ///  Valid JPEG XL container.
         /// </summary>
         Container = 3,
+    }
+
+    /// <summary>
+    ///  Rendering intent for color management.
+    /// </summary>
+    public enum JxlRenderingIntent : uint
+    {
+        /// <summary>
+        ///  Perceptual rendering intent.
+        /// </summary>
+        Perceptual = 0,
+        /// <summary>
+        ///  Relative colorimetric rendering intent.
+        /// </summary>
+        Relative = 1,
+        /// <summary>
+        ///  Saturation rendering intent.
+        /// </summary>
+        Saturation = 2,
+        /// <summary>
+        ///  Absolute colorimetric rendering intent.
+        /// </summary>
+        Absolute = 3,
+    }
+
+    /// <summary>
+    ///  Tag for JxlWhitePointRaw discriminated union.
+    /// </summary>
+    public enum JxlWhitePointTag : uint
+    {
+        /// <summary>
+        ///  D65 standard illuminant.
+        /// </summary>
+        D65 = 0,
+        /// <summary>
+        ///  Equal energy illuminant.
+        /// </summary>
+        E = 1,
+        /// <summary>
+        ///  DCI-P3 theater white point.
+        /// </summary>
+        Dci = 2,
+        /// <summary>
+        ///  Custom chromaticity coordinates.
+        /// </summary>
+        Chromaticity = 3,
+    }
+
+    /// <summary>
+    ///  Tag for JxlPrimariesRaw discriminated union.
+    /// </summary>
+    public enum JxlPrimariesTag : uint
+    {
+        /// <summary>
+        ///  sRGB/Rec.709 primaries.
+        /// </summary>
+        Srgb = 0,
+        /// <summary>
+        ///  BT.2100/Rec.2020 primaries.
+        /// </summary>
+        Bt2100 = 1,
+        /// <summary>
+        ///  DCI-P3 primaries.
+        /// </summary>
+        P3 = 2,
+        /// <summary>
+        ///  Custom chromaticity coordinates.
+        /// </summary>
+        Chromaticities = 3,
+    }
+
+    /// <summary>
+    ///  Tag for JxlTransferFunctionRaw discriminated union.
+    /// </summary>
+    public enum JxlTransferFunctionTag : uint
+    {
+        /// <summary>
+        ///  BT.709 transfer function.
+        /// </summary>
+        Bt709 = 0,
+        /// <summary>
+        ///  Linear (gamma 1.0).
+        /// </summary>
+        Linear = 1,
+        /// <summary>
+        ///  sRGB transfer function.
+        /// </summary>
+        Srgb = 2,
+        /// <summary>
+        ///  Perceptual Quantizer (HDR).
+        /// </summary>
+        Pq = 3,
+        /// <summary>
+        ///  DCI gamma (~2.6).
+        /// </summary>
+        Dci = 4,
+        /// <summary>
+        ///  Hybrid Log-Gamma (HDR).
+        /// </summary>
+        Hlg = 5,
+        /// <summary>
+        ///  Custom gamma value.
+        /// </summary>
+        Gamma = 6,
+    }
+
+    /// <summary>
+    ///  Tag for JxlColorEncodingRaw discriminated union.
+    /// </summary>
+    public enum JxlColorEncodingTag : uint
+    {
+        /// <summary>
+        ///  RGB color space.
+        /// </summary>
+        Rgb = 0,
+        /// <summary>
+        ///  Grayscale color space.
+        /// </summary>
+        Grayscale = 1,
+        /// <summary>
+        ///  XYB color space (JPEG XL internal).
+        /// </summary>
+        Xyb = 2,
+    }
+
+    /// <summary>
+    ///  Tag for JxlColorProfileRaw discriminated union.
+    /// </summary>
+    public enum JxlColorProfileTag : uint
+    {
+        /// <summary>
+        ///  ICC profile (raw bytes).
+        /// </summary>
+        Icc = 0,
+        /// <summary>
+        ///  Simple parameterized color encoding.
+        /// </summary>
+        Simple = 1,
     }
 
 

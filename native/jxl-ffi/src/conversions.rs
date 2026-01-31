@@ -8,6 +8,14 @@
 use crate::types::*;
 use jxl::api::{Endianness, JxlDecoderOptions};
 use jxl::api::JxlProgressiveMode as UpstreamProgressiveMode;
+use jxl::api::{
+    JxlColorEncoding as UpstreamColorEncoding,
+    JxlColorProfile as UpstreamColorProfile,
+    JxlPrimaries as UpstreamPrimaries,
+    JxlTransferFunction as UpstreamTransferFunction,
+    JxlWhitePoint as UpstreamWhitePoint,
+};
+use jxl::headers::color_encoding::RenderingIntent as UpstreamRenderingIntent;
 use jxl::headers::extra_channels::ExtraChannel;
 use jxl::headers::image_metadata::Orientation;
 
@@ -246,5 +254,251 @@ pub(crate) fn convert_to_jxl_pixel_format(
         color_type,
         color_data_format: data_format,
         extra_channel_format,
+    }
+}
+
+// ============================================================================
+// Color Profile Conversions
+// ============================================================================
+
+/// Converts upstream rendering intent to FFI type.
+pub(crate) fn convert_rendering_intent(intent: UpstreamRenderingIntent) -> JxlRenderingIntent {
+    match intent {
+        UpstreamRenderingIntent::Perceptual => JxlRenderingIntent::Perceptual,
+        UpstreamRenderingIntent::Relative => JxlRenderingIntent::Relative,
+        UpstreamRenderingIntent::Saturation => JxlRenderingIntent::Saturation,
+        UpstreamRenderingIntent::Absolute => JxlRenderingIntent::Absolute,
+    }
+}
+
+/// Converts FFI rendering intent to upstream type.
+pub(crate) fn convert_rendering_intent_to_upstream(intent: JxlRenderingIntent) -> UpstreamRenderingIntent {
+    match intent {
+        JxlRenderingIntent::Perceptual => UpstreamRenderingIntent::Perceptual,
+        JxlRenderingIntent::Relative => UpstreamRenderingIntent::Relative,
+        JxlRenderingIntent::Saturation => UpstreamRenderingIntent::Saturation,
+        JxlRenderingIntent::Absolute => UpstreamRenderingIntent::Absolute,
+    }
+}
+
+/// Converts upstream white point to FFI type.
+pub(crate) fn convert_white_point(wp: &UpstreamWhitePoint) -> JxlWhitePointRaw {
+    match wp {
+        UpstreamWhitePoint::D65 => JxlWhitePointRaw {
+            Tag: JxlWhitePointTag::D65,
+            Wx: 0.0,
+            Wy: 0.0,
+        },
+        UpstreamWhitePoint::E => JxlWhitePointRaw {
+            Tag: JxlWhitePointTag::E,
+            Wx: 0.0,
+            Wy: 0.0,
+        },
+        UpstreamWhitePoint::DCI => JxlWhitePointRaw {
+            Tag: JxlWhitePointTag::Dci,
+            Wx: 0.0,
+            Wy: 0.0,
+        },
+        UpstreamWhitePoint::Chromaticity { wx, wy } => JxlWhitePointRaw {
+            Tag: JxlWhitePointTag::Chromaticity,
+            Wx: *wx,
+            Wy: *wy,
+        },
+    }
+}
+
+/// Converts FFI white point to upstream type.
+pub(crate) fn convert_white_point_to_upstream(wp: &JxlWhitePointRaw) -> UpstreamWhitePoint {
+    match wp.Tag {
+        JxlWhitePointTag::D65 => UpstreamWhitePoint::D65,
+        JxlWhitePointTag::E => UpstreamWhitePoint::E,
+        JxlWhitePointTag::Dci => UpstreamWhitePoint::DCI,
+        JxlWhitePointTag::Chromaticity => UpstreamWhitePoint::Chromaticity {
+            wx: wp.Wx,
+            wy: wp.Wy,
+        },
+    }
+}
+
+/// Converts upstream primaries to FFI type.
+pub(crate) fn convert_primaries(prim: &UpstreamPrimaries) -> JxlPrimariesRaw {
+    match prim {
+        UpstreamPrimaries::SRGB => JxlPrimariesRaw {
+            Tag: JxlPrimariesTag::Srgb,
+            ..Default::default()
+        },
+        UpstreamPrimaries::BT2100 => JxlPrimariesRaw {
+            Tag: JxlPrimariesTag::Bt2100,
+            ..Default::default()
+        },
+        UpstreamPrimaries::P3 => JxlPrimariesRaw {
+            Tag: JxlPrimariesTag::P3,
+            ..Default::default()
+        },
+        UpstreamPrimaries::Chromaticities { rx, ry, gx, gy, bx, by } => JxlPrimariesRaw {
+            Tag: JxlPrimariesTag::Chromaticities,
+            Rx: *rx,
+            Ry: *ry,
+            Gx: *gx,
+            Gy: *gy,
+            Bx: *bx,
+            By: *by,
+        },
+    }
+}
+
+/// Converts FFI primaries to upstream type.
+pub(crate) fn convert_primaries_to_upstream(prim: &JxlPrimariesRaw) -> UpstreamPrimaries {
+    match prim.Tag {
+        JxlPrimariesTag::Srgb => UpstreamPrimaries::SRGB,
+        JxlPrimariesTag::Bt2100 => UpstreamPrimaries::BT2100,
+        JxlPrimariesTag::P3 => UpstreamPrimaries::P3,
+        JxlPrimariesTag::Chromaticities => UpstreamPrimaries::Chromaticities {
+            rx: prim.Rx,
+            ry: prim.Ry,
+            gx: prim.Gx,
+            gy: prim.Gy,
+            bx: prim.Bx,
+            by: prim.By,
+        },
+    }
+}
+
+/// Converts upstream transfer function to FFI type.
+pub(crate) fn convert_transfer_function(tf: &UpstreamTransferFunction) -> JxlTransferFunctionRaw {
+    match tf {
+        UpstreamTransferFunction::BT709 => JxlTransferFunctionRaw {
+            Tag: JxlTransferFunctionTag::Bt709,
+            Gamma: 0.0,
+        },
+        UpstreamTransferFunction::Linear => JxlTransferFunctionRaw {
+            Tag: JxlTransferFunctionTag::Linear,
+            Gamma: 0.0,
+        },
+        UpstreamTransferFunction::SRGB => JxlTransferFunctionRaw {
+            Tag: JxlTransferFunctionTag::Srgb,
+            Gamma: 0.0,
+        },
+        UpstreamTransferFunction::PQ => JxlTransferFunctionRaw {
+            Tag: JxlTransferFunctionTag::Pq,
+            Gamma: 0.0,
+        },
+        UpstreamTransferFunction::DCI => JxlTransferFunctionRaw {
+            Tag: JxlTransferFunctionTag::Dci,
+            Gamma: 0.0,
+        },
+        UpstreamTransferFunction::HLG => JxlTransferFunctionRaw {
+            Tag: JxlTransferFunctionTag::Hlg,
+            Gamma: 0.0,
+        },
+        UpstreamTransferFunction::Gamma(g) => JxlTransferFunctionRaw {
+            Tag: JxlTransferFunctionTag::Gamma,
+            Gamma: *g,
+        },
+    }
+}
+
+/// Converts FFI transfer function to upstream type.
+pub(crate) fn convert_transfer_function_to_upstream(tf: &JxlTransferFunctionRaw) -> UpstreamTransferFunction {
+    match tf.Tag {
+        JxlTransferFunctionTag::Bt709 => UpstreamTransferFunction::BT709,
+        JxlTransferFunctionTag::Linear => UpstreamTransferFunction::Linear,
+        JxlTransferFunctionTag::Srgb => UpstreamTransferFunction::SRGB,
+        JxlTransferFunctionTag::Pq => UpstreamTransferFunction::PQ,
+        JxlTransferFunctionTag::Dci => UpstreamTransferFunction::DCI,
+        JxlTransferFunctionTag::Hlg => UpstreamTransferFunction::HLG,
+        JxlTransferFunctionTag::Gamma => UpstreamTransferFunction::Gamma(tf.Gamma),
+    }
+}
+
+/// Converts upstream color encoding to FFI type.
+pub(crate) fn convert_color_encoding(enc: &UpstreamColorEncoding) -> JxlColorEncodingRaw {
+    match enc {
+        UpstreamColorEncoding::RgbColorSpace {
+            white_point,
+            primaries,
+            transfer_function,
+            rendering_intent,
+        } => JxlColorEncodingRaw {
+            Tag: JxlColorEncodingTag::Rgb,
+            WhitePoint: convert_white_point(white_point),
+            Primaries: convert_primaries(primaries),
+            TransferFunction: convert_transfer_function(transfer_function),
+            RenderingIntent: convert_rendering_intent(*rendering_intent),
+        },
+        UpstreamColorEncoding::GrayscaleColorSpace {
+            white_point,
+            transfer_function,
+            rendering_intent,
+        } => JxlColorEncodingRaw {
+            Tag: JxlColorEncodingTag::Grayscale,
+            WhitePoint: convert_white_point(white_point),
+            Primaries: JxlPrimariesRaw::default(),
+            TransferFunction: convert_transfer_function(transfer_function),
+            RenderingIntent: convert_rendering_intent(*rendering_intent),
+        },
+        UpstreamColorEncoding::XYB { rendering_intent } => JxlColorEncodingRaw {
+            Tag: JxlColorEncodingTag::Xyb,
+            WhitePoint: JxlWhitePointRaw::default(),
+            Primaries: JxlPrimariesRaw::default(),
+            TransferFunction: JxlTransferFunctionRaw::default(),
+            RenderingIntent: convert_rendering_intent(*rendering_intent),
+        },
+    }
+}
+
+/// Converts FFI color encoding to upstream type.
+pub(crate) fn convert_color_encoding_to_upstream(enc: &JxlColorEncodingRaw) -> UpstreamColorEncoding {
+    match enc.Tag {
+        JxlColorEncodingTag::Rgb => UpstreamColorEncoding::RgbColorSpace {
+            white_point: convert_white_point_to_upstream(&enc.WhitePoint),
+            primaries: convert_primaries_to_upstream(&enc.Primaries),
+            transfer_function: convert_transfer_function_to_upstream(&enc.TransferFunction),
+            rendering_intent: convert_rendering_intent_to_upstream(enc.RenderingIntent),
+        },
+        JxlColorEncodingTag::Grayscale => UpstreamColorEncoding::GrayscaleColorSpace {
+            white_point: convert_white_point_to_upstream(&enc.WhitePoint),
+            transfer_function: convert_transfer_function_to_upstream(&enc.TransferFunction),
+            rendering_intent: convert_rendering_intent_to_upstream(enc.RenderingIntent),
+        },
+        JxlColorEncodingTag::Xyb => UpstreamColorEncoding::XYB {
+            rendering_intent: convert_rendering_intent_to_upstream(enc.RenderingIntent),
+        },
+    }
+}
+
+/// Converts upstream color profile to FFI type.
+/// Returns (JxlColorProfileRaw, Option<Vec<u8>>) where the Vec contains ICC data if present.
+pub(crate) fn convert_color_profile(profile: &UpstreamColorProfile) -> (JxlColorProfileRaw, Option<Vec<u8>>) {
+    match profile {
+        UpstreamColorProfile::Icc(data) => {
+            let raw = JxlColorProfileRaw {
+                Tag: JxlColorProfileTag::Icc,
+                IccLength: data.len(),
+                Encoding: JxlColorEncodingRaw::default(),
+            };
+            (raw, Some(data.clone()))
+        }
+        UpstreamColorProfile::Simple(encoding) => {
+            let raw = JxlColorProfileRaw {
+                Tag: JxlColorProfileTag::Simple,
+                IccLength: 0,
+                Encoding: convert_color_encoding(encoding),
+            };
+            (raw, None)
+        }
+    }
+}
+
+/// Converts FFI color profile to upstream type.
+pub(crate) fn convert_color_profile_to_upstream(raw: &JxlColorProfileRaw, icc_data: Option<&[u8]>) -> UpstreamColorProfile {
+    match raw.Tag {
+        JxlColorProfileTag::Icc => {
+            let data = icc_data.map(|d| d.to_vec()).unwrap_or_default();
+            UpstreamColorProfile::Icc(data)
+        }
+        JxlColorProfileTag::Simple => {
+            UpstreamColorProfile::Simple(convert_color_encoding_to_upstream(&raw.Encoding))
+        }
     }
 }

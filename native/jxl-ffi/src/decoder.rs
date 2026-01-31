@@ -7,12 +7,13 @@
 
 use crate::conversions::{
     bytes_per_sample, calculate_buffer_size, calculate_bytes_per_row, convert_basic_info,
+    convert_color_encoding, convert_color_encoding_to_upstream, convert_color_profile,
     convert_extra_channel_info, convert_frame_header, convert_options_to_upstream,
-    convert_to_jxl_pixel_format,
+    convert_to_jxl_pixel_format, convert_transfer_function,
 };
 use crate::error::{clear_last_error, set_last_error};
 use crate::types::*;
-use jxl::api::ProcessingResult;
+use jxl::api::{JxlColorProfile, ProcessingResult};
 use jxl::image::JxlOutputBuffer;
 use std::slice;
 
@@ -868,6 +869,514 @@ pub unsafe extern "C" fn jxl_decoder_get_buffer_size(decoder: *const NativeDecod
     };
 
     calculate_buffer_size(info, &inner.pixel_format)
+}
+
+// ============================================================================
+// Color Profiles
+// ============================================================================
+
+/// Internal structure to hold a cloned color profile for FFI access.
+struct ColorProfileHandle {
+    profile: JxlColorProfile,
+    /// Cached ICC data (if profile is ICC type)
+    icc_cache: Option<Vec<u8>>,
+}
+
+/// Creates a new color profile handle from an existing profile.
+/// The handle must be freed with `jxl_color_profile_free`.
+fn create_profile_handle(profile: JxlColorProfile) -> *mut JxlColorProfileHandle {
+    let icc_cache = match &profile {
+        JxlColorProfile::Icc(data) => Some(data.clone()),
+        JxlColorProfile::Simple(_) => None,
+    };
+    let handle = Box::new(ColorProfileHandle { profile, icc_cache });
+    Box::into_raw(handle) as *mut JxlColorProfileHandle
+}
+
+/// Gets the embedded color profile from the image.
+///
+/// Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+///
+/// # Arguments
+/// * `decoder` - The decoder instance.
+/// * `profile_out` - Output for the profile raw data.
+/// * `icc_data_out` - Output pointer for ICC data (only set if profile is ICC type).
+/// * `handle_out` - Output for the profile handle (for calling helper methods).
+///
+/// # Safety
+/// - `decoder` must be valid.
+/// - `profile_out` must point to a writable `JxlColorProfileRaw`.
+/// - `icc_data_out` must point to a writable pointer.
+/// - `handle_out` must point to a writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_get_embedded_color_profile(
+    decoder: *const NativeDecoderHandle,
+    profile_out: *mut JxlColorProfileRaw,
+    icc_data_out: *mut *const u8,
+    handle_out: *mut *mut JxlColorProfileHandle,
+) -> JxlStatus {
+    let inner = get_decoder_ref!(decoder, JxlStatus::InvalidArgument);
+
+    let profile = match &inner.state {
+        DecoderState::WithImageInfo(d) => d.embedded_color_profile(),
+        DecoderState::WithFrameInfo(_) => {
+            set_last_error("Color profile not accessible in WithFrameInfo state");
+            return JxlStatus::InvalidState;
+        }
+        _ => {
+            set_last_error("Basic info not yet available - call jxl_decoder_process first");
+            return JxlStatus::InvalidState;
+        }
+    };
+
+    clear_last_error();
+
+    // Convert profile to raw format
+    let (raw, _icc_data) = convert_color_profile(profile);
+
+    // Create a handle with cloned profile
+    let handle = create_profile_handle(profile.clone());
+
+    // Write outputs
+    if let Some(out) = unsafe { profile_out.as_mut() } {
+        *out = raw;
+    }
+
+    if let Some(out) = unsafe { icc_data_out.as_mut() } {
+        // Get ICC data from handle's cache
+        let handle_ref = unsafe { &*(handle as *const ColorProfileHandle) };
+        *out = handle_ref.icc_cache.as_ref()
+            .map(|v| v.as_ptr())
+            .unwrap_or(std::ptr::null());
+    }
+
+    if let Some(out) = unsafe { handle_out.as_mut() } {
+        *out = handle;
+    } else {
+        // If no handle output, free it
+        unsafe { drop(Box::from_raw(handle as *mut ColorProfileHandle)) };
+    }
+
+    JxlStatus::Success
+}
+
+/// Gets the current output color profile.
+///
+/// Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+///
+/// # Safety
+/// Same as `jxl_decoder_get_embedded_color_profile`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_get_output_color_profile(
+    decoder: *const NativeDecoderHandle,
+    profile_out: *mut JxlColorProfileRaw,
+    icc_data_out: *mut *const u8,
+    handle_out: *mut *mut JxlColorProfileHandle,
+) -> JxlStatus {
+    let inner = get_decoder_ref!(decoder, JxlStatus::InvalidArgument);
+
+    let profile = match &inner.state {
+        DecoderState::WithImageInfo(d) => d.output_color_profile(),
+        DecoderState::WithFrameInfo(_) => {
+            set_last_error("Color profile not accessible in WithFrameInfo state");
+            return JxlStatus::InvalidState;
+        }
+        _ => {
+            set_last_error("Basic info not yet available - call jxl_decoder_process first");
+            return JxlStatus::InvalidState;
+        }
+    };
+
+    clear_last_error();
+
+    let (raw, _icc_data) = convert_color_profile(profile);
+    let handle = create_profile_handle(profile.clone());
+
+    if let Some(out) = unsafe { profile_out.as_mut() } {
+        *out = raw;
+    }
+
+    if let Some(out) = unsafe { icc_data_out.as_mut() } {
+        let handle_ref = unsafe { &*(handle as *const ColorProfileHandle) };
+        *out = handle_ref.icc_cache.as_ref()
+            .map(|v| v.as_ptr())
+            .unwrap_or(std::ptr::null());
+    }
+
+    if let Some(out) = unsafe { handle_out.as_mut() } {
+        *out = handle;
+    } else {
+        unsafe { drop(Box::from_raw(handle as *mut ColorProfileHandle)) };
+    }
+
+    JxlStatus::Success
+}
+
+/// Sets the output color profile for decoding.
+///
+/// Must be called after `HaveBasicInfo` and before decoding pixels.
+///
+/// # Arguments
+/// * `decoder` - The decoder instance.
+/// * `profile` - The color profile raw data.
+/// * `icc_data` - ICC data pointer (required if profile tag is Icc).
+///
+/// # Safety
+/// - `decoder` must be valid.
+/// - `profile` must point to a valid `JxlColorProfileRaw`.
+/// - If profile is ICC, `icc_data` must point to `profile.IccLength` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_set_output_color_profile(
+    decoder: *mut NativeDecoderHandle,
+    profile: *const JxlColorProfileRaw,
+    icc_data: *const u8,
+) -> JxlStatus {
+    let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
+
+    let Some(raw) = (unsafe { profile.as_ref() }) else {
+        set_last_error("Null profile pointer");
+        return JxlStatus::InvalidArgument;
+    };
+
+    // Convert raw to upstream profile
+    let icc_slice = if raw.Tag == JxlColorProfileTag::Icc && raw.IccLength > 0 {
+        if icc_data.is_null() {
+            set_last_error("ICC profile specified but icc_data is null");
+            return JxlStatus::InvalidArgument;
+        }
+        Some(unsafe { slice::from_raw_parts(icc_data, raw.IccLength) })
+    } else {
+        None
+    };
+
+    let upstream_profile = crate::conversions::convert_color_profile_to_upstream(raw, icc_slice);
+
+    // Set the profile on the decoder
+    let state = std::mem::replace(&mut inner.state, DecoderState::Processing);
+
+    match state {
+        DecoderState::WithImageInfo(mut d) => {
+            match d.set_output_color_profile(upstream_profile) {
+                Ok(()) => {
+                    clear_last_error();
+                    inner.state = DecoderState::WithImageInfo(d);
+                    JxlStatus::Success
+                }
+                Err(e) => {
+                    inner.state = DecoderState::WithImageInfo(d);
+                    set_last_error(format!("Failed to set output color profile: {}", e));
+                    JxlStatus::Error
+                }
+            }
+        }
+        other => {
+            inner.state = other;
+            set_last_error("Must be in WithImageInfo state to set output color profile");
+            JxlStatus::InvalidState
+        }
+    }
+}
+
+/// Frees a color profile handle.
+///
+/// # Safety
+/// The handle must have been created by a color profile function.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_profile_free(handle: *mut JxlColorProfileHandle) {
+    if !handle.is_null() {
+        unsafe { drop(Box::from_raw(handle as *mut ColorProfileHandle)) };
+    }
+}
+
+/// Clones a color profile handle.
+///
+/// # Returns
+/// A new handle that must be freed with `jxl_color_profile_free`, or null on failure.
+///
+/// # Safety
+/// The handle must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_profile_clone(
+    handle: *const JxlColorProfileHandle,
+) -> *mut JxlColorProfileHandle {
+    let Some(inner) = (unsafe { (handle as *const ColorProfileHandle).as_ref() }) else {
+        return std::ptr::null_mut();
+    };
+
+    create_profile_handle(inner.profile.clone())
+}
+
+/// Attempts to get ICC profile data from a color profile.
+///
+/// Returns true if ICC data is available (either native or converted).
+///
+/// # Arguments
+/// * `handle` - The color profile handle.
+/// * `data_out` - Output pointer for ICC data.
+/// * `length_out` - Output for ICC data length.
+///
+/// # Safety
+/// - `handle` must be valid.
+/// - `data_out` and `length_out` must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_profile_try_as_icc(
+    handle: *mut JxlColorProfileHandle,
+    data_out: *mut *const u8,
+    length_out: *mut usize,
+) -> bool {
+    let Some(inner) = (unsafe { (handle as *mut ColorProfileHandle).as_mut() }) else {
+        return false;
+    };
+
+    // Try to get ICC data
+    match inner.profile.try_as_icc() {
+        Some(cow) => {
+            // Cache the ICC data if it was generated
+            if inner.icc_cache.is_none() {
+                inner.icc_cache = Some(cow.into_owned());
+            }
+
+            if let Some(ref data) = inner.icc_cache {
+                if let Some(out) = unsafe { data_out.as_mut() } {
+                    *out = data.as_ptr();
+                }
+                if let Some(out) = unsafe { length_out.as_mut() } {
+                    *out = data.len();
+                }
+                true
+            } else {
+                false
+            }
+        }
+        None => false,
+    }
+}
+
+/// Gets the number of color channels for a profile.
+///
+/// # Returns
+/// 1 for grayscale, 3 for RGB, 4 for CMYK.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_profile_channels(
+    handle: *const JxlColorProfileHandle,
+) -> u32 {
+    let Some(inner) = (unsafe { (handle as *const ColorProfileHandle).as_ref() }) else {
+        return 0;
+    };
+
+    inner.profile.channels() as u32
+}
+
+/// Checks if a profile represents a CMYK color space.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_profile_is_cmyk(
+    handle: *const JxlColorProfileHandle,
+) -> bool {
+    let Some(inner) = (unsafe { (handle as *const ColorProfileHandle).as_ref() }) else {
+        return false;
+    };
+
+    inner.profile.is_cmyk()
+}
+
+/// Checks if the decoder can output to this profile without a CMS.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_profile_can_output_to(
+    handle: *const JxlColorProfileHandle,
+) -> bool {
+    let Some(inner) = (unsafe { (handle as *const ColorProfileHandle).as_ref() }) else {
+        return false;
+    };
+
+    inner.profile.can_output_to()
+}
+
+/// Checks if two profiles represent the same color encoding.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_profile_same_color_encoding(
+    handle_a: *const JxlColorProfileHandle,
+    handle_b: *const JxlColorProfileHandle,
+) -> bool {
+    let (Some(a), Some(b)) = (
+        unsafe { (handle_a as *const ColorProfileHandle).as_ref() },
+        unsafe { (handle_b as *const ColorProfileHandle).as_ref() },
+    ) else {
+        return false;
+    };
+
+    a.profile.same_color_encoding(&b.profile)
+}
+
+/// Creates a copy of a profile with linear transfer function.
+///
+/// # Returns
+/// A new handle, or null if not possible (e.g., for ICC profiles).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_profile_with_linear_tf(
+    handle: *const JxlColorProfileHandle,
+) -> *mut JxlColorProfileHandle {
+    let Some(inner) = (unsafe { (handle as *const ColorProfileHandle).as_ref() }) else {
+        return std::ptr::null_mut();
+    };
+
+    match inner.profile.with_linear_tf() {
+        Some(new_profile) => create_profile_handle(new_profile),
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// Gets the transfer function from a simple color profile.
+///
+/// # Returns
+/// True if the profile has a transfer function, false otherwise (ICC or XYB).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_profile_get_transfer_function(
+    handle: *const JxlColorProfileHandle,
+    tf_out: *mut JxlTransferFunctionRaw,
+) -> bool {
+    let Some(inner) = (unsafe { (handle as *const ColorProfileHandle).as_ref() }) else {
+        return false;
+    };
+
+    match inner.profile.transfer_function() {
+        Some(tf) => {
+            if let Some(out) = unsafe { tf_out.as_mut() } {
+                *out = convert_transfer_function(tf);
+            }
+            true
+        }
+        None => false,
+    }
+}
+
+/// Gets the string representation of a color profile.
+///
+/// # Arguments
+/// * `handle` - The color profile handle.
+/// * `buffer` - Output buffer for the string, or null to query required size.
+/// * `buffer_size` - Size of the buffer in bytes.
+///
+/// # Returns
+/// The number of bytes written (excluding null terminator), or required size if buffer is null/too small.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_profile_to_string(
+    handle: *const JxlColorProfileHandle,
+    buffer: *mut u8,
+    buffer_size: usize,
+) -> usize {
+    let Some(inner) = (unsafe { (handle as *const ColorProfileHandle).as_ref() }) else {
+        return 0;
+    };
+
+    let s = format!("{}", inner.profile);
+    let bytes = s.as_bytes();
+
+    if buffer.is_null() || buffer_size < bytes.len() {
+        return bytes.len();
+    }
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len());
+    }
+
+    bytes.len()
+}
+
+/// Gets the description string for a color encoding.
+///
+/// This returns human-readable names like "sRGB", "DisplayP3", "Rec2100PQ" for known
+/// profiles, or a detailed encoding string for custom profiles.
+///
+/// # Returns
+/// The number of bytes written, or required size if buffer is null/too small.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_encoding_get_description(
+    encoding: *const JxlColorEncodingRaw,
+    buffer: *mut u8,
+    buffer_size: usize,
+) -> usize {
+    let Some(raw) = (unsafe { encoding.as_ref() }) else {
+        return 0;
+    };
+
+    let upstream = convert_color_encoding_to_upstream(raw);
+    let s = upstream.get_color_encoding_description();
+    let bytes = s.as_bytes();
+
+    if buffer.is_null() || buffer_size < bytes.len() {
+        return bytes.len();
+    }
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len());
+    }
+
+    bytes.len()
+}
+
+/// Creates a color profile handle from a simple color encoding.
+///
+/// # Returns
+/// A new handle that must be freed with `jxl_color_profile_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_profile_from_encoding(
+    encoding: *const JxlColorEncodingRaw,
+) -> *mut JxlColorProfileHandle {
+    let Some(raw) = (unsafe { encoding.as_ref() }) else {
+        return std::ptr::null_mut();
+    };
+
+    let upstream = convert_color_encoding_to_upstream(raw);
+    create_profile_handle(JxlColorProfile::Simple(upstream))
+}
+
+/// Creates a color profile handle from ICC data.
+///
+/// # Safety
+/// `icc_data` must point to `icc_length` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_profile_from_icc(
+    icc_data: *const u8,
+    icc_length: usize,
+) -> *mut JxlColorProfileHandle {
+    if icc_data.is_null() || icc_length == 0 {
+        return std::ptr::null_mut();
+    }
+
+    let data = unsafe { slice::from_raw_parts(icc_data, icc_length) }.to_vec();
+    create_profile_handle(JxlColorProfile::Icc(data))
+}
+
+/// Creates a standard sRGB color encoding.
+///
+/// # Arguments
+/// * `grayscale` - If true, creates grayscale sRGB; otherwise RGB sRGB.
+/// * `encoding_out` - Output for the encoding data.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_encoding_srgb(
+    grayscale: bool,
+    encoding_out: *mut JxlColorEncodingRaw,
+) {
+    let encoding = jxl::api::JxlColorEncoding::srgb(grayscale);
+    if let Some(out) = unsafe { encoding_out.as_mut() } {
+        *out = convert_color_encoding(&encoding);
+    }
+}
+
+/// Creates a linear sRGB color encoding.
+///
+/// # Arguments
+/// * `grayscale` - If true, creates grayscale linear sRGB; otherwise RGB linear sRGB.
+/// * `encoding_out` - Output for the encoding data.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_color_encoding_linear_srgb(
+    grayscale: bool,
+    encoding_out: *mut JxlColorEncodingRaw,
+) {
+    let encoding = jxl::api::JxlColorEncoding::linear_srgb(grayscale);
+    if let Some(out) = unsafe { encoding_out.as_mut() } {
+        *out = convert_color_encoding(&encoding);
+    }
 }
 
 // ============================================================================

@@ -241,6 +241,137 @@ public sealed unsafe class JxlDecoder : IDisposable
         return info;
     }
 
+    // ========================================================================
+    // Color Profiles
+    // ========================================================================
+
+    /// <summary>
+    /// Gets the embedded color profile from the image.
+    /// </summary>
+    /// <returns>A color profile that must be disposed when no longer needed.</returns>
+    /// <exception cref="JxlException">Thrown if the profile cannot be retrieved.</exception>
+    /// <remarks>
+    /// <see cref="ReadInfo"/> must be called before this method.
+    /// </remarks>
+    public JxlColorProfile GetEmbeddedColorProfile()
+    {
+        ThrowIfDisposed();
+
+        JxlColorProfileRaw raw;
+        byte* iccData;
+        JxlColorProfileHandle* handle;
+
+        var status = NativeMethods.jxl_decoder_get_embedded_color_profile(
+            _handle, &raw, &iccData, &handle);
+        ThrowIfFailed(status);
+
+        return new JxlColorProfile(raw, iccData, handle);
+    }
+
+    /// <summary>
+    /// Gets the current output color profile.
+    /// </summary>
+    /// <returns>A color profile that must be disposed when no longer needed.</returns>
+    /// <exception cref="JxlException">Thrown if the profile cannot be retrieved.</exception>
+    /// <remarks>
+    /// <see cref="ReadInfo"/> must be called before this method.
+    /// </remarks>
+    public JxlColorProfile GetOutputColorProfile()
+    {
+        ThrowIfDisposed();
+
+        JxlColorProfileRaw raw;
+        byte* iccData;
+        JxlColorProfileHandle* handle;
+
+        var status = NativeMethods.jxl_decoder_get_output_color_profile(
+            _handle, &raw, &iccData, &handle);
+        ThrowIfFailed(status);
+
+        return new JxlColorProfile(raw, iccData, handle);
+    }
+
+    /// <summary>
+    /// Sets the output color profile for decoding.
+    /// </summary>
+    /// <param name="profile">The color profile to use for output.</param>
+    /// <exception cref="JxlException">Thrown if setting the profile fails.</exception>
+    /// <remarks>
+    /// <para>Must be called after <see cref="ReadInfo"/> and before decoding pixels.</para>
+    /// <para>Setting the output color profile allows converting the decoded pixels to a
+    /// specific color space, such as sRGB for display or a wider gamut for editing.</para>
+    /// </remarks>
+    public void SetOutputColorProfile(JxlColorProfile profile)
+    {
+        ThrowIfDisposed();
+#if NETSTANDARD2_0
+        if (profile == null) throw new ArgumentNullException(nameof(profile));
+#else
+        ArgumentNullException.ThrowIfNull(profile);
+#endif
+
+        if (profile.IsIcc)
+        {
+            // ICC profile
+            var iccBytes = profile.IccData;
+            if (iccBytes != null && iccBytes.Length > 0)
+            {
+                var raw = new JxlColorProfileRaw
+                {
+                    Tag = JxlColorProfileTag.Icc,
+                    IccLength = (UIntPtr)iccBytes.Length,
+                    Encoding = default
+                };
+
+                fixed (byte* dataPtr = iccBytes)
+                {
+                    var status = NativeMethods.jxl_decoder_set_output_color_profile(_handle, &raw, dataPtr);
+                    ThrowIfFailed(status);
+                }
+            }
+            else
+            {
+                throw new ArgumentException("ICC profile has no data", nameof(profile));
+            }
+        }
+        else
+        {
+            // Simple encoding - use the profile's ToEncodingRaw method
+            var encodingRaw = profile.ToEncodingRaw();
+            var raw = new JxlColorProfileRaw
+            {
+                Tag = JxlColorProfileTag.Simple,
+                IccLength = UIntPtr.Zero,
+                Encoding = encodingRaw
+            };
+
+            var status = NativeMethods.jxl_decoder_set_output_color_profile(_handle, &raw, null);
+            ThrowIfFailed(status);
+        }
+    }
+
+    /// <summary>
+    /// Sets the output color profile to sRGB.
+    /// </summary>
+    /// <param name="grayscale">If true, uses grayscale sRGB; otherwise RGB sRGB.</param>
+    /// <exception cref="JxlException">Thrown if setting the profile fails.</exception>
+    public void SetOutputColorProfileSrgb(bool grayscale = false)
+    {
+        using var profile = JxlColorProfile.CreateSrgb(grayscale);
+        SetOutputColorProfile(profile);
+    }
+
+    /// <summary>
+    /// Sets the output color profile to linear sRGB.
+    /// </summary>
+    /// <param name="grayscale">If true, uses grayscale linear sRGB; otherwise RGB linear sRGB.</param>
+    /// <exception cref="JxlException">Thrown if setting the profile fails.</exception>
+    public void SetOutputColorProfileLinearSrgb(bool grayscale = false)
+    {
+        using var profile = JxlColorProfile.CreateLinearSrgb(grayscale);
+        SetOutputColorProfile(profile);
+    }
+
     /// <summary>
     /// Resets the decoder to its initial state.
     /// </summary>

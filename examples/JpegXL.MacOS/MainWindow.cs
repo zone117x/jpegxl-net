@@ -245,6 +245,31 @@ public class MainWindow : NSWindow
             var info = decoder.ReadInfo();
             _currentInfo = info;
 
+            // Get color profile description for status bar
+            string colorProfileDesc;
+            using (var profile = decoder.GetEmbeddedColorProfile())
+            {
+                Console.WriteLine($"[ColorProfile] IsIcc={profile.IsIcc}");
+                if (profile.IsIcc)
+                {
+                    var iccName = IccProfileParser.TryGetDescription(profile.IccData);
+                    Console.WriteLine($"[ColorProfile] ICC name from parser: '{iccName}'");
+                    colorProfileDesc = iccName != null ? $"ICC: {iccName}" : "ICC";
+                }
+                else
+                {
+                    colorProfileDesc = profile.GetDescription();
+                    Console.WriteLine($"[ColorProfile] GetDescription returned: '{colorProfileDesc}'");
+                }
+            }
+
+            Console.WriteLine($"[ColorProfile] Final desc before check: '{colorProfileDesc}'");
+            if (string.IsNullOrWhiteSpace(colorProfileDesc))
+            {
+                colorProfileDesc = "(no color profile)";
+            }
+            Console.WriteLine($"[ColorProfile] Final desc after check: '{colorProfileDesc}'");
+
             var isHdr = info.IsHdr;
 
             _frameDurations = null;
@@ -270,7 +295,7 @@ public class MainWindow : NSWindow
                     }
 
                     var formatStr = isHdr ? "HDR" : "Animated";
-                    _infoLabel!.StringValue = $"{info.Size.Width}×{info.Size.Height} | {info.BitDepth.BitsPerSample}bpp | {_frameDurations.Length} frames | {formatStr}";
+                    _infoLabel!.StringValue = $"{info.Size.Width}×{info.Size.Height} | {info.BitDepth.BitsPerSample}bpp | {_frameDurations.Length} frames | {formatStr} | {colorProfileDesc}";
                 }
             }
             else
@@ -279,7 +304,7 @@ public class MainWindow : NSWindow
                 DecodeStaticImageToGpu(decoder, info);
 
                 var formatStr = isHdr ? "HDR" : (info.HasAlpha ? "RGBA" : "RGB");
-                _infoLabel!.StringValue = $"{info.Size.Width}×{info.Size.Height} | {info.BitDepth.BitsPerSample}bpp | {formatStr}";
+                _infoLabel!.StringValue = $"{info.Size.Width}×{info.Size.Height} | {info.BitDepth.BitsPerSample}bpp | {formatStr} | {colorProfileDesc}";
             }
 
             // Show HDR info

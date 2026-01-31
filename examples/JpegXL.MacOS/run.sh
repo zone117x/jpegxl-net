@@ -8,6 +8,7 @@ TEST_FILE="$PROJECT_ROOT/native/jxl-rs/jxl/resources/test/conformance_test_image
 CONFIG="Debug"
 KILL_AFTER=""
 LOG_FILE=""
+CUSTOM_FILE=""
 
 for arg in "$@"; do
     case $arg in
@@ -20,8 +21,20 @@ for arg in "$@"; do
         --log-file|--log)
             LOG_FILE="$SCRIPT_DIR/logs/run.txt"
             ;;
+        --file=*)
+            CUSTOM_FILE="${arg#*=}"
+            ;;
     esac
 done
+
+# Use custom file if specified, converting relative paths to absolute
+if [[ -n "$CUSTOM_FILE" ]]; then
+    if [[ "$CUSTOM_FILE" = /* ]]; then
+        TEST_FILE="$CUSTOM_FILE"
+    else
+        TEST_FILE="$PROJECT_ROOT/$CUSTOM_FILE"
+    fi
+fi
 
 RID="osx-arm64"
 APP_PATH="$SCRIPT_DIR/bin/$CONFIG/net10.0-macos/$RID/JPEG XL Viewer.app"
