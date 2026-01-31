@@ -9,9 +9,12 @@ namespace JpegXL.MacOS;
 
 public class MainWindow : NSWindow
 {
+    private const string DefaultTitle = "JPEG XL Viewer ";
+
     private HdrMetalView? _metalView;
     private NSTextField? _statusLabel;
-    private NSTextField? _infoLabel;
+    private NSTextField? _dimensionsLabel;
+    private NSTextField? _profileLabel;
     private NSTextField? _hdrLabel;
     private NSTextField? _frameLabel;
     private NSButton? _playPauseButton;
@@ -33,8 +36,18 @@ public class MainWindow : NSWindow
         NSBackingStore.Buffered,
         false)
     {
-        Title = "JPEG XL Viewer (HDR)";
+        Title = DefaultTitle;
         MinSize = new CGSize(400, 300);
+
+        // Set up toolbar in title bar
+        var toolbar = new NSToolbar("MainToolbar")
+        {
+            DisplayMode = NSToolbarDisplayMode.Icon,
+            AllowsUserCustomization = false
+        };
+        toolbar.Delegate = new ToolbarDelegate(this);
+        Toolbar = toolbar;
+        TitleVisibility = NSWindowTitleVisibility.Visible;
 
         CreateUI();
         #if DEBUG
@@ -64,93 +77,88 @@ public class MainWindow : NSWindow
             AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.HeightSizable
         };
 
-        // Toolbar area
-        var toolbar = new NSView(new CGRect(0, 660, 900, 40))
+        // Metal view for image display (now extends to top since toolbar is in title bar)
+        _metalView = new HdrMetalView(new CGRect(0, 40, 900, 660))
         {
-            AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.MinYMargin
-        };
-        toolbar.WantsLayer = true;
-        toolbar.Layer!.BackgroundColor = NSColor.WindowBackground.CGColor;
-
-        nfloat buttonX = 10;
-
-        var openButton = NSButton.CreateButton("Open File...", () => OpenFile());
-        openButton.Frame = new CGRect(buttonX, 5, 100, 30);
-        toolbar.AddSubview(openButton);
-        buttonX += 110;
-
-        var zoomInButton = NSButton.CreateButton("Zoom In", () => ZoomIn());
-        zoomInButton.Frame = new CGRect(buttonX, 5, 80, 30);
-        toolbar.AddSubview(zoomInButton);
-        buttonX += 90;
-
-        var zoomOutButton = NSButton.CreateButton("Zoom Out", () => ZoomOut());
-        zoomOutButton.Frame = new CGRect(buttonX, 5, 80, 30);
-        toolbar.AddSubview(zoomOutButton);
-        buttonX += 90;
-
-        var actualSizeButton = NSButton.CreateButton("1:1", () => ActualSize());
-        actualSizeButton.Frame = new CGRect(buttonX, 5, 50, 30);
-        toolbar.AddSubview(actualSizeButton);
-        buttonX += 60;
-
-        var fitButton = NSButton.CreateButton("Fit", () => ZoomToFit());
-        fitButton.Frame = new CGRect(buttonX, 5, 50, 30);
-        toolbar.AddSubview(fitButton);
-        buttonX += 60;
-
-        _playPauseButton = NSButton.CreateButton("Play", () => PlayPause());
-        _playPauseButton.Frame = new CGRect(buttonX, 5, 70, 30);
-        _playPauseButton.Hidden = true;
-        toolbar.AddSubview(_playPauseButton);
-
-        contentView.AddSubview(toolbar);
-
-        // Metal view for image display
-        _metalView = new HdrMetalView(new CGRect(0, 40, 900, 620))
-        {
-            AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.HeightSizable
+            AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.HeightSizable,
+            OnZoomChanged = _ => UpdateStatus()
         };
         contentView.AddSubview(_metalView);
 
-        // Status bar
-        var statusBar = new NSView(new CGRect(0, 0, 900, 40))
+        // Status bar - horizontal stack view for responsive layout
+        var statusBar = new NSStackView(new CGRect(0, 0, 900, 40))
         {
+            Orientation = NSUserInterfaceLayoutOrientation.Horizontal,
+            Distribution = NSStackViewDistribution.Fill,
+            Spacing = 12,
+            EdgeInsets = new NSEdgeInsets(10, 12, 10, 12),
             AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.MaxYMargin
         };
         statusBar.WantsLayer = true;
         statusBar.Layer!.BackgroundColor = new CGColor(0.15f, 0.15f, 0.15f, 1.0f);
 
-        _statusLabel = CreateLabel("Ready", new CGRect(10, 10, 200, 20), NSColor.White);
-        statusBar.AddSubview(_statusLabel);
+        // Status bar labels ordered: Zoom | Dimensions | Profile | HDR | Frame
 
-        _infoLabel = CreateLabel("", new CGRect(220, 10, 300, 20), NSColor.Gray);
-        statusBar.AddSubview(_infoLabel);
+        // Zoom label with fixed minimum width (measured from font metrics)
+        _statusLabel = CreateStackLabel("Zoom: 100%", NSColor.White, hugging: true);
+        var font = NSFont.SystemFontOfSize(12)!;
+        var maxZoomText = new NSAttributedString("Zoom: 10000%",
+            new NSDictionary(NSStringAttributeKey.Font, font));
+        _statusLabel.WidthAnchor.ConstraintGreaterThanOrEqualTo(maxZoomText.Size.Width).Active = true;
+        statusBar.AddArrangedSubview(_statusLabel);
 
-        _frameLabel = CreateLabel("", new CGRect(530, 10, 150, 20), NSColor.SystemGreen);
-        _frameLabel.Hidden = true;
-        statusBar.AddSubview(_frameLabel);
+        // Dimensions label (content-hugging)
+        _dimensionsLabel = CreateStackLabel("", NSColor.Gray, hugging: true);
+        statusBar.AddArrangedSubview(_dimensionsLabel);
 
-        _hdrLabel = CreateLabel("", new CGRect(690, 10, 200, 20), NSColor.Orange);
+        // Color profile label (expands to fill, truncates with ellipsis)
+        _profileLabel = CreateStackLabel("", NSColor.Gray, hugging: false);
+        statusBar.AddArrangedSubview(_profileLabel);
+
+        // HDR label (content-hugging, initially hidden)
+        _hdrLabel = CreateStackLabel("", NSColor.Orange, hugging: true);
         _hdrLabel.Hidden = true;
-        statusBar.AddSubview(_hdrLabel);
+        statusBar.AddArrangedSubview(_hdrLabel);
+
+        // Frame label (content-hugging, initially hidden)
+        _frameLabel = CreateStackLabel("", NSColor.SystemGreen, hugging: true);
+        _frameLabel.Hidden = true;
+        statusBar.AddArrangedSubview(_frameLabel);
+
+        // Play/Pause button (initially hidden, shown for animations)
+        _playPauseButton = NSButton.CreateButton("Pause", PlayPause);
+        _playPauseButton.Hidden = true;
+        _playPauseButton.SetContentHuggingPriorityForOrientation(750f, NSLayoutConstraintOrientation.Horizontal);
+        statusBar.AddArrangedSubview(_playPauseButton);
 
         contentView.AddSubview(statusBar);
 
         ContentView = contentView;
     }
 
-    private static NSTextField CreateLabel(string text, CGRect frame, NSColor color)
+    private static NSTextField CreateStackLabel(string text, NSColor color, bool hugging)
     {
-        return new NSTextField(frame)
+        var label = new NSTextField
         {
             StringValue = text,
             Editable = false,
             Bordered = false,
             DrawsBackground = false,
             TextColor = color,
-            Font = NSFont.SystemFontOfSize(12)!
+            Font = NSFont.SystemFontOfSize(12)!,
+            LineBreakMode = NSLineBreakMode.TruncatingTail,
+            TranslatesAutoresizingMaskIntoConstraints = false
         };
+
+        // Content hugging: high = stay small, low = expand to fill space
+        var priority = hugging ? 750f : 250f;
+        label.SetContentHuggingPriorityForOrientation(priority, NSLayoutConstraintOrientation.Horizontal);
+
+        // Compression resistance: hugging labels resist shrinking, expanding labels allow truncation
+        label.SetContentCompressionResistancePriority(hugging ? 750f : 250f,
+            NSLayoutConstraintOrientation.Horizontal);
+
+        return label;
     }
 
     private void OpenFile()
@@ -226,7 +234,8 @@ public class MainWindow : NSWindow
         try
         {
             StopAnimation();
-            _statusLabel!.StringValue = "Loading...";
+            var filename = Path.GetFileName(path);
+            Subtitle = $"Loading {filename}";
             _hdrLabel!.Hidden = true;
             _frameLabel!.Hidden = true;
 
@@ -294,19 +303,17 @@ public class MainWindow : NSWindow
                     {
                         StartAnimation();
                     }
-
-                    var formatStr = isHdr ? "HDR" : "Animated";
-                    _infoLabel!.StringValue = $"{info.Size.Width}×{info.Size.Height} | {info.BitDepth.BitsPerSample}bpp | {_frameDurations.Length} frames | {formatStr} | {colorProfileDesc}";
                 }
             }
             else
             {
                 // Static image - decode directly to GPU-shared memory (zero-copy on Apple Silicon)
                 DecodeStaticImageToGpu(decoder, info);
-
-                var formatStr = isHdr ? "HDR" : (info.HasAlpha ? "RGBA" : "RGB");
-                _infoLabel!.StringValue = $"{info.Size.Width}×{info.Size.Height} | {info.BitDepth.BitsPerSample}bpp | {formatStr} | {colorProfileDesc}";
             }
+
+            // Set status bar labels
+            _dimensionsLabel!.StringValue = $"{info.Size.Width}×{info.Size.Height}";
+            _profileLabel!.StringValue = colorProfileDesc;
 
             // Show HDR info
             _hdrLabel!.Hidden = !isHdr;
@@ -326,14 +333,17 @@ public class MainWindow : NSWindow
                 }
             }
 
-            _statusLabel!.StringValue = $"Loaded: {Path.GetFileName(path)}";
+            Subtitle = filename;
             _metalView!.ResetView();  // Display at 1:1 pixel ratio
+            UpdateStatus();  // Show zoom level
             UpdatePlayPauseButton();
         }
         catch (Exception ex)
         {
+            Subtitle = "";
             _statusLabel!.StringValue = $"Error: {ex.Message}";
-            _infoLabel!.StringValue = "";
+            _dimensionsLabel!.StringValue = "";
+            _profileLabel!.StringValue = "";
             _hdrLabel!.Hidden = true;
         }
     }
@@ -482,5 +492,59 @@ public class MainWindow : NSWindow
             _metalView?.Dispose();
         }
         base.Dispose(disposing);
+    }
+
+    private class ToolbarDelegate : NSToolbarDelegate
+    {
+        private readonly MainWindow _window;
+
+        private static readonly string[] ItemIdentifiers =
+        [
+            "OpenFile",
+            NSToolbar.NSToolbarFlexibleSpaceItemIdentifier,
+            "ZoomIn", "ZoomOut", "ActualSize", "Fit"
+        ];
+
+        public ToolbarDelegate(MainWindow window) => _window = window;
+
+        public override string[] AllowedItemIdentifiers(NSToolbar toolbar) => ItemIdentifiers;
+        public override string[] DefaultItemIdentifiers(NSToolbar toolbar) => ItemIdentifiers;
+
+        public override NSToolbarItem WillInsertItem(NSToolbar toolbar, string itemIdentifier, bool willBeInserted)
+        {
+            var item = new NSToolbarItem(itemIdentifier);
+
+            switch (itemIdentifier)
+            {
+                case "OpenFile":
+                    item.Label = "Open";
+                    item.ToolTip = "Open a JPEG XL file";
+                    item.View = NSButton.CreateButton("Open File...", _window.OpenFile);
+                    item.Navigational = true;  // Positions left of title
+                    break;
+                case "ZoomIn":
+                    item.Label = "Zoom In";
+                    item.ToolTip = "Zoom in";
+                    item.View = NSButton.CreateButton("Zoom In", _window.ZoomIn);
+                    break;
+                case "ZoomOut":
+                    item.Label = "Zoom Out";
+                    item.ToolTip = "Zoom out";
+                    item.View = NSButton.CreateButton("Zoom Out", _window.ZoomOut);
+                    break;
+                case "ActualSize":
+                    item.Label = "1:1";
+                    item.ToolTip = "Actual size (1:1 pixels)";
+                    item.View = NSButton.CreateButton("1:1", _window.ActualSize);
+                    break;
+                case "Fit":
+                    item.Label = "Fit";
+                    item.ToolTip = "Fit image to window";
+                    item.View = NSButton.CreateButton("Fit", _window.ZoomToFit);
+                    break;
+            }
+
+            return item;
+        }
     }
 }

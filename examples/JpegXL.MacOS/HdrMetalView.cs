@@ -39,6 +39,11 @@ public class HdrMetalView : NSView
     public int ImageWidth => _imageWidth;
     public int ImageHeight => _imageHeight;
 
+    /// <summary>
+    /// Called when zoom level changes (from scroll wheel, buttons, etc.)
+    /// </summary>
+    public Action<nfloat>? OnZoomChanged { get; set; }
+
     public nfloat Zoom
     {
         get => _zoom;
@@ -47,6 +52,7 @@ public class HdrMetalView : NSView
             _zoom = (nfloat)Math.Clamp((double)value, 0.1, 100.0);
             ClampOffset();
             Render();
+            OnZoomChanged?.Invoke(_zoom);
         }
     }
 
@@ -69,6 +75,7 @@ public class HdrMetalView : NSView
         _zoom = 1.0f;
         _offset = CGPoint.Empty;
         Render();
+        OnZoomChanged?.Invoke(_zoom);
     }
 
     /// <summary>
@@ -88,6 +95,7 @@ public class HdrMetalView : NSView
         _zoom = (nfloat)Math.Min((double)zoomX, (double)zoomY);
         _offset = CGPoint.Empty;
         Render();
+        OnZoomChanged?.Invoke(_zoom);
     }
 
     public HdrMetalView(CGRect frame) : base(frame)
@@ -634,6 +642,7 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
 
         ClampOffset();
         Render();
+        OnZoomChanged?.Invoke(_zoom);
     }
 
     // Mouse drag panning support
