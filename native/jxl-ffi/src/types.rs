@@ -160,8 +160,8 @@ pub struct JxlBasicInfo {
     pub Orientation: JxlOrientation,
     /// Whether alpha is premultiplied.
     pub AlphaPremultiplied: bool,
-    /// Whether the image has animation.
-    pub HaveAnimation: bool,
+    /// Whether the image is animated.
+    pub IsAnimated: bool,
     /// Whether original color profile is used.
     pub UsesOriginalProfile: bool,
 }
@@ -248,7 +248,7 @@ impl Default for JxlBasicInfo {
             LinearBelow: 0.0,
             Orientation: JxlOrientation::Identity,
             AlphaPremultiplied: false,
-            HaveAnimation: false,
+            IsAnimated: false,
             UsesOriginalProfile: false,
         }
     }

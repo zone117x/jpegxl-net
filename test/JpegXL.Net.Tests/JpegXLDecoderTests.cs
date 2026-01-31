@@ -524,4 +524,71 @@ public class JxlDecoderTests
         
         Console.WriteLine($"Decoded image {info.Width}x{info.Height} with alpha in RGBA color buffer");
     }
+
+    [TestMethod]
+    public void ParseFrameMetadata_ReturnsAnimationInfo()
+    {
+        // Arrange - use animated test file
+        var data = File.ReadAllBytes("TestData/animation_spline.jxl");
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+
+        // Act
+        var metadata = decoder.ParseFrameMetadata();
+
+        // Assert
+        Assert.IsTrue(metadata.BasicInfo.IsAnimated, "Should be animated");
+        Assert.IsTrue(metadata.FrameCount > 1, $"Expected multiple frames, got {metadata.FrameCount}");
+        Assert.AreEqual(metadata.Frames.Count, metadata.FrameCount, "FrameCount should match Frames.Count");
+        Assert.IsTrue(metadata.TotalDurationMs > 0, "Should have positive total duration");
+        Assert.IsNull(metadata.FrameNames, "FrameNames should be null when includeNames is false");
+
+        // All frames should have valid dimensions
+        foreach (var frame in metadata.Frames)
+        {
+            Assert.IsTrue(frame.FrameWidth > 0, "Frame should have valid width");
+            Assert.IsTrue(frame.FrameHeight > 0, "Frame should have valid height");
+        }
+
+        Console.WriteLine($"ParseFrameMetadata: {metadata.FrameCount} frames, total duration: {metadata.TotalDurationMs}ms");
+        Console.WriteLine($"Frame durations: [{string.Join(", ", metadata.Frames.Select(f => $"{f.DurationMs}ms"))}]");
+    }
+
+    [TestMethod]
+    public void ParseFrameMetadata_StaticImage_ReturnsSingleFrame()
+    {
+        // Arrange - use static test file
+        var data = File.ReadAllBytes("TestData/dice.jxl");
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+
+        // Act
+        var metadata = decoder.ParseFrameMetadata();
+
+        // Assert
+        Assert.IsFalse(metadata.BasicInfo.IsAnimated, "Should not be animated");
+        Assert.AreEqual(1, metadata.FrameCount, "Static image should have 1 frame");
+        Assert.AreEqual(0, metadata.Frames[0].DurationMs, "Static image frame should have 0 duration");
+        Assert.IsTrue(metadata.Frames[0].IsLast, "Single frame should be marked as last");
+
+        Console.WriteLine($"ParseFrameMetadata (static): {metadata.BasicInfo.Width}x{metadata.BasicInfo.Height}");
+    }
+
+    [TestMethod]
+    public void ParseFrameMetadata_MaxFramesLimit_ThrowsWhenExceeded()
+    {
+        // Arrange - use animated test file
+        var data = File.ReadAllBytes("TestData/animation_spline.jxl");
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+
+        // Act & Assert - limit to 2 frames should throw since animation has more
+        var ex = Assert.ThrowsException<JxlException>(() => decoder.ParseFrameMetadata(maxFrames: 2));
+        Assert.IsTrue(ex.Message.Contains("exceeded limit"), $"Expected limit exceeded message, got: {ex.Message}");
+
+        Console.WriteLine($"ParseFrameMetadata correctly threw: {ex.Message}");
+    }
 }

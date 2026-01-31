@@ -17,7 +17,7 @@ public class MainWindow : NSWindow
     private NSButton? _playPauseButton;
 
     // Animation support
-    private List<float>? _frameDurations;  // Only store durations, pixels are on GPU
+    private float[]? _frameDurations;  // Only store durations, pixels are on GPU
     private int _currentFrameIndex;
     private NSTimer? _animationTimer;
     private DateTime _frameStartTime;
@@ -194,7 +194,7 @@ public class MainWindow : NSWindow
 
     private void PlayPause()
     {
-        if (_frameDurations == null || _frameDurations.Count <= 1) return;
+        if (_frameDurations == null || _frameDurations.Length <= 1) return;
 
         if (_isPlaying)
         {
@@ -215,42 +215,53 @@ public class MainWindow : NSWindow
             _statusLabel!.StringValue = "Loading...";
             _hdrLabel!.Hidden = true;
             _frameLabel!.Hidden = true;
-        
+
             Console.WriteLine($"Loading image: {path}");
             var bytes = File.ReadAllBytes(path);
 
-            // Get basic info first
-            using var infoDecoder = new JxlDecoder();
-            infoDecoder.SetInput(bytes);
-            var info = infoDecoder.ReadInfo();
+            var options = new JxlDecodeOptions { PremultiplyAlpha = true };
+
+            // Single decoder for entire load operation
+            using var decoder = new JxlDecoder(options);
+            decoder.SetInput(bytes);
+
+            var info = decoder.ReadInfo();
             _currentInfo = info;
 
             var isHdr = info.IsHdr;
 
             _frameDurations = null;
 
+            decoder.SetPixelFormat(JxlPixelFormat.Rgba32F);
+
             if (info.IsAnimated)
             {
-                // Decode all frames directly to GPU-shared memory
-                _frameDurations = DecodeAnimatedImageToGpu(bytes, info);
+                // First pass: get metadata (uses SkipFrame internally, no pixel buffers)
+                var animationMetadata = decoder.ParseFrameMetadata();
 
-                if (_frameDurations.Count > 0)
+                // Rewind for pixel decoding (pixel_format is preserved)
+                decoder.Rewind();
+
+                // Decode all frames directly to GPU-shared memory
+                _frameDurations = DecodeAnimatedImageToGpu(decoder, info, animationMetadata);
+
+                if (_frameDurations.Length > 0)
                 {
                     _currentFrameIndex = 0;
 
-                    if (_frameDurations.Count > 1)
+                    if (_frameDurations.Length > 1)
                     {
                         StartAnimation();
                     }
 
                     var formatStr = isHdr ? "HDR" : "Animated";
-                    _infoLabel!.StringValue = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {_frameDurations.Count} frames | {formatStr}";
+                    _infoLabel!.StringValue = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {_frameDurations.Length} frames | {formatStr}";
                 }
             }
             else
             {
                 // Static image - decode directly to GPU-shared memory (zero-copy on Apple Silicon)
-                DecodeStaticImageToGpu(bytes, info);
+                DecodeStaticImageToGpu(decoder, info);
 
                 var formatStr = isHdr ? "HDR" : (info.HasAlpha ? "RGBA" : "RGB");
                 _infoLabel!.StringValue = $"{info.Width}×{info.Height} | {info.BitsPerSample}bpp | {formatStr}";
@@ -290,91 +301,43 @@ public class MainWindow : NSWindow
     /// Decodes a static image directly into GPU-shared memory.
     /// On Apple Silicon, this eliminates the managed array allocation and uses unified memory.
     /// </summary>
-    private void DecodeStaticImageToGpu(byte[] data, JxlBasicInfo info)
+    private void DecodeStaticImageToGpu(JxlDecoder decoder, JxlBasicInfo info)
     {
-        var options = new JxlDecodeOptions
-        {
-            PremultiplyAlpha = true
-        };
-
         var width = (int)info.Width;
         var height = (int)info.Height;
 
-        // Use the low-level decoder to decode directly into GPU-shared memory
+        // Decode directly into GPU-shared memory
         _metalView!.DecodeDirectToGpu(width, height, pixelSpan =>
         {
-            using var decoder = new JxlDecoder(options);
-            decoder.SetInput(data);
-            decoder.SetPixelFormat(JxlPixelFormat.Rgba32F);
-            decoder.ReadInfo();
             decoder.GetPixels(MemoryMarshal.AsBytes(pixelSpan));
         });
     }
 
     /// <summary>
-    /// Decodes an animated image directly into GPU-shared memory using a single decoder.
+    /// Decodes an animated image directly into GPU-shared memory.
     /// Returns only the frame durations - pixel data goes directly to GPU texture array.
+    /// Expects decoder to be already rewound with pixel format set.
     /// </summary>
-    private List<float> DecodeAnimatedImageToGpu(byte[] data, JxlBasicInfo info)
+    private float[] DecodeAnimatedImageToGpu(JxlDecoder decoder, JxlBasicInfo info, JxlAnimationMetadata metadata)
     {
-        var durations = new List<float>();
         var width = (int)info.Width;
         var height = (int)info.Height;
-
-        var options = new JxlDecodeOptions
-        {
-            PremultiplyAlpha = true
-        };
-
-        // First pass: collect frame metadata using SkipFrame (no pixel buffer needed!)
-        using (var metaDecoder = new JxlDecoder(options))
-        {
-            metaDecoder.SetInput(data);
-            metaDecoder.SetPixelFormat(JxlPixelFormat.Rgba32F);
-            metaDecoder.ReadInfo();
-
-            while (metaDecoder.HasMoreFrames())
-            {
-                var evt = metaDecoder.Process();
-
-                while (evt == JxlDecoderEvent.NeedMoreInput || evt == JxlDecoderEvent.HaveBasicInfo)
-                    evt = metaDecoder.Process();
-
-                if (evt == JxlDecoderEvent.Complete)
-                    break;
-
-                if (evt == JxlDecoderEvent.HaveFrameHeader)
-                {
-                    var header = metaDecoder.GetFrameHeader();
-                    float duration = header.DurationMs > 0 ? header.DurationMs : 100f;
-                    durations.Add(duration);
-                    evt = metaDecoder.Process();
-                }
-
-                // Skip frame without allocating pixel buffer
-                if (evt == JxlDecoderEvent.NeedOutputBuffer)
-                    metaDecoder.SkipFrame();
-
-                if (durations.Count > 1000) break; // Safety limit
-            }
-        }
-
-        if (durations.Count == 0) return durations;
+        var frameCount = metadata.Frames.Count;
+        var durations = metadata.GetFrameDurationsMs();
+        
+        if (durations.Length == 0) return durations;
 
         // Prepare GPU texture array
-        _metalView!.PrepareAnimationTextures(durations.Count, width, height);
+        _metalView!.PrepareAnimationTextures(frameCount, width, height);
 
-        // Second pass: decode all frames sequentially with a single decoder
-        using var decoder = new JxlDecoder(options);
-        decoder.SetInput(data);
-        decoder.SetPixelFormat(JxlPixelFormat.Rgba32F);
-        decoder.ReadInfo();
-
+        // Decode all frames sequentially
+        // Use frameCount from metadata instead of HasMoreFrames() which requires WithImageInfo state
         int frameIndex = 0;
-        while (decoder.HasMoreFrames() && frameIndex < durations.Count)
+        while (frameIndex < frameCount)
         {
             var evt = decoder.Process();
 
+            // Handle Initialized→WithImageInfo transition and incomplete input
             while (evt == JxlDecoderEvent.NeedMoreInput || evt == JxlDecoderEvent.HaveBasicInfo)
                 evt = decoder.Process();
 
@@ -401,16 +364,16 @@ public class MainWindow : NSWindow
 
     private void DisplayFrame(int index)
     {
-        if (_frameDurations == null || index >= _frameDurations.Count || _currentInfo == null) return;
+        if (_frameDurations == null || index >= _frameDurations.Length || _currentInfo == null) return;
 
         // All frames are in GPU texture array - just switch the index
         _metalView!.DisplayArrayFrame(index);
-        _frameLabel!.StringValue = $"Frame {index + 1}/{_frameDurations.Count}";
+        _frameLabel!.StringValue = $"Frame {index + 1}/{_frameDurations.Length}";
     }
 
     private void StartAnimation()
     {
-        if (_frameDurations == null || _frameDurations.Count <= 1) return;
+        if (_frameDurations == null || _frameDurations.Length <= 1) return;
 
         StopAnimation();
 
@@ -430,14 +393,14 @@ public class MainWindow : NSWindow
 
     private void OnAnimationTick(NSTimer _)
     {
-        if (_frameDurations == null || _frameDurations.Count == 0) return;
+        if (_frameDurations == null || _frameDurations.Length == 0) return;
 
         var elapsed = (DateTime.UtcNow - _frameStartTime).TotalMilliseconds;
         var frameDuration = _frameDurations[_currentFrameIndex];
 
         if (elapsed >= frameDuration)
         {
-            _currentFrameIndex = (_currentFrameIndex + 1) % _frameDurations.Count;
+            _currentFrameIndex = (_currentFrameIndex + 1) % _frameDurations.Length;
             // Use autorelease pool to ensure Metal/Cocoa objects are cleaned up promptly
             using (new NSAutoreleasePool())
             {
@@ -449,7 +412,7 @@ public class MainWindow : NSWindow
 
     private void UpdatePlayPauseButton()
     {
-        var hasAnimation = _frameDurations != null && _frameDurations.Count > 1;
+        var hasAnimation = _frameDurations != null && _frameDurations.Length > 1;
         _playPauseButton!.Hidden = !hasAnimation;
         _frameLabel!.Hidden = !hasAnimation;
 

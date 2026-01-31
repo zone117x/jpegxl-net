@@ -74,6 +74,16 @@ namespace JpegXL.Net
         public static extern JxlStatus jxl_decoder_reset(NativeDecoderHandle* decoder);
 
         /// <summary>
+        ///  Rewinds the decoder to the beginning of the input without clearing the data buffer.
+        ///  This allows re-decoding the same input without calling SetInput again.
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_rewind", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlStatus jxl_decoder_rewind(NativeDecoderHandle* decoder);
+
+        /// <summary>
         ///  Appends input data to the decoder's buffer.
         ///
         ///  The decoder copies the data internally, so the caller can free
@@ -412,9 +422,9 @@ namespace JpegXL.Net
         /// </summary>
         [MarshalAs(UnmanagedType.U1)] public bool AlphaPremultiplied;
         /// <summary>
-        ///  Whether the image has animation.
+        ///  Whether the image is animated.
         /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool HaveAnimation;
+        [MarshalAs(UnmanagedType.U1)] public bool IsAnimated;
         /// <summary>
         ///  Whether original color profile is used.
         /// </summary>

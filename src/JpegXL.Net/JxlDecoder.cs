@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license.
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace JpegXL.Net;
@@ -267,6 +268,24 @@ public sealed unsafe class JxlDecoder : IDisposable
     {
         ThrowIfDisposed();
         var status = NativeMethods.jxl_decoder_reset(_handle);
+        ThrowIfFailed(status);
+        _basicInfo = null;
+    }
+
+    /// <summary>
+    /// Rewinds the decoder to the beginning of the input without clearing the data buffer.
+    /// This allows re-decoding the same input without calling <see cref="SetInput"/> again.
+    /// </summary>
+    /// <remarks>
+    /// Use this method when you need to make multiple passes over the same input data,
+    /// such as first calling <see cref="ParseFrameMetadata"/> to get frame metadata,
+    /// then rewinding to decode the actual pixels.
+    /// </remarks>
+    /// <exception cref="JxlException">Thrown if rewind fails.</exception>
+    public void Rewind()
+    {
+        ThrowIfDisposed();
+        var status = NativeMethods.jxl_decoder_rewind(_handle);
         ThrowIfFailed(status);
         _basicInfo = null;
     }
@@ -578,6 +597,98 @@ public sealed unsafe class JxlDecoder : IDisposable
     {
         ThrowIfDisposed();
         return NativeMethods.jxl_decoder_has_more_frames(_handle);
+    }
+
+    /// <summary>
+    /// Parses frame metadata for an animated image without decoding pixel data.
+    /// </summary>
+    /// <param name="includeNames">Whether to include frame names (adds overhead).</param>
+    /// <param name="maxFrames">Maximum number of frames to parse (safety limit).</param>
+    /// <returns>Animation metadata including basic info and frame headers.</returns>
+    /// <remarks>
+    /// <para>
+    /// This method efficiently collects animation metadata using <see cref="SkipFrame"/> to avoid
+    /// decoding pixel data. It is much faster than decoding all frames when only
+    /// timing information is needed.
+    /// </para>
+    /// <para>
+    /// This method consumes the decoder's input. After calling, the decoder cannot be
+    /// used for pixel decoding. Create a new decoder to decode pixels.
+    /// </para>
+    /// <para>
+    /// Must be called after <see cref="SetInput"/>. The decoder is reset before parsing begins.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="JxlException">Thrown if parsing fails.</exception>
+    public JxlAnimationMetadata ParseFrameMetadata(bool includeNames = false, int? maxFrames = null)
+    {
+        ThrowIfDisposed();
+
+        // Parse basic info first (SetInput already resets the decoder)
+        var basicInfo = ReadInfo();
+
+        // For non-animated images, return single frame with zero duration
+        if (!basicInfo.IsAnimated)
+        {
+            var staticFrame = new JxlFrameHeader
+            {
+                DurationMs = 0,
+                FrameWidth = basicInfo.Width,
+                FrameHeight = basicInfo.Height,
+                NameLength = 0,
+                IsLast = true
+            };
+            return new JxlAnimationMetadata(
+                [staticFrame],
+                includeNames ? new[] { string.Empty } : null
+            );
+        }
+
+        var frames = new List<JxlFrameHeader>();
+        List<string>? frameNames = includeNames ? [] : null;
+
+        while (HasMoreFrames())
+        {
+            if (frames.Count >= maxFrames)
+            {
+                throw new JxlException(JxlStatus.Error,
+                    $"Frame count exceeded limit of {maxFrames}");
+            }
+
+            var evt = Process();
+
+            // Skip events we don't need
+            while (evt == JxlDecoderEvent.NeedMoreInput || evt == JxlDecoderEvent.HaveBasicInfo)
+            {
+                if (evt == JxlDecoderEvent.NeedMoreInput)
+                {
+                    throw new JxlException(JxlStatus.NeedMoreInput,
+                        "Incomplete data - ParseFrameMetadata requires complete input");
+                }
+                evt = Process();
+            }
+
+            if (evt == JxlDecoderEvent.Complete)
+                break;
+
+            if (evt == JxlDecoderEvent.HaveFrameHeader)
+            {
+                var header = GetFrameHeader();
+                frames.Add(header);
+
+                frameNames?.Add(header.NameLength > 0 ? GetFrameName() : string.Empty);
+
+                evt = Process();
+            }
+
+            // Skip frame without decoding pixels
+            if (evt == JxlDecoderEvent.NeedOutputBuffer)
+            {
+                SkipFrame();
+            }
+        }
+
+        return new JxlAnimationMetadata(frames, frameNames);
     }
 
     /// <summary>

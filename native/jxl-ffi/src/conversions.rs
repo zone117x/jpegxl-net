@@ -124,7 +124,7 @@ pub(crate) fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlBasicInfo 
         LinearBelow: info.tone_mapping.linear_below,
         Orientation: convert_orientation(info.orientation),
         AlphaPremultiplied: false, // TODO: Check actual value from extra channels
-        HaveAnimation: info.animation.is_some(),
+        IsAnimated: info.animation.is_some(),
         UsesOriginalProfile: info.uses_original_profile,
     }
 }

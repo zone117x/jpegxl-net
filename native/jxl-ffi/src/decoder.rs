@@ -114,6 +114,15 @@ impl DecoderInner {
         self.extra_channels.clear();
     }
 
+    /// Rewinds the decoder to the beginning of the input without clearing the data buffer.
+    /// This allows re-decoding the same input without calling SetInput again.
+    fn rewind(&mut self) {
+        self.reset_state();
+        self.data_offset = 0;
+        self.basic_info = None;
+        self.extra_channels.clear();
+    }
+
     /// Resets only the decoder state (used for error recovery).
     fn reset_state(&mut self) {
         self.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&self.options)));
@@ -190,6 +199,21 @@ pub unsafe extern "C" fn jxl_decoder_reset(decoder: *mut NativeDecoderHandle) ->
 
     clear_last_error();
     inner.reset();
+
+    JxlStatus::Success
+}
+
+/// Rewinds the decoder to the beginning of the input without clearing the data buffer.
+/// This allows re-decoding the same input without calling SetInput again.
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_rewind(decoder: *mut NativeDecoderHandle) -> JxlStatus {
+    let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
+
+    clear_last_error();
+    inner.rewind();
 
     JxlStatus::Success
 }
