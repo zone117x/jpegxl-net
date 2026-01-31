@@ -221,7 +221,7 @@ public class MainWindow : NSWindow
         UpdatePlayPauseButton();
     }
 
-    public void LoadImage(string path)
+    public async void LoadImage(string path)
     {
         try
         {
@@ -238,9 +238,10 @@ public class MainWindow : NSWindow
             };
 
             // Single decoder for entire load operation
-            // Using SetInputFile reads directly into native memory, avoiding a managed copy
+            // Using SetInputFileAsync reads directly into native memory on a background thread,
+            // keeping the UI responsive during file I/O
             using var decoder = new JxlDecoder(options);
-            decoder.SetInputFile(path);
+            await decoder.SetInputFileAsync(path);
 
             var info = decoder.ReadInfo();
             _currentInfo = info;

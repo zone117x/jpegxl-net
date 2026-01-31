@@ -112,6 +112,25 @@ public sealed unsafe class JxlDecoder : IDisposable
     }
 
     /// <summary>
+    /// Asynchronously sets the input by reading from a file.
+    /// </summary>
+    /// <param name="filePath">The path to the JXL file to decode.</param>
+    /// <param name="cancellationToken">A cancellation token to cancel the operation.</param>
+    /// <returns>A task that completes when the file has been read.</returns>
+    /// <remarks>
+    /// This wraps <see cref="SetInputFile"/> in a background task to avoid blocking
+    /// the calling thread during file I/O. The actual file reading is performed
+    /// synchronously in the native layer.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">Thrown if filePath is null.</exception>
+    /// <exception cref="JxlException">Thrown if reading the file fails.</exception>
+    /// <exception cref="OperationCanceledException">Thrown if the operation is cancelled.</exception>
+    public System.Threading.Tasks.Task SetInputFileAsync(string filePath, System.Threading.CancellationToken cancellationToken = default)
+    {
+        return System.Threading.Tasks.Task.Run(() => SetInputFile(filePath), cancellationToken);
+    }
+
+    /// <summary>
     /// Sets the desired output pixel format.
     /// </summary>
     /// <param name="format">The pixel format to use for decoded output.</param>
