@@ -32,6 +32,11 @@ public class HdrMetalView : NSView
     private nfloat _zoom = 1.0f;
     private CGPoint _offset = CGPoint.Empty;
 
+    // Mouse drag tracking
+    private bool _isDragging;
+    private CGPoint _dragStartLocation;
+    private CGPoint _dragStartOffset;
+
     public bool IsHdr => _isHdr;
     public int ImageWidth => _imageWidth;
     public int ImageHeight => _imageHeight;
@@ -41,9 +46,50 @@ public class HdrMetalView : NSView
         get => _zoom;
         set
         {
-            _zoom = (nfloat)Math.Clamp((double)value, 0.1, 10.0);
+            _zoom = (nfloat)Math.Clamp((double)value, 0.1, 100.0);
+            ClampOffset();
             Render();
         }
+    }
+
+    public CGPoint Offset
+    {
+        get => _offset;
+        set
+        {
+            _offset = value;
+            ClampOffset();
+            Render();
+        }
+    }
+
+    /// <summary>
+    /// Resets zoom to 1:1 pixel ratio and centers the image.
+    /// </summary>
+    public void ResetView()
+    {
+        _zoom = 1.0f;
+        _offset = CGPoint.Empty;
+        Render();
+    }
+
+    /// <summary>
+    /// Zooms to fit the entire image in the view.
+    /// </summary>
+    public void ZoomToFit()
+    {
+        if (_imageWidth == 0 || _imageHeight == 0) return;
+
+        var contentsScale = _metalLayer?.ContentsScale ?? (nfloat)2.0;
+        var viewWidthPixels = Bounds.Width * contentsScale;
+        var viewHeightPixels = Bounds.Height * contentsScale;
+
+        // Calculate zoom level that fits the entire image
+        var zoomX = viewWidthPixels / _imageWidth;
+        var zoomY = viewHeightPixels / _imageHeight;
+        _zoom = (nfloat)Math.Min((double)zoomX, (double)zoomY);
+        _offset = CGPoint.Empty;
+        Render();
     }
 
     public HdrMetalView(CGRect frame) : base(frame)
@@ -136,9 +182,8 @@ vertex VertexOut vertexShader(VertexIn in [[stage_in]], constant Uniforms& unifo
 
 fragment float4 fragmentShader(VertexOut in [[stage_in]], texture2d<float> tex [[texture(0)]]) {
     constexpr sampler s(mag_filter::linear, min_filter::linear);
-    float4 color = tex.sample(s, in.texCoord);
-    // RGB is already premultiplied at decode time, just output with opaque alpha
-    return float4(color.rgb, 1.0);
+    // RGB is already premultiplied at decode time, output with actual alpha for blending
+    return tex.sample(s, in.texCoord);
 }
 
 // Fragment shader for texture array (animation frames)
@@ -146,8 +191,7 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
                                      texture2d_array<float> tex [[texture(0)]],
                                      constant int& frameIndex [[buffer(0)]]) {
     constexpr sampler s(mag_filter::linear, min_filter::linear);
-    float4 color = tex.sample(s, in.texCoord, frameIndex);
-    return float4(color.rgb, 1.0);
+    return tex.sample(s, in.texCoord, frameIndex);
 }
 ";
 
@@ -183,6 +227,12 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
             VertexDescriptor = vertexDescriptor
         };
         pipelineDescriptor.ColorAttachments[0].PixelFormat = MTLPixelFormat.RGBA16Float;
+        // Enable alpha blending for transparency (premultiplied alpha)
+        pipelineDescriptor.ColorAttachments[0].BlendingEnabled = true;
+        pipelineDescriptor.ColorAttachments[0].SourceRgbBlendFactor = MTLBlendFactor.One;
+        pipelineDescriptor.ColorAttachments[0].DestinationRgbBlendFactor = MTLBlendFactor.OneMinusSourceAlpha;
+        pipelineDescriptor.ColorAttachments[0].SourceAlphaBlendFactor = MTLBlendFactor.One;
+        pipelineDescriptor.ColorAttachments[0].DestinationAlphaBlendFactor = MTLBlendFactor.OneMinusSourceAlpha;
 
         _pipelineState = _device.CreateRenderPipelineState(pipelineDescriptor, out error);
         if (_pipelineState == null || error != null)
@@ -199,6 +249,12 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
             VertexDescriptor = vertexDescriptor
         };
         arrayPipelineDescriptor.ColorAttachments[0].PixelFormat = MTLPixelFormat.RGBA16Float;
+        // Enable alpha blending for transparency (premultiplied alpha)
+        arrayPipelineDescriptor.ColorAttachments[0].BlendingEnabled = true;
+        arrayPipelineDescriptor.ColorAttachments[0].SourceRgbBlendFactor = MTLBlendFactor.One;
+        arrayPipelineDescriptor.ColorAttachments[0].DestinationRgbBlendFactor = MTLBlendFactor.OneMinusSourceAlpha;
+        arrayPipelineDescriptor.ColorAttachments[0].SourceAlphaBlendFactor = MTLBlendFactor.One;
+        arrayPipelineDescriptor.ColorAttachments[0].DestinationAlphaBlendFactor = MTLBlendFactor.OneMinusSourceAlpha;
 
         _arrayPipelineState = _device.CreateRenderPipelineState(arrayPipelineDescriptor, out error);
         if (_arrayPipelineState == null || error != null)
@@ -557,6 +613,25 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
     }
 
     /// <summary>
+    /// Gets the system window background color converted to linear RGB for Metal.
+    /// </summary>
+    private static (double r, double g, double b) GetLinearBackgroundColor()
+    {
+        // Get the window background color and convert to RGB color space
+        var bgColor = NSColor.WindowBackground.UsingColorSpace(NSColorSpace.SRGBColorSpace);
+        if (bgColor == null)
+        {
+            // Fallback to a neutral gray if conversion fails
+            return (0.2, 0.2, 0.2);
+        }
+
+        bgColor.GetRgba(out var r, out var g, out var b, out _);
+
+        // Convert from sRGB to linear for Metal's extended linear color space
+        return (SrgbToLinear((float)r), SrgbToLinear((float)g), SrgbToLinear((float)b));
+    }
+
+    /// <summary>
     /// Renders the current image to the Metal layer.
     /// </summary>
     public void Render()
@@ -586,7 +661,10 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         passDescriptor.ColorAttachments[0].Texture = drawable.Texture;
         passDescriptor.ColorAttachments[0].LoadAction = MTLLoadAction.Clear;
         passDescriptor.ColorAttachments[0].StoreAction = MTLStoreAction.Store;
-        passDescriptor.ColorAttachments[0].ClearColor = new MTLClearColor(0.1, 0.1, 0.1, 1.0);
+
+        // Use system window background color (converted to linear RGB for Metal)
+        var bgColor = GetLinearBackgroundColor();
+        passDescriptor.ColorAttachments[0].ClearColor = new MTLClearColor(bgColor.r, bgColor.g, bgColor.b, 1.0);
 
         using var encoder = commandBuffer.CreateRenderCommandEncoder(passDescriptor);
         if (encoder == null) return;
@@ -606,24 +684,20 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
 
         encoder.SetVertexBuffer(_vertexBuffer, 0, 0);
 
-        // Calculate scale to maintain aspect ratio and apply zoom
-        var viewAspect = Bounds.Width / Bounds.Height;
-        var imageAspect = (nfloat)_imageWidth / _imageHeight;
+        // Calculate scale for 1:1 pixel ratio at zoom=1.0
+        // The quad spans -1 to 1 in NDC, which maps to the full drawable
+        // At zoom=1.0, we want 1 image pixel = 1 screen pixel
+        var contentsScale = _metalLayer.ContentsScale;
+        var viewWidthPixels = Bounds.Width * contentsScale;
+        var viewHeightPixels = Bounds.Height * contentsScale;
 
-        float scaleX, scaleY;
-        if (imageAspect > viewAspect)
-        {
-            scaleX = (float)_zoom;
-            scaleY = (float)(_zoom * viewAspect / imageAspect);
-        }
-        else
-        {
-            scaleX = (float)(_zoom * imageAspect / viewAspect);
-            scaleY = (float)_zoom;
-        }
+        // Scale factors: how much of the NDC space the image occupies
+        // At zoom=1.0, imageWidth pixels should take imageWidth/viewWidth of the view
+        var scaleX = (float)((nfloat)_imageWidth / viewWidthPixels * _zoom);
+        var scaleY = (float)((nfloat)_imageHeight / viewHeightPixels * _zoom);
 
         // Uniforms: scale and offset
-        float[] uniforms = [scaleX, scaleY, 0.0f, 0.0f];
+        float[] uniforms = [scaleX, scaleY, (float)_offset.X, (float)_offset.Y];
         var uniformHandle = GCHandle.Alloc(uniforms, GCHandleType.Pinned);
         try
         {
@@ -668,6 +742,119 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         }
 
         return false;
+    }
+
+    // Scroll wheel zoom support
+    public override void ScrollWheel(NSEvent theEvent)
+    {
+        if (_imageWidth == 0 || _imageHeight == 0) return;
+
+        // Get scroll delta (use scrollingDeltaY for trackpad/mouse wheel)
+        var delta = theEvent.ScrollingDeltaY;
+        if (Math.Abs(delta) < 0.01) return;
+
+        // Calculate zoom factor (positive delta = zoom in)
+        // Use a smaller multiplier for smoother zooming
+        var zoomFactor = 1.0 + delta * 0.005;
+
+        // Get mouse position in view coordinates
+        var mouseLocation = ConvertPointFromView(theEvent.LocationInWindow, null);
+
+        // Calculate mouse position relative to view center (in normalized coords -1 to 1)
+        var viewCenterX = Bounds.Width / 2;
+        var viewCenterY = Bounds.Height / 2;
+        var mouseNormX = (mouseLocation.X - viewCenterX) / viewCenterX;
+        var mouseNormY = (mouseLocation.Y - viewCenterY) / viewCenterY;
+
+        // Store old zoom
+        var oldZoom = _zoom;
+
+        // Apply zoom
+        _zoom = (nfloat)Math.Clamp((double)_zoom * zoomFactor, 0.1, 100.0);
+
+        // Adjust offset to zoom toward mouse cursor
+        // The offset is in normalized device coordinates (-1 to 1)
+        var zoomRatio = _zoom / oldZoom;
+        _offset = new CGPoint(
+            _offset.X * zoomRatio + mouseNormX * (1 - zoomRatio),
+            _offset.Y * zoomRatio + mouseNormY * (1 - zoomRatio)
+        );
+
+        ClampOffset();
+        Render();
+    }
+
+    // Mouse drag panning support
+    public override void MouseDown(NSEvent theEvent)
+    {
+        if (_imageWidth == 0 || _imageHeight == 0)
+        {
+            base.MouseDown(theEvent);
+            return;
+        }
+
+        _isDragging = true;
+        _dragStartLocation = ConvertPointFromView(theEvent.LocationInWindow, null);
+        _dragStartOffset = _offset;
+    }
+
+    public override void MouseDragged(NSEvent theEvent)
+    {
+        if (!_isDragging)
+        {
+            base.MouseDragged(theEvent);
+            return;
+        }
+
+        var currentLocation = ConvertPointFromView(theEvent.LocationInWindow, null);
+        var deltaX = currentLocation.X - _dragStartLocation.X;
+        var deltaY = currentLocation.Y - _dragStartLocation.Y;
+
+        // Convert delta from view points to normalized device coordinates
+        // The view spans 2 units in NDC (-1 to 1), so divide by half the view size
+        var ndcDeltaX = deltaX / (Bounds.Width / 2);
+        var ndcDeltaY = deltaY / (Bounds.Height / 2);
+
+        _offset = new CGPoint(
+            _dragStartOffset.X + ndcDeltaX,
+            _dragStartOffset.Y + ndcDeltaY
+        );
+
+        ClampOffset();
+        Render();
+    }
+
+    public override void MouseUp(NSEvent theEvent)
+    {
+        _isDragging = false;
+        base.MouseUp(theEvent);
+    }
+
+    /// <summary>
+    /// Clamps the offset to prevent panning the image completely off-screen.
+    /// </summary>
+    private void ClampOffset()
+    {
+        if (_imageWidth == 0 || _imageHeight == 0 || _metalLayer == null) return;
+
+        var contentsScale = _metalLayer.ContentsScale;
+        var viewWidthPixels = Bounds.Width * contentsScale;
+        var viewHeightPixels = Bounds.Height * contentsScale;
+
+        // Calculate the scaled image size in NDC units
+        // At zoom=1.0, the image takes (imageWidth/viewWidth) of the NDC space
+        var imageScaleX = (nfloat)_imageWidth / viewWidthPixels * _zoom;
+        var imageScaleY = (nfloat)_imageHeight / viewHeightPixels * _zoom;
+
+        // Maximum offset allows the image edge to reach the opposite view edge
+        // If image is smaller than view, don't allow offset
+        var maxOffsetX = Math.Max(0, (double)(imageScaleX - 1));
+        var maxOffsetY = Math.Max(0, (double)(imageScaleY - 1));
+
+        _offset = new CGPoint(
+            Math.Clamp((double)_offset.X, -maxOffsetX, maxOffsetX),
+            Math.Clamp((double)_offset.Y, -maxOffsetY, maxOffsetY)
+        );
     }
 
     public void ClearImage()

@@ -89,10 +89,15 @@ public class MainWindow : NSWindow
         toolbar.AddSubview(zoomOutButton);
         buttonX += 90;
 
-        var resetZoomButton = NSButton.CreateButton("Reset", () => ResetZoom());
-        resetZoomButton.Frame = new CGRect(buttonX, 5, 60, 30);
-        toolbar.AddSubview(resetZoomButton);
-        buttonX += 70;
+        var actualSizeButton = NSButton.CreateButton("1:1", () => ActualSize());
+        actualSizeButton.Frame = new CGRect(buttonX, 5, 50, 30);
+        toolbar.AddSubview(actualSizeButton);
+        buttonX += 60;
+
+        var fitButton = NSButton.CreateButton("Fit", () => ZoomToFit());
+        fitButton.Frame = new CGRect(buttonX, 5, 50, 30);
+        toolbar.AddSubview(fitButton);
+        buttonX += 60;
 
         _playPauseButton = NSButton.CreateButton("Play", () => PlayPause());
         _playPauseButton.Frame = new CGRect(buttonX, 5, 70, 30);
@@ -183,11 +188,20 @@ public class MainWindow : NSWindow
         }
     }
 
-    private void ResetZoom()
+    private void ActualSize()
     {
         if (_metalView != null)
         {
-            _metalView.Zoom = 1.0f;
+            _metalView.ResetView();
+            UpdateStatus();
+        }
+    }
+
+    private void ZoomToFit()
+    {
+        if (_metalView != null)
+        {
+            _metalView.ZoomToFit();
             UpdateStatus();
         }
     }
@@ -287,7 +301,7 @@ public class MainWindow : NSWindow
             }
 
             _statusLabel!.StringValue = $"Loaded: {Path.GetFileName(path)}";
-            _metalView!.Zoom = 1.0f;
+            _metalView!.ResetView();  // Display at 1:1 pixel ratio
             UpdatePlayPauseButton();
         }
         catch (Exception ex)
