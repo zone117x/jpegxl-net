@@ -23,8 +23,6 @@ public class HdrMetalView : NSView
     // Animation texture array support
     private IMTLTexture? _animationTextureArray;
     private IMTLBuffer? _frameIndexBuffer;
-    private int _animationFrameCount;
-    private int _currentArrayFrameIndex;
 
     private int _imageWidth;
     private int _imageHeight;
@@ -291,37 +289,6 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
     }
 
     /// <summary>
-    /// Sets the image to display from BGRA8 pixel data (SDR).
-    /// </summary>
-    public void SetImageSdr(byte[] pixels, int width, int height)
-    {
-        _imageWidth = width;
-        _imageHeight = height;
-        _isHdr = false;
-
-        CreateTextureFromBgra8(pixels, width, height);
-        Render();
-    }
-
-    /// <summary>
-    /// Sets the image to display from Float32 RGBA pixel data (HDR).
-    /// </summary>
-    public void SetImageHdr(float[] pixels, int width, int height)
-    {
-        _imageWidth = width;
-        _imageHeight = height;
-        _isHdr = true;
-
-        // Clear animation state when setting a single image
-        _animationTextureArray?.Dispose();
-        _animationTextureArray = null;
-        _animationFrameCount = 0;
-
-        CreateTextureFromFloat32(pixels, width, height);
-        Render();
-    }
-
-    /// <summary>
     /// Decodes an image directly into GPU-shared memory, eliminating managed array allocation.
     /// On Apple Silicon, this uses unified memory accessible by both CPU and GPU.
     /// </summary>
@@ -339,7 +306,6 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         // Clear animation state
         _animationTextureArray?.Dispose();
         _animationTextureArray = null;
-        _animationFrameCount = 0;
 
         var pixelCount = width * height * 4;
         var bufferSize = (nuint)(pixelCount * sizeof(float));
@@ -383,66 +349,6 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         Render();
     }
 
-    /// <summary>
-    /// Uploads all animation frames to a GPU texture array for efficient playback.
-    /// </summary>
-    /// <param name="frames">List of float[] pixel data for each frame.</param>
-    /// <param name="width">Width of each frame in pixels.</param>
-    /// <param name="height">Height of each frame in pixels.</param>
-    public void SetAnimationFrames(IReadOnlyList<float[]> frames, int width, int height)
-    {
-        if (_device == null || frames.Count == 0) return;
-
-        _imageWidth = width;
-        _imageHeight = height;
-        _isHdr = true;
-        _animationFrameCount = frames.Count;
-        _currentArrayFrameIndex = 0;
-
-        // Create texture array descriptor
-        using var descriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
-            MTLPixelFormat.RGBA32Float,
-            (nuint)width,
-            (nuint)height,
-            false);
-        descriptor.TextureType = MTLTextureType.k2DArray;
-        descriptor.ArrayLength = (nuint)frames.Count;
-        descriptor.Usage = MTLTextureUsage.ShaderRead;
-        descriptor.StorageMode = MTLStorageMode.Shared;
-
-        _animationTextureArray?.Dispose();
-        _animationTextureArray = _device.CreateTexture(descriptor);
-
-        // Upload all frames to the texture array
-        var bytesPerRow = (nuint)(width * 4 * sizeof(float));
-        var bytesPerImage = (nuint)(width * height * 4 * sizeof(float));
-        for (int i = 0; i < frames.Count; i++)
-        {
-            var handle = GCHandle.Alloc(frames[i], GCHandleType.Pinned);
-            try
-            {
-                _animationTextureArray?.ReplaceRegion(
-                    new MTLRegion(new MTLOrigin(0, 0, 0), new MTLSize(width, height, 1)),
-                    0,
-                    (nuint)i,
-                    handle.AddrOfPinnedObject(),
-                    bytesPerRow,
-                    bytesPerImage);
-            }
-            finally
-            {
-                handle.Free();
-            }
-        }
-
-        // Create buffer for frame index uniform
-        _frameIndexBuffer?.Dispose();
-        _frameIndexBuffer = _device.CreateBuffer((nuint)sizeof(int), MTLResourceOptions.StorageModeShared);
-
-        // Display first frame
-        DisplayArrayFrame(0);
-    }
-
     // Shared buffer for sequential frame decoding
     private IMTLBuffer? _decodingBuffer;
     private nint _decodingBufferPtr;
@@ -459,8 +365,6 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         _imageWidth = width;
         _imageHeight = height;
         _isHdr = true;
-        _animationFrameCount = frameCount;
-        _currentArrayFrameIndex = 0;
 
         // Clear single-image state
         _imageTexture?.Dispose();
@@ -547,62 +451,10 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
     {
         if (_animationTextureArray == null || _frameIndexBuffer == null) return;
 
-        _currentArrayFrameIndex = index;
-
         // Update frame index in buffer
         Marshal.WriteInt32(_frameIndexBuffer.Contents, index);
 
         Render();
-    }
-
-    private void CreateTextureFromBgra8(byte[] pixels, int width, int height)
-    {
-        if (_device == null) return;
-
-        // Convert BGRA8 to RGBA16Float for the EDR pipeline
-        var floatPixels = new float[width * height * 4];
-        for (int i = 0; i < width * height; i++)
-        {
-            int srcIdx = i * 4;
-            int dstIdx = i * 4;
-            // BGRA -> RGBA, convert to linear float (approximate sRGB decode)
-            floatPixels[dstIdx + 0] = SrgbToLinear(pixels[srcIdx + 2] / 255.0f); // R
-            floatPixels[dstIdx + 1] = SrgbToLinear(pixels[srcIdx + 1] / 255.0f); // G
-            floatPixels[dstIdx + 2] = SrgbToLinear(pixels[srcIdx + 0] / 255.0f); // B
-            floatPixels[dstIdx + 3] = pixels[srcIdx + 3] / 255.0f; // A (linear)
-        }
-
-        CreateTextureFromFloat32(floatPixels, width, height);
-    }
-
-    private void CreateTextureFromFloat32(float[] pixels, int width, int height)
-    {
-        if (_device == null) return;
-
-        using var textureDescriptor = MTLTextureDescriptor.CreateTexture2DDescriptor(
-            MTLPixelFormat.RGBA32Float,
-            (nuint)width,
-            (nuint)height,
-            false);
-        textureDescriptor.Usage = MTLTextureUsage.ShaderRead;
-        textureDescriptor.StorageMode = MTLStorageMode.Shared;
-
-        _imageTexture?.Dispose();
-        _imageTexture = _device.CreateTexture(textureDescriptor);
-
-        var handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
-        try
-        {
-            _imageTexture?.ReplaceRegion(
-                new MTLRegion(new MTLOrigin(0, 0, 0), new MTLSize((nint)width, (nint)height, 1)),
-                0,
-                handle.AddrOfPinnedObject(),
-                (nuint)(width * 4 * sizeof(float)));
-        }
-        finally
-        {
-            handle.Free();
-        }
     }
 
     private static float SrgbToLinear(float srgb)
@@ -855,28 +707,6 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
             Math.Clamp((double)_offset.X, -maxOffsetX, maxOffsetX),
             Math.Clamp((double)_offset.Y, -maxOffsetY, maxOffsetY)
         );
-    }
-
-    public void ClearImage()
-    {
-        _imageTexture?.Dispose();
-        _imageTexture = null;
-
-        // Dispose animation resources
-        _animationTextureArray?.Dispose();
-        _animationTextureArray = null;
-        _frameIndexBuffer?.Dispose();
-        _frameIndexBuffer = null;
-        _decodingBuffer?.Dispose();
-        _decodingBuffer = null;
-        _decodingBufferPtr = nint.Zero;
-        _decodingPixelCount = 0;
-        _animationFrameCount = 0;
-
-        _imageWidth = 0;
-        _imageHeight = 0;
-        _isHdr = false;
-        SetNeedsDisplayInRect(Bounds);
     }
 
     protected override void Dispose(bool disposing)

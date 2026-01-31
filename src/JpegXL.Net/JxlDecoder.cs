@@ -82,6 +82,36 @@ public sealed unsafe class JxlDecoder : IDisposable
     }
 
     /// <summary>
+    /// Sets the input by reading directly from a file.
+    /// </summary>
+    /// <param name="filePath">The path to the JXL file to decode.</param>
+    /// <remarks>
+    /// This is more efficient than reading the file with <see cref="System.IO.File.ReadAllBytes"/>
+    /// and then calling <see cref="SetInput(byte[])"/>, as it avoids copying the file data
+    /// through managed memory.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">Thrown if filePath is null.</exception>
+    /// <exception cref="JxlException">Thrown if reading the file fails.</exception>
+    public void SetInputFile(string filePath)
+    {
+        ThrowIfDisposed();
+#if NETSTANDARD2_0
+        if (filePath == null) throw new ArgumentNullException(nameof(filePath));
+#else
+        ArgumentNullException.ThrowIfNull(filePath);
+#endif
+
+        // Convert to null-terminated UTF-8
+        var pathBytes = System.Text.Encoding.UTF8.GetBytes(filePath + '\0');
+        fixed (byte* ptr = pathBytes)
+        {
+            var status = NativeMethods.jxl_decoder_set_input_file(_handle, ptr);
+            ThrowIfFailed(status);
+        }
+        _basicInfo = null;
+    }
+
+    /// <summary>
     /// Sets the desired output pixel format.
     /// </summary>
     /// <param name="format">The pixel format to use for decoded output.</param>

@@ -27,6 +27,8 @@ pub enum JxlStatus {
     BufferTooSmall = 4,
     /// Decoder is in an invalid state for this operation.
     InvalidState = 5,
+    /// An I/O error occurred (e.g., file not found).
+    IoError = 6,
 }
 
 /// Pixel data format.

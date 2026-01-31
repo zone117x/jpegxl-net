@@ -15,6 +15,8 @@ use crate::error::{clear_last_error, set_last_error};
 use crate::types::*;
 use jxl::api::{JxlColorProfile, ProcessingResult};
 use jxl::image::JxlOutputBuffer;
+use std::ffi::CStr;
+use std::os::raw::c_char;
 use std::slice;
 
 // Type alias for upstream decoder
@@ -255,6 +257,49 @@ pub unsafe extern "C" fn jxl_decoder_append_input(
     }
 
     JxlStatus::Success
+}
+
+/// Sets input data by reading directly from a file.
+///
+/// This is more efficient than reading the file in managed code and then
+/// calling `jxl_decoder_append_input`, as it avoids an intermediate copy.
+///
+/// # Safety
+/// - `decoder` must be a valid decoder pointer.
+/// - `path` must be a valid null-terminated UTF-8 string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_set_input_file(
+    decoder: *mut NativeDecoderHandle,
+    path: *const c_char,
+) -> JxlStatus {
+    let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
+
+    if path.is_null() {
+        set_last_error("Null path pointer");
+        return JxlStatus::InvalidArgument;
+    }
+
+    let path_str = match unsafe { CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_last_error("Invalid UTF-8 in file path");
+            return JxlStatus::InvalidArgument;
+        }
+    };
+
+    clear_last_error();
+
+    match std::fs::read(path_str) {
+        Ok(data) => {
+            inner.reset();
+            inner.data = data;
+            JxlStatus::Success
+        }
+        Err(e) => {
+            set_last_error(&format!("Failed to read file '{}': {}", path_str, e));
+            JxlStatus::IoError
+        }
+    }
 }
 
 /// Processes the current input data and returns the next decoder event.

@@ -98,6 +98,19 @@ namespace JpegXL.Net
         public static extern JxlStatus jxl_decoder_append_input(NativeDecoderHandle* decoder, byte* data, System.UIntPtr size);
 
         /// <summary>
+        ///  Sets input data by reading directly from a file.
+        ///
+        ///  This is more efficient than reading the file in managed code and then
+        ///  calling `jxl_decoder_append_input`, as it avoids an intermediate copy.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be a valid decoder pointer.
+        ///  - `path` must be a valid null-terminated UTF-8 string.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_set_input_file", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlStatus jxl_decoder_set_input_file(NativeDecoderHandle* decoder, byte* path);
+
+        /// <summary>
         ///  Processes the current input data and returns the next decoder event.
         ///
         ///  This is the main function for streaming decoding. Call it repeatedly,
@@ -910,6 +923,10 @@ namespace JpegXL.Net
         ///  Decoder is in an invalid state for this operation.
         /// </summary>
         InvalidState = 5,
+        /// <summary>
+        ///  An I/O error occurred (e.g., file not found).
+        /// </summary>
+        IoError = 6,
     }
 
     /// <summary>

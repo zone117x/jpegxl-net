@@ -104,25 +104,22 @@ public partial class MainWindow : Window
             StopAnimation();
             StatusText!.Text = "Loading...";
             HdrInfoText!.IsVisible = false;
-            
-            // Load on background thread
-            var bytes = await File.ReadAllBytesAsync(path);
-            
-            // Check if animated
+
+            // Check if animated - use SetInputFile to read directly into native memory
             using var decoder = new JxlDecoder(new JxlDecodeOptions { PremultiplyAlpha = true });
-            decoder.SetInput(bytes);
+            decoder.SetInputFile(path);
             var info = decoder.ReadInfo();
-            
+
             _currentImage?.Dispose();
             ClearFrames();
-            
+
             if (info.IsAnimated)
             {
                 // Check if HDR
                 var isHdr = info.IsHdr;
 
                 // Decode all frames
-                _frames = await Task.Run(() => DecodeAnimatedImage(bytes, info, isHdr));
+                _frames = await Task.Run(() => DecodeAnimatedImage(path, info, isHdr));
 
                 if (_frames.Count > 0)
                 {
@@ -149,18 +146,19 @@ public partial class MainWindow : Window
             }
             else
             {
-                // Static image - use simple decode
+                // Static image - decode on background thread
                 var isHdr = info.IsHdr;
-                var options = new JxlDecodeOptions { PremultiplyAlpha = true };
+                var staticOptions = new JxlDecodeOptions { PremultiplyAlpha = true };
                 if (isHdr)
                 {
                     // Tone map HDR to SDR by setting target intensity to 255 nits
-                    options.DesiredIntensityTarget = 255f;
+                    staticOptions.DesiredIntensityTarget = 255f;
                 }
 
-                _currentImage = await Task.Run(() => JxlImage.Decode(bytes, JxlPixelFormat.Bgra8, options));
+                var pixels = await Task.Run(() => DecodeStaticImage(path, staticOptions));
+                _currentImage = null; // Not using JxlImage for file-based decode
 
-                var bitmap = CreateBitmapFromPixels(_currentImage.GetPixelArray(), _currentImage.Width, _currentImage.Height);
+                var bitmap = CreateBitmapFromPixels(pixels, (int)info.Size.Width, (int)info.Size.Height);
                 ImageDisplay!.Source = bitmap;
                 DropHint!.IsVisible = false;
 
@@ -186,7 +184,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private List<AnimationFrame> DecodeAnimatedImage(byte[] data, JxlBasicInfo info, bool isHdr)
+    private static byte[] DecodeStaticImage(string path, JxlDecodeOptions options)
+    {
+        using var decoder = new JxlDecoder(options);
+        decoder.SetInputFile(path);
+        decoder.SetPixelFormat(JxlPixelFormat.Bgra8);
+        decoder.ReadInfo();
+
+        return decoder.GetPixels();
+    }
+
+    private List<AnimationFrame> DecodeAnimatedImage(string path, JxlBasicInfo info, bool isHdr)
     {
         var frames = new List<AnimationFrame>();
         var width = (int)info.Size.Width;
@@ -202,7 +210,7 @@ public partial class MainWindow : Window
         }
 
         using var decoder = new JxlDecoder(options);
-        decoder.SetInput(data);
+        decoder.SetInputFile(path);
         decoder.SetPixelFormat(JxlPixelFormat.Bgra8);
         decoder.ReadInfo(); // Advance past basic info
         

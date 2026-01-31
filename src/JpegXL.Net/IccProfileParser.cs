@@ -95,7 +95,11 @@ public static class IccProfileParser
             return null;
 
         // mluc strings are UTF-16BE
+#if NETSTANDARD2_0
+        return Encoding.BigEndianUnicode.GetString(data.Slice(stringOffset, stringLength).ToArray()).TrimEnd('\0');
+#else
         return Encoding.BigEndianUnicode.GetString(data.Slice(stringOffset, stringLength)).TrimEnd('\0');
+#endif
     }
 
     /// <summary>
@@ -107,7 +111,11 @@ public static class IccProfileParser
             return null;
 
         // Skip type signature (4) + reserved (4)
+#if NETSTANDARD2_0
+        return Encoding.ASCII.GetString(data.Slice(8).ToArray()).TrimEnd('\0');
+#else
         return Encoding.ASCII.GetString(data.Slice(8)).TrimEnd('\0');
+#endif
     }
 
     /// <summary>
@@ -124,6 +132,10 @@ public static class IccProfileParser
         if (asciiLength == 0 || 12 + asciiLength > data.Length)
             return null;
 
+#if NETSTANDARD2_0
+        return Encoding.ASCII.GetString(data.Slice(12, asciiLength).ToArray()).TrimEnd('\0');
+#else
         return Encoding.ASCII.GetString(data.Slice(12, asciiLength)).TrimEnd('\0');
+#endif
     }
 }

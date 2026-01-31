@@ -231,7 +231,6 @@ public class MainWindow : NSWindow
             _frameLabel!.Hidden = true;
 
             Console.WriteLine($"Loading image: {path}");
-            var bytes = File.ReadAllBytes(path);
 
             var options = new JxlDecodeOptions {
                 PremultiplyAlpha = true,
@@ -239,8 +238,9 @@ public class MainWindow : NSWindow
             };
 
             // Single decoder for entire load operation
+            // Using SetInputFile reads directly into native memory, avoiding a managed copy
             using var decoder = new JxlDecoder(options);
-            decoder.SetInput(bytes);
+            decoder.SetInputFile(path);
 
             var info = decoder.ReadInfo();
             _currentInfo = info;
