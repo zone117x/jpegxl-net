@@ -240,6 +240,7 @@ public class HdrMetalView : NSView
             Device = _device,
             PixelFormat = MTLPixelFormat.RGBA16Float,
             FramebufferOnly = false,
+            Opaque = false,
             ContentsScale = NSScreen.MainScreen?.BackingScaleFactor ?? (nfloat)2.0
         };
 
@@ -663,32 +664,6 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         return 1.055f * MathF.Pow(linear, 1f / 2.4f) - 0.055f;
     }
 
-    private static float SrgbToLinear(float srgb)
-    {
-        if (srgb <= 0.04045f)
-            return srgb / 12.92f;
-        return MathF.Pow((srgb + 0.055f) / 1.055f, 2.4f);
-    }
-
-    /// <summary>
-    /// Gets the system window background color converted to linear RGB for Metal.
-    /// </summary>
-    private static (double r, double g, double b) GetLinearBackgroundColor()
-    {
-        // Get the window background color and convert to RGB color space
-        var bgColor = NSColor.WindowBackground.UsingColorSpace(NSColorSpace.SRGBColorSpace);
-        if (bgColor == null)
-        {
-            // Fallback to a neutral gray if conversion fails
-            return (0.2, 0.2, 0.2);
-        }
-
-        bgColor.GetRgba(out var r, out var g, out var b, out _);
-
-        // Convert from sRGB to linear for Metal's extended linear color space
-        return (SrgbToLinear((float)r), SrgbToLinear((float)g), SrgbToLinear((float)b));
-    }
-
     /// <summary>
     /// Renders the current image to the Metal layer.
     /// </summary>
@@ -720,9 +695,8 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         passDescriptor.ColorAttachments[0].LoadAction = MTLLoadAction.Clear;
         passDescriptor.ColorAttachments[0].StoreAction = MTLStoreAction.Store;
 
-        // Use system window background color (converted to linear RGB for Metal)
-        var bgColor = GetLinearBackgroundColor();
-        passDescriptor.ColorAttachments[0].ClearColor = new MTLClearColor(bgColor.r, bgColor.g, bgColor.b, 1.0);
+        // Use transparent clear color - the window background shows through
+        passDescriptor.ColorAttachments[0].ClearColor = new MTLClearColor(0, 0, 0, 0);
 
         using var encoder = commandBuffer.CreateRenderCommandEncoder(passDescriptor);
         if (encoder == null) return;
