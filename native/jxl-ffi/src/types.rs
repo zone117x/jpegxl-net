@@ -137,6 +137,45 @@ pub struct JxlToneMapping {
     pub RelativeToMaxDisplay: bool,
 }
 
+/// Bit depth type discriminator.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum JxlBitDepthType {
+    /// Integer bit depth (e.g., 8-bit, 16-bit).
+    #[default]
+    Int = 0,
+    /// Floating-point bit depth (e.g., float16, float32).
+    Float = 1,
+}
+
+/// Bit depth specification.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+#[allow(non_snake_case)]
+pub struct JxlBitDepth {
+    /// Whether this is integer or floating-point.
+    pub Type: JxlBitDepthType,
+    /// Number of bits per sample.
+    pub BitsPerSample: u32,
+    /// Number of exponent bits (0 for integer formats).
+    pub ExponentBitsPerSample: u32,
+}
+
+/// Animation parameters for an animated JPEG XL image.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+#[allow(non_snake_case)]
+pub struct JxlAnimation {
+    /// Ticks per second numerator.
+    pub TpsNumerator: u32,
+    /// Ticks per second denominator.
+    pub TpsDenominator: u32,
+    /// Number of loops (0 = infinite).
+    pub NumLoops: u32,
+    /// Whether frames have individual timecodes.
+    pub HaveTimecodes: bool,
+}
+
 /// Basic image information (raw FFI struct).
 /// Fields are ordered by size (largest first) to minimize padding.
 #[repr(C)]
@@ -147,20 +186,12 @@ pub struct JxlBasicInfoRaw {
     pub Width: u32,
     /// Image height in pixels.
     pub Height: u32,
-    /// Bits per sample for integer formats.
-    pub BitsPerSample: u32,
-    /// Exponent bits (0 for integer formats, >0 for float).
-    pub ExponentBitsPerSample: u32,
-    /// Number of color channels (1 for grayscale, 3 for RGB).
-    pub NumColorChannels: u32,
+    /// Bit depth specification.
+    pub BitDepth: JxlBitDepth,
     /// Number of extra channels (alpha, depth, etc.).
     pub NumExtraChannels: u32,
-    /// Animation ticks per second numerator (0 if no animation).
-    pub Animation_TpsNumerator: u32,
-    /// Animation ticks per second denominator (0 if no animation).
-    pub Animation_TpsDenominator: u32,
-    /// Number of animation loops (0 = infinite).
-    pub Animation_NumLoops: u32,
+    /// Animation parameters (all zeros if not animated).
+    pub Animation: JxlAnimation,
     /// Preview image width (0 if no preview).
     pub Preview_Width: u32,
     /// Preview image height (0 if no preview).
@@ -237,13 +268,13 @@ impl Default for JxlBasicInfoRaw {
         Self {
             Width: 0,
             Height: 0,
-            BitsPerSample: 8,
-            ExponentBitsPerSample: 0,
-            NumColorChannels: 3,
+            BitDepth: JxlBitDepth {
+                Type: JxlBitDepthType::Int,
+                BitsPerSample: 8,
+                ExponentBitsPerSample: 0,
+            },
             NumExtraChannels: 0,
-            Animation_TpsNumerator: 0,
-            Animation_TpsDenominator: 0,
-            Animation_NumLoops: 0,
+            Animation: JxlAnimation::default(),
             Preview_Width: 0,
             Preview_Height: 0,
             ToneMapping: JxlToneMapping {

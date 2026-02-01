@@ -17,11 +17,6 @@ public class JxlBasicInfo
     public (nuint Width, nuint Height) Size { get; init; }
 
     /// <summary>
-    /// Number of color channels (1 for grayscale, 3 for RGB).
-    /// </summary>
-    public uint NumColorChannels { get; init; }
-
-    /// <summary>
     /// Bit depth of the image.
     /// </summary>
     public required JxlBitDepth BitDepth { get; init; }

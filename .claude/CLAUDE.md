@@ -53,20 +53,84 @@ The script changes the current directory automatically, so do not use a `cd ...`
 
 ## Architecture
 
-### Native Layer (native/jxl-ffi/)
-- Rust FFI wrapper around jxl-rs library
-- `build.rs` uses csbindgen to auto-generate C# bindings
-- Generated bindings go to `src/JpegXL.Net/NativeMethods.g.cs`
-- Check csbindgen docs at `docs/csbindgen-README.md` for how the Rust<->C# interop works
+### jxl-rs (native/jxl-rs/)
+- Third-party Rust JPEG XL decoder, included as a Git submodule (fork: `zone117x/jxl-rs`)
+- Contains the actual JXL format parsing and pixel decoding logic
+- Key paths: `jxl/src/` for decoder implementation, `jxl/resources/test/` for test images
+- Look here for: decoder bugs, format parsing issues, understanding JXL spec behavior
+- Changes here require `./rebuild-all.sh` to recompile
+
+**Design goals for JpegXL.Net ↔ jxl-rs alignment:**
+- JpegXL.Net should expose *all* functions, structs, enums, and fields available in jxl-rs
+- Names and structure should match jxl-rs as closely as possible
+- Only deviate from jxl-rs when idiomatic Rust must be adapted to idiomatic C#:
+  - Rust generics → FFI state machine (Rust generics can't cross FFI boundary)
+  - snake_case → PascalCase
+  - Rust enums with data → C# patterns (see below)
+
+**Rust enums with data → C# conversion pattern:**
+Rust enums like `enum Foo { A, B { x: f32 } }` can't cross FFI directly. The pattern used:
+
+1. **jxl-rs** (Rust): `enum JxlBitDepth { Int { bits }, Float { bits, exponent_bits } }`
+2. **jxl-ffi** (FFI): Create a C-compatible struct with enum discriminator + all fields:
+   ```rust
+   pub enum JxlBitDepthType { Int = 0, Float = 1 }
+   pub struct JxlBitDepth {
+       pub Type: JxlBitDepthType,
+       pub BitsPerSample: u32,
+       pub ExponentBitsPerSample: u32,  // 0 for Int
+   }
+   ```
+3. **JpegXL.Net** (C#): csbindgen auto-generates the struct; add convenience via extensions:
+   ```csharp
+   // In JxlBitDepth.Extensions.cs
+   public partial struct JxlBitDepth {
+       public bool IsInteger => Type == JxlBitDepthType.Int;
+       public bool IsFloat => Type == JxlBitDepthType.Float;
+   }
+   ```
+
+See `JxlBitDepth`, `JxlColorProfile` for examples. The FFI layer does type discrimination, not C#.
+
+### Native FFI Layer (native/jxl-ffi/)
+Bridges jxl-rs to C# via `extern "C"` functions. Contains only code necessary for C# interop:
+- `decoder.rs` - FFI entry points and decoder state machine (required because Rust generics can't cross FFI)
+- `types.rs` - C-compatible struct/enum definitions with PascalCase fields for C# idioms
+- `conversions.rs` - Type conversions between jxl-rs Rust types and C-compatible FFI types
+- `error.rs` - Thread-local error storage for FFI error reporting
+- `build.rs` - Runs csbindgen to auto-generate `src/JpegXL.Net/NativeMethods.g.cs`
+
+Look here for: FFI boundary issues, type conversion bugs, state machine errors.
+
+Check `docs/csbindgen-README.md` for how the Rust↔C# interop works.
 
 ### C# Layer (src/JpegXL.Net/)
-- `JxlDecoder` - Low-level streaming decoder API
-- `JxlImage` - High-level one-shot decode API
-- `*.Extensions.cs` files add helper methods to generated types (e.g., `JxlBasicInfo.IsHdr`)
+**Core APIs:**
+- `JxlDecoder.cs` - Low-level streaming decoder API
+- `JxlImage.cs` - High-level one-shot decode API
+
+**Supporting types:**
+- `JxlBasicInfo.cs` - Image metadata (dimensions, bit depth, animation, HDR tone mapping)
+- `JxlColorProfile.cs` - Color profile support (ICC, transfer functions, primaries)
+- `JxlBitDepth.cs` - Bit depth discriminated union (Int vs Float)
+- `JxlAnimation.cs`, `JxlAnimationMetadata.cs` - Animation timing and frame info
+
+**Infrastructure:**
+- `NativeMethods.g.cs` - Auto-generated P/Invoke bindings (DO NOT EDIT)
+- `NativeLibraryLoader.cs` - Platform-specific native library resolution
+- `*.Extensions.cs` - Helper methods for generated types (e.g., `JxlPixelFormat.Rgba8`, `JxlBasicInfo.IsHdr`)
+
+### Where to Look for Issues
+| Issue Type | Location |
+|------------|----------|
+| Decoder/format bugs | `native/jxl-rs/jxl/src/` |
+| FFI/interop issues | `native/jxl-ffi/src/decoder.rs` |
+| Type conversion bugs | `native/jxl-ffi/src/conversions.rs` |
+| C# API issues | `src/JpegXL.Net/*.cs` |
+| Color/HDR issues | `conversions.rs` + `JxlColorProfile.cs` |
 
 ### Key Design Principles
-- The native FFI layer should be minimal - just thin wrappers
-- Prefer streaming API (`Process()`, `ReadPixels()`) over one-shot functions
+- The native FFI layer should contain only code necessary for C# interop
 - Options are immutable after decoder creation
 - Native bindings are auto-generated - edit Rust code, not NativeMethods.g.cs
 
@@ -76,10 +140,17 @@ Tests are in `test/JpegXL.Net.Tests/`. The rebuild script runs them automaticall
 
 ## Test Files
 
-When debugging, evaluating, and looking for JXL test files, check:
+**Sample files for manual testing** (`examples/sample-files/`):
+- `hdr_hlg_test.jxl`, `hdr_pq_test.jxl` - HDR images with HLG/PQ transfer functions
+- `animation_icos4d.jxl`, `animation_spline.jxl` - Animated images
+- `cmyk_layers.jxl` - CMYK with layers
+- `progressive.jxl` - Progressive decode testing
+- `with_icc.jxl` - ICC color profile
+
+**Additional test resources:**
 - `./external/conformance/**/*.jxl` - Optional conformance test suite
 - `./native/jxl-rs/jxl/resources/test/**/*.jxl` - Test resources from the upstream jxl-rs decoder
-- `./native/jxl-rs/**/*.rs` - Look in this project for unit tests related to JXL files/properties/behaviors
+- `./native/jxl-rs/**/*.rs` - Look here for unit tests related to JXL files/properties/behaviors
 
 ## Common Patterns
 

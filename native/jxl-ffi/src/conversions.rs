@@ -98,32 +98,48 @@ pub(crate) fn calculate_buffer_size(info: &JxlBasicInfoRaw, pixel_format: &JxlPi
 // ============================================================================
 
 pub(crate) fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlBasicInfoRaw {
-    let (anim_num, anim_den, anim_loops) = info
+    let animation = info
         .animation
         .as_ref()
-        .map_or((0, 0, 0), |a| (a.tps_numerator, a.tps_denominator, a.num_loops));
+        .map_or(JxlAnimation::default(), |a| JxlAnimation {
+            TpsNumerator: a.tps_numerator,
+            TpsDenominator: a.tps_denominator,
+            NumLoops: a.num_loops,
+            HaveTimecodes: a.have_timecodes,
+        });
 
     let (preview_w, preview_h) = info.preview_size.unwrap_or((0, 0));
 
-    // Determine bits_per_sample and exponent_bits
-    let (bits, exp_bits) = match info.bit_depth {
-        jxl::api::JxlBitDepth::Int { bits_per_sample } => (bits_per_sample, 0),
+    // Convert bit depth
+    let bit_depth = match info.bit_depth {
+        jxl::api::JxlBitDepth::Int { bits_per_sample } => JxlBitDepth {
+            Type: JxlBitDepthType::Int,
+            BitsPerSample: bits_per_sample,
+            ExponentBitsPerSample: 0,
+        },
         jxl::api::JxlBitDepth::Float {
             bits_per_sample,
             exponent_bits_per_sample,
-        } => (bits_per_sample, exponent_bits_per_sample),
+        } => JxlBitDepth {
+            Type: JxlBitDepthType::Float,
+            BitsPerSample: bits_per_sample,
+            ExponentBitsPerSample: exponent_bits_per_sample,
+        },
     };
+
+    // Check if the first alpha channel has associated (premultiplied) alpha
+    let alpha_premultiplied = info
+        .extra_channels
+        .iter()
+        .find(|ec| ec.ec_type == ExtraChannel::Alpha)
+        .map_or(false, |ec| ec.alpha_associated);
 
     JxlBasicInfoRaw {
         Width: info.size.0 as u32,
         Height: info.size.1 as u32,
-        BitsPerSample: bits,
-        ExponentBitsPerSample: exp_bits,
-        NumColorChannels: 3, // RGB, grayscale handled by color_type
+        BitDepth: bit_depth,
         NumExtraChannels: info.extra_channels.len() as u32,
-        Animation_TpsNumerator: anim_num,
-        Animation_TpsDenominator: anim_den,
-        Animation_NumLoops: anim_loops,
+        Animation: animation,
         Preview_Width: preview_w as u32,
         Preview_Height: preview_h as u32,
         ToneMapping: JxlToneMapping {
@@ -133,7 +149,7 @@ pub(crate) fn convert_basic_info(info: &jxl::api::JxlBasicInfo) -> JxlBasicInfoR
             RelativeToMaxDisplay: info.tone_mapping.relative_to_max_display,
         },
         Orientation: convert_orientation(info.orientation),
-        AlphaPremultiplied: false, // TODO: Check actual value from extra channels
+        AlphaPremultiplied: alpha_premultiplied,
         IsAnimated: info.animation.is_some(),
         UsesOriginalProfile: info.uses_original_profile,
     }

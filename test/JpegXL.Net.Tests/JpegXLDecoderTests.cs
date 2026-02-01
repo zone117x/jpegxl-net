@@ -735,13 +735,7 @@ public class JxlDecoderTests
         // Act
         var info = decoder.ReadInfo();
 
-        // Assert - New fields should have reasonable values
-        Assert.IsTrue(info.NumColorChannels == 1 || info.NumColorChannels == 3,
-            $"NumColorChannels should be 1 (grayscale) or 3 (RGB), got {info.NumColorChannels}");
-
-        // dice.jxl is an RGB image
-        Assert.AreEqual(3u, info.NumColorChannels, "dice.jxl should have 3 color channels (RGB)");
-
+        // Assert - Fields should have reasonable values
         // AlphaPremultiplied should be false for standard images
         Assert.IsFalse(info.AlphaPremultiplied, "dice.jxl should not have premultiplied alpha");
 

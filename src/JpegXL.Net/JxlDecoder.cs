@@ -551,15 +551,8 @@ public sealed unsafe class JxlDecoder : IDisposable
             extraChannels.Add(GetExtraChannelInfo(i));
         }
 
-        // Build bit depth
-        JxlBitDepth bitDepth = rawInfo.ExponentBitsPerSample > 0
-            ? new JxlBitDepth.Float(Bits: rawInfo.BitsPerSample, ExponentBitsPerSample: rawInfo.ExponentBitsPerSample)
-            : new JxlBitDepth.Int(Bits: rawInfo.BitsPerSample);
-
         // Build animation (if animated)
-        JxlAnimation? animation = rawInfo.IsAnimated
-            ? new JxlAnimation(rawInfo.Animation_TpsNumerator, rawInfo.Animation_TpsDenominator, rawInfo.Animation_NumLoops)
-            : null;
+        JxlAnimation? animation = rawInfo.IsAnimated ? rawInfo.Animation : null;
 
         // Build preview size (if present)
         (nuint, nuint)? previewSize = rawInfo.Preview_Width > 0 && rawInfo.Preview_Height > 0
@@ -569,8 +562,7 @@ public sealed unsafe class JxlDecoder : IDisposable
         var info = new JxlBasicInfo
         {
             Size = (rawInfo.Width, rawInfo.Height),
-            NumColorChannels = rawInfo.NumColorChannels,
-            BitDepth = bitDepth,
+            BitDepth = rawInfo.BitDepth,
             Orientation = rawInfo.Orientation,
             ExtraChannels = extraChannels,
             Animation = animation,

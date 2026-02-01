@@ -126,7 +126,7 @@ JpegXL.Net wraps the Rust-based jxl-rs decoder through multiple layers:
 │               JpegXL.Net (C# API)               │
 │  • JxlImage - one-shot high-level API           │
 │  • JxlDecoder - streaming low-level API         │
-│  • NativeMethods.g.cs - auto-generated bindings │
+│  • Color profiles, animation, HDR metadata      │
 └─────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────┐
@@ -145,13 +145,13 @@ JpegXL.Net wraps the Rust-based jxl-rs decoder through multiple layers:
 
 ### jxl-rs (Third-Party Decoder)
 
-The [jxl-rs](https://github.com/libjxl/jxl-rs) library is a pure Rust implementation of the JPEG XL decoder, included as a Git submodule at `native/jxl-rs/`. It provides a streaming decoding API with SIMD-accelerated transforms for high performance. Licensed under BSD-3-Clause.
+The [jxl-rs](https://github.com/libjxl/jxl-rs) library is a pure Rust implementation of the JPEG XL decoder. This project uses a [fork](https://github.com/zone117x/jxl-rs) included as a Git submodule at `native/jxl-rs/`. It provides a streaming decoding API with SIMD-accelerated transforms for high performance. Licensed under BSD-3-Clause.
 
 ### jxl-ffi (Native FFI Layer)
 
 Located at `native/jxl-ffi/`, this Rust crate wraps jxl-rs with `extern "C"` functions suitable for cross-language interop. The build process uses [csbindgen](https://github.com/Cysharp/csbindgen) to automatically generate C# P/Invoke bindings from the Rust function signatures. Rust structs use PascalCase field names (with `#[allow(non_snake_case)]`) so the generated C# types are idiomatic.
 
-- **Source**: `native/jxl-ffi/src/` (decoder.rs, types.rs, error.rs)
+- **Source**: `native/jxl-ffi/src/` (decoder.rs, types.rs, error.rs, conversions.rs)
 - **Build script**: `native/jxl-ffi/build.rs` runs csbindgen
 - **Generated bindings**: `src/JpegXL.Net/NativeMethods.g.cs`
 - **Output libraries**: `jxl_ffi.dll` (Windows), `libjxl_ffi.so` (Linux), `libjxl_ffi.dylib` (macOS)
@@ -161,8 +161,11 @@ Located at `native/jxl-ffi/`, this Rust crate wraps jxl-rs with `extern "C"` fun
 Located at `src/JpegXL.Net/`, this is the main library distributed via NuGet. It provides:
 
 - **JxlImage** - Simple one-shot decode API for loading entire images
-- **JxlDecoder** - Streaming event-driven API for advanced use cases (animation, progressive decoding)
+- **JxlDecoder** - Streaming event-driven API for advanced use cases (animation, progressive decoding, direct file input)
 - **JxlDecodeOptions** - Configuration options (HDR intensity target, alpha handling, progressive mode)
+- **JxlBasicInfo** - Image metadata including dimensions, bit depth, animation info, and HDR tone mapping data
+- **JxlColorProfile** - Color profile support including ICC profiles, transfer functions (sRGB, PQ, HLG), and custom primaries
+- **JxlPixelFormat** - Predefined formats (Rgba8, Bgra8, Rgba16, Rgba32F, Bgra32F) and custom configurations
 - **Cross-platform support** - Automatic native library resolution for all supported platforms
 
 ## Example Applications

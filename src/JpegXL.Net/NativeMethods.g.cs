@@ -585,6 +585,50 @@ namespace JpegXL.Net
     }
 
     /// <summary>
+    ///  Bit depth specification.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct JxlBitDepth
+    {
+        /// <summary>
+        ///  Whether this is integer or floating-point.
+        /// </summary>
+        public JxlBitDepthType Type;
+        /// <summary>
+        ///  Number of bits per sample.
+        /// </summary>
+        public uint BitsPerSample;
+        /// <summary>
+        ///  Number of exponent bits (0 for integer formats).
+        /// </summary>
+        public uint ExponentBitsPerSample;
+    }
+
+    /// <summary>
+    ///  Animation parameters for an animated JPEG XL image.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct JxlAnimation
+    {
+        /// <summary>
+        ///  Ticks per second numerator.
+        /// </summary>
+        public uint TpsNumerator;
+        /// <summary>
+        ///  Ticks per second denominator.
+        /// </summary>
+        public uint TpsDenominator;
+        /// <summary>
+        ///  Number of loops (0 = infinite).
+        /// </summary>
+        public uint NumLoops;
+        /// <summary>
+        ///  Whether frames have individual timecodes.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool HaveTimecodes;
+    }
+
+    /// <summary>
     ///  Basic image information (raw FFI struct).
     ///  Fields are ordered by size (largest first) to minimize padding.
     /// </summary>
@@ -600,33 +644,17 @@ namespace JpegXL.Net
         /// </summary>
         public uint Height;
         /// <summary>
-        ///  Bits per sample for integer formats.
+        ///  Bit depth specification.
         /// </summary>
-        public uint BitsPerSample;
-        /// <summary>
-        ///  Exponent bits (0 for integer formats, &gt;0 for float).
-        /// </summary>
-        public uint ExponentBitsPerSample;
-        /// <summary>
-        ///  Number of color channels (1 for grayscale, 3 for RGB).
-        /// </summary>
-        public uint NumColorChannels;
+        public JxlBitDepth BitDepth;
         /// <summary>
         ///  Number of extra channels (alpha, depth, etc.).
         /// </summary>
         public uint NumExtraChannels;
         /// <summary>
-        ///  Animation ticks per second numerator (0 if no animation).
+        ///  Animation parameters (all zeros if not animated).
         /// </summary>
-        public uint Animation_TpsNumerator;
-        /// <summary>
-        ///  Animation ticks per second denominator (0 if no animation).
-        /// </summary>
-        public uint Animation_TpsDenominator;
-        /// <summary>
-        ///  Number of animation loops (0 = infinite).
-        /// </summary>
-        public uint Animation_NumLoops;
+        public JxlAnimation Animation;
         /// <summary>
         ///  Preview image width (0 if no preview).
         /// </summary>
@@ -1058,6 +1086,21 @@ namespace JpegXL.Net
         ///  Renders pixels only once the final frame is ready.
         /// </summary>
         FullFrame = 2,
+    }
+
+    /// <summary>
+    ///  Bit depth type discriminator.
+    /// </summary>
+    public enum JxlBitDepthType : uint
+    {
+        /// <summary>
+        ///  Integer bit depth (e.g., 8-bit, 16-bit).
+        /// </summary>
+        Int = 0,
+        /// <summary>
+        ///  Floating-point bit depth (e.g., float16, float32).
+        /// </summary>
+        Float = 1,
     }
 
     /// <summary>
