@@ -3,7 +3,9 @@ using System.Runtime.InteropServices;
 using AppKit;
 using CoreGraphics;
 using Foundation;
+using ImageIO;
 using JpegXL.Net;
+using UniformTypeIdentifiers;
 
 namespace JpegXL.MacOS;
 
@@ -246,16 +248,16 @@ public class MainWindow : NSWindow
             UpdatePlayPauseButton();
         }
 
-        // For animated images, confirm which frame to export
+        // For animated images, inform the user about export behavior
         if (isAnimated)
         {
             var alert = new NSAlert
             {
                 AlertStyle = NSAlertStyle.Informational,
-                MessageText = "Export Frame",
-                InformativeText = $"Export the current frame ({_currentFrameIndex + 1} of {_frameDurations!.Length})?"
+                MessageText = "Export Animated Image",
+                InformativeText = $"This file has {_frameDurations!.Length} frames. If exporting as GIF, all frames will be included. For other formats, only the current frame ({_currentFrameIndex + 1}) will be exported."
             };
-            alert.AddButton("Export");
+            alert.AddButton("OK");
             alert.AddButton("Cancel");
 
             if (alert.RunModal() != (long)NSAlertButtonReturn.First)
@@ -298,7 +300,12 @@ public class MainWindow : NSWindow
         accessoryView.AddSubview(formatLabel);
 
         var formatPopup = new NSPopUpButton(new CGRect(65, 48, 120, 26), pullsDown: false);
-        formatPopup.AddItems(["PNG", "JPEG", "TIFF"]);
+        var exportFormats = new List<string> { "PNG", "JPEG", "TIFF" };
+        // Only offer GIF export for animated images
+        if (isAnimated) {
+            exportFormats.Add("GIF");
+        }
+        formatPopup.AddItems(exportFormats.ToArray());   
         formatPopup.SelectItem(0);  // Default to PNG
         accessoryView.AddSubview(formatPopup);
 
@@ -389,6 +396,7 @@ public class MainWindow : NSWindow
             "PNG" => "png",
             "JPEG" => "jpg",
             "TIFF" => "tiff",
+            "GIF" => "gif",
             _ => "png"
         };
         var utType = UniformTypeIdentifiers.UTType.CreateFromExtension(ext);
@@ -398,6 +406,19 @@ public class MainWindow : NSWindow
     private void PerformExport(string path, string format, float quality)
     {
         if (_currentFilePath == null || _currentInfo == null) return;
+
+        // GIF export is only supported for animated images
+        var isAnimated = _frameDurations != null && _frameDurations.Length > 1;
+        if (format == "GIF")
+        {
+            if (!isAnimated)
+            {
+                Console.WriteLine("GIF export is only supported for animated images");
+                return;
+            }
+            ExportAnimatedGif(path);
+            return;
+        }
 
         var width = (int)_currentInfo.Size.Width;
         var height = (int)_currentInfo.Size.Height;
@@ -415,7 +436,6 @@ public class MainWindow : NSWindow
         var pixels = new byte[width * height * 4];
 
         // GetPixels decodes the first frame (works for both static and animated)
-        // TODO: Animation frame-specific export needs investigation in the Rust decoder
         exportDecoder.GetPixels(pixels);
 
         // Create CGImage from sRGB RGBA8 data
@@ -456,10 +476,118 @@ public class MainWindow : NSWindow
         outputData?.Save(NSUrl.FromFilename(path), atomically: true);
     }
 
+    private void ExportAnimatedGif(string path)
+    {
+        if (_currentFilePath == null || _currentInfo == null || _frameDurations == null) return;
+
+        var width = (int)_currentInfo.Size.Width;
+        var height = (int)_currentInfo.Size.Height;
+        var frameCount = _frameDurations.Length;
+
+        // Use the already-known frame durations from when the image was loaded
+        var durations = _frameDurations;
+
+        // Create CGImageDestination for animated GIF
+        using var url = NSUrl.FromFilename(path);
+        using var destination = CGImageDestination.Create(url, UTTypes.Gif.Identifier, frameCount);
+        if (destination == null)
+        {
+            Console.WriteLine("Failed to create GIF destination");
+            return;
+        }
+
+        // Set GIF file properties (loop count = 0 means infinite loop)
+        var loopCountDict = NSDictionary.FromObjectAndKey(
+            NSNumber.FromInt32(0),
+            ImageIO.CGImageProperties.GIFLoopCount
+        );
+        var gifFileProperties = NSDictionary.FromObjectAndKey(
+            loopCountDict,
+            ImageIO.CGImageProperties.GIFDictionary
+        );
+        destination.SetProperties(gifFileProperties);
+
+        // Create decoder for export - decode frames sequentially using streaming API
+        var exportOptions = JxlDecodeOptions.Default;
+        exportOptions.PremultiplyAlpha = false;
+        exportOptions.PixelFormat = JxlPixelFormat.Rgba8;
+
+        using var exportDecoder = new JxlDecoder(exportOptions);
+        exportDecoder.SetInputFile(_currentFilePath);
+        exportDecoder.ReadInfo();
+
+        // Decode and add each frame using streaming API
+        using var colorSpace = CGColorSpace.CreateSrgb();
+        int frameIndex = 0;
+
+        while (frameIndex < frameCount)
+        {
+            var evt = exportDecoder.Process();
+
+            // Handle state transitions
+            while (evt == JxlDecoderEvent.NeedMoreInput || evt == JxlDecoderEvent.HaveBasicInfo)
+                evt = exportDecoder.Process();
+
+            if (evt == JxlDecoderEvent.Complete)
+                break;
+
+            if (evt == JxlDecoderEvent.HaveFrameHeader)
+                evt = exportDecoder.Process();
+
+            if (evt == JxlDecoderEvent.NeedOutputBuffer)
+            {
+                // Allocate new buffer for each frame (CGDataProvider doesn't copy data)
+                var pixels = new byte[width * height * 4];
+                exportDecoder.ReadPixels(pixels);
+
+                // Create CGImage for this frame
+                using var dataProvider = new CGDataProvider(pixels);
+                using var cgImage = new CGImage(
+                    width, height,
+                    8, 32, width * 4,
+                    colorSpace,
+                    CGBitmapFlags.ByteOrderDefault | CGBitmapFlags.Last,
+                    dataProvider, null, false, CGColorRenderingIntent.Default
+                );
+
+                // Frame delay in seconds (GIF uses centiseconds internally)
+                var delaySeconds = durations[frameIndex] / 1000.0;
+
+                // Set frame properties with delay time
+                var delayDict = NSDictionary.FromObjectAndKey(
+                    NSNumber.FromFloat((float)delaySeconds),
+                    ImageIO.CGImageProperties.GIFDelayTime
+                );
+                var frameProperties = NSDictionary.FromObjectAndKey(
+                    delayDict,
+                    ImageIO.CGImageProperties.GIFDictionary
+                );
+
+                destination.AddImage(cgImage, frameProperties);
+                frameIndex++;
+            }
+        }
+
+        // Finalize the GIF
+        if (!destination.Close())
+        {
+            Console.WriteLine("Failed to finalize GIF");
+        }
+    }
+
     private void PerformCommandLineExport()
     {
         var exportPath = Program.Args.ExportFile!;
         var format = Program.Args.ExportFormat!;
+
+        // GIF export is only supported for animated images
+        var isAnimated = _frameDurations != null && _frameDurations.Length > 1;
+        if (format == "GIF" && !isAnimated)
+        {
+            Console.Error.WriteLine("Export failed: GIF export is only supported for animated images");
+            NSApplication.SharedApplication.Terminate(null);
+            return;
+        }
 
         // Seek to specified frame if provided (frame export is TODO)
         if (Program.Args.ExportFrameIndex.HasValue && _frameDurations != null)

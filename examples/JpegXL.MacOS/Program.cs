@@ -42,7 +42,7 @@ static class Program
 
         var exportAsOption = new Option<string?>("--export-as")
         {
-            Description = "Export format: PNG, JPEG, or TIFF"
+            Description = "Export format: PNG, JPEG, TIFF, or GIF"
         };
         exportAsOption.Aliases.Add("-f");
 
@@ -92,7 +92,8 @@ static class Program
                     "PNG" => "PNG",
                     "JPEG" or "JPG" => "JPEG",
                     "TIFF" or "TIF" => "TIFF",
-                    _ => throw new ArgumentException($"Unknown format: {exportAs}. Use PNG, JPEG, or TIFF")
+                    "GIF" => "GIF",
+                    _ => throw new ArgumentException($"Unknown format: {exportAs}. Use PNG, JPEG, TIFF, or GIF")
                 };
             }
             else if (exportFilePath != null)
@@ -104,6 +105,7 @@ static class Program
                     ".png" => "PNG",
                     ".jpg" or ".jpeg" => "JPEG",
                     ".tiff" or ".tif" => "TIFF",
+                    ".gif" => "GIF",
                     _ => throw new ArgumentException($"Cannot infer format from extension: {ext}. Use --export-as")
                 };
             }
