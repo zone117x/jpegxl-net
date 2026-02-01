@@ -29,12 +29,18 @@ The script kills the previously running app (if any), builds, codesigns, and run
 The script changes the current directory automatically, so do not use a `cd ...` command to run it.
 
 **Optional flags:**
+- `--file=<path>` - Open a specific image file instead of the default test animation
 - `--log` - Log stdout to `examples/JpegXL.MacOS/logs/run.txt` (existing logs are renamed with unix timestamp)
 - `--kill-after=<seconds>` - Auto-kill the app after N seconds (useful for automated testing)
 
+**Sample files:** Test images of different types (HDR, animation, etc.) are available in `./examples/sample-files/`
+
 ```bash
+# Open an HDR HLG test image
+./examples/JpegXL.MacOS/run.sh --file=examples/sample-files/hdr_hlg_test.jxl
+
 # Run for 5 seconds with logging
-./examples/JpegXL.MacOS/run.sh --log-file --kill-after=5
+./examples/JpegXL.MacOS/run.sh --log --kill-after=5
 ```
 
 **Development loop:**

@@ -645,8 +645,10 @@ public class MainWindow : NSWindow
             var info = decoder.ReadInfo();
             _currentInfo = info;
 
-            // Get color profile description for status bar
+            // Get color profile description and detect transfer function
             string colorProfileDesc;
+            bool isHlg = false;
+            bool isPq = false;
             using (var profile = decoder.GetEmbeddedColorProfile())
             {
                 Console.WriteLine($"[ColorProfile] IsIcc={profile.IsIcc}");
@@ -660,6 +662,9 @@ public class MainWindow : NSWindow
                 {
                     colorProfileDesc = profile.GetDescription();
                     Console.WriteLine($"[ColorProfile] GetDescription returned: '{colorProfileDesc}'");
+                    isHlg = profile.IsHlg;
+                    isPq = profile.IsPq;
+                    Console.WriteLine($"[ColorProfile] IsHlg={isHlg}, IsPq={isPq}");
                 }
             }
 
@@ -671,6 +676,21 @@ public class MainWindow : NSWindow
             Console.WriteLine($"[ColorProfile] Final desc after check: '{colorProfileDesc}'");
 
             var isHdr = info.IsHdr;
+
+            // For HLG/PQ content, set output color profile to keep native encoding
+            // The system tone mapper (via CAEdrMetadata) expects HLG/PQ encoded values
+            if (isHlg || isPq)
+            {
+                // Create output profile that keeps the native HLG/PQ transfer function
+                // Use Bt2100 primaries (Rec.2020) which is standard for HDR content
+                using var outputProfile = JxlColorProfile.FromEncoding(
+                    JxlProfileType.Rgb,
+                    whitePoint: JxlWhitePointType.D65,
+                    primaries: JxlPrimariesType.Bt2100,
+                    transferFunction: isHlg ? JxlTransferFunctionType.Hlg : JxlTransferFunctionType.Pq);
+                decoder.SetOutputColorProfile(outputProfile);
+                Console.WriteLine($"[ColorProfile] Set output to {(isHlg ? "HLG" : "PQ")} Rec.2100 for system tone mapping");
+            }
 
             _frameDurations = null;
 
@@ -705,26 +725,65 @@ public class MainWindow : NSWindow
             _dimensionsLabel!.StringValue = $"{info.Size.Width}×{info.Size.Height}";
             _profileLabel!.StringValue = colorProfileDesc;
 
-            // Show HDR info
+            // Configure Metal view and show HDR info
             _hdrLabel!.Hidden = !isHdr;
-            if (isHdr)
-            {
-                _hdrLabel.StringValue = $"HDR: {info.ToneMapping.IntensityTarget:F0} nits";
 
-                // Query EDR headroom
-                var screen = Screen ?? NSScreen.MainScreen;
-                if (screen != null)
+            // Query EDR headroom
+            var screen = Screen ?? NSScreen.MainScreen;
+            var edrHeadroom = (float)(screen?.MaximumExtendedDynamicRangeColorComponentValue ?? 1.0);
+
+            if (isHlg)
+            {
+                // HLG: Use system tone mapping via CAEdrMetadata
+                _metalView!.ConfigureForHlg();
+
+                _hdrLabel.StringValue = $"HDR HLG: {info.ToneMapping.IntensityTarget:F0} nits";
+                if (edrHeadroom > 1.0)
                 {
-                    var headroom = screen.MaximumExtendedDynamicRangeColorComponentValue;
-                    if (headroom > 1.0)
-                    {
-                        _hdrLabel.StringValue += $" | EDR: {headroom:F1}x";
-                    }
+                    _hdrLabel.StringValue += $" | EDR: {edrHeadroom:F1}x";
                 }
+                Console.WriteLine($"[HDR] Using HLG system tone mapping (EDR headroom: {edrHeadroom:F1}x)");
+            }
+            else if (isPq)
+            {
+                // PQ: Use system tone mapping via CAEdrMetadata
+                _metalView!.ConfigureForPq(info.ToneMapping.IntensityTarget);
+
+                _hdrLabel.StringValue = $"HDR PQ: {info.ToneMapping.IntensityTarget:F0} nits";
+                if (edrHeadroom > 1.0)
+                {
+                    _hdrLabel.StringValue += $" | EDR: {edrHeadroom:F1}x";
+                }
+                Console.WriteLine($"[HDR] Using PQ system tone mapping (max: {info.ToneMapping.IntensityTarget} nits, EDR headroom: {edrHeadroom:F1}x)");
+            }
+            else if (isHdr)
+            {
+                // Other HDR (rare): Use linear color space with manual brightness scaling
+                _metalView!.ConfigureForLinear();
+
+                _hdrLabel.StringValue = $"HDR: {info.ToneMapping.IntensityTarget:F0} nits";
+                if (edrHeadroom > 1.0)
+                {
+                    _hdrLabel.StringValue += $" | EDR: {edrHeadroom:F1}x";
+                }
+
+                // Set HDR brightness scale for EDR display
+                // 203 nits is the SDR reference white level defined in ITU-R BT.2408
+                const float SdrReferenceWhiteNits = 203f;
+                var idealScale = info.ToneMapping.IntensityTarget / SdrReferenceWhiteNits;
+                var brightnessScale = Math.Min(idealScale, edrHeadroom);
+                _metalView.HdrBrightnessScale = brightnessScale;
+                Console.WriteLine($"[HDR] Using linear mode with brightness scale: {brightnessScale:F2}x");
+            }
+            else
+            {
+                // SDR: Use linear color space with no brightness boost
+                _metalView!.ConfigureForLinear();
+                _metalView.HdrBrightnessScale = 1.0f;
             }
 
             Subtitle = filename;
-            _metalView!.ResetView();  // Display at 1:1 pixel ratio
+            _metalView.ResetView();  // Display at 1:1 pixel ratio
             UpdateStatus();  // Show zoom level
             UpdatePlayPauseButton();
 

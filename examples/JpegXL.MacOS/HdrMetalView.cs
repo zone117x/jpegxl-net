@@ -28,6 +28,7 @@ public class HdrMetalView : NSView
     private int _imageWidth;
     private int _imageHeight;
     private bool _isHdr;
+    private float _hdrBrightnessScale = 1.0f;
     private nfloat _zoom = 1.0f;
     private CGPoint _offset = CGPoint.Empty;
 
@@ -39,6 +40,84 @@ public class HdrMetalView : NSView
     public bool IsHdr => _isHdr;
     public int ImageWidth => _imageWidth;
     public int ImageHeight => _imageHeight;
+
+    /// <summary>
+    /// Sets the HDR brightness scale for EDR display.
+    /// For HDR content, this should be IntensityTarget / SDR_REFERENCE_WHITE (typically 203 nits).
+    /// Values > 1.0 will use EDR headroom for brighter-than-SDR-white display.
+    /// Note: When using HLG mode with CAEdrMetadata, this is ignored as the system handles tone mapping.
+    /// </summary>
+    public float HdrBrightnessScale
+    {
+        get => _hdrBrightnessScale;
+        set
+        {
+            _hdrBrightnessScale = value;
+            Render();
+        }
+    }
+
+    /// <summary>
+    /// Configures the Metal layer for HLG HDR content.
+    /// Uses system tone mapping via CAEdrMetadata for correct black levels and HDR highlights.
+    /// </summary>
+    public void ConfigureForHlg()
+    {
+        if (_metalLayer == null) return;
+
+        // Use HLG color space - content stays in HLG encoding
+        var hlgColorSpace = CGColorSpace.CreateWithName(CGColorSpaceNames.Itur_2100_Hlg);
+        _metalLayer.ColorSpace = hlgColorSpace;
+
+        // Enable system tone mapping for HLG
+        _metalLayer.EdrMetadata = CAEdrMetadata.HlgMetadata;
+
+        // Brightness scale not needed - system handles tone mapping
+        _hdrBrightnessScale = 1.0f;
+
+        Console.WriteLine("[HdrMetalView] Configured for HLG with system tone mapping");
+    }
+
+    /// <summary>
+    /// Configures the Metal layer for PQ (HDR10) content.
+    /// Uses system tone mapping via CAEdrMetadata for correct display.
+    /// </summary>
+    /// <param name="maxLuminance">Maximum content luminance in nits (e.g., 1000 for typical HDR).</param>
+    public void ConfigureForPq(float maxLuminance = 1000f)
+    {
+        if (_metalLayer == null) return;
+
+        // Use PQ color space - content stays in PQ encoding
+        var pqColorSpace = CGColorSpace.CreateWithName(CGColorSpaceNames.Itur_2100_PQ);
+        _metalLayer.ColorSpace = pqColorSpace;
+
+        // Enable system tone mapping for PQ/HDR10
+        // opticalOutputScale is SDR reference white in nits (typically 100)
+        _metalLayer.EdrMetadata = CAEdrMetadata.GetHdr10Metadata(0f, maxLuminance, 100f);
+
+        // Brightness scale not needed - system handles tone mapping
+        _hdrBrightnessScale = 1.0f;
+
+        Console.WriteLine($"[HdrMetalView] Configured for PQ with system tone mapping (max: {maxLuminance} nits)");
+    }
+
+    /// <summary>
+    /// Configures the Metal layer for SDR or manually-managed HDR content.
+    /// Uses extended linear Display P3 for flexibility.
+    /// </summary>
+    public void ConfigureForLinear()
+    {
+        if (_metalLayer == null) return;
+
+        // Use extended linear P3 color space
+        var linearP3ColorSpace = CGColorSpace.CreateWithName(CGColorSpaceNames.ExtendedLinearDisplayP3);
+        _metalLayer.ColorSpace = linearP3ColorSpace;
+
+        // Disable system tone mapping - we'll handle brightness manually if needed
+        _metalLayer.EdrMetadata = null;
+
+        Console.WriteLine("[HdrMetalView] Configured for linear color space");
+    }
 
     /// <summary>
     /// Called when zoom level changes (from scroll wheel, buttons, etc.)
@@ -175,30 +254,42 @@ struct VertexOut {
     float2 texCoord;
 };
 
-struct Uniforms {
+struct VertexUniforms {
     float2 scale;
     float2 offset;
 };
 
-vertex VertexOut vertexShader(VertexIn in [[stage_in]], constant Uniforms& uniforms [[buffer(1)]]) {
+struct FragmentUniforms {
+    float brightnessScale;  // HDR brightness multiplier (1.0 for SDR, >1.0 for HDR)
+};
+
+vertex VertexOut vertexShader(VertexIn in [[stage_in]], constant VertexUniforms& uniforms [[buffer(1)]]) {
     VertexOut out;
     out.position = float4(in.position * uniforms.scale + uniforms.offset, 0.0, 1.0);
     out.texCoord = in.texCoord;
     return out;
 }
 
-fragment float4 fragmentShader(VertexOut in [[stage_in]], texture2d<float> tex [[texture(0)]]) {
+fragment float4 fragmentShader(VertexOut in [[stage_in]],
+                               texture2d<float> tex [[texture(0)]],
+                               constant FragmentUniforms& uniforms [[buffer(1)]]) {
     constexpr sampler s(mag_filter::linear, min_filter::linear);
-    // RGB is already premultiplied at decode time, output with actual alpha for blending
-    return tex.sample(s, in.texCoord);
+    float4 color = tex.sample(s, in.texCoord);
+    // Scale by brightness for EDR display
+    color.rgb *= uniforms.brightnessScale;
+    return color;
 }
 
 // Fragment shader for texture array (animation frames)
 fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
                                      texture2d_array<float> tex [[texture(0)]],
-                                     constant int& frameIndex [[buffer(0)]]) {
+                                     constant int& frameIndex [[buffer(0)]],
+                                     constant FragmentUniforms& uniforms [[buffer(1)]]) {
     constexpr sampler s(mag_filter::linear, min_filter::linear);
-    return tex.sample(s, in.texCoord, frameIndex);
+    float4 color = tex.sample(s, in.texCoord, frameIndex);
+    // Scale by brightness for EDR display
+    color.rgb *= uniforms.brightnessScale;
+    return color;
 }
 ";
 
@@ -645,16 +736,28 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         var scaleX = (float)((nfloat)_imageWidth / viewWidthPixels * _zoom);
         var scaleY = (float)((nfloat)_imageHeight / viewHeightPixels * _zoom);
 
-        // Uniforms: scale and offset
-        float[] uniforms = [scaleX, scaleY, (float)_offset.X, (float)_offset.Y];
-        var uniformHandle = GCHandle.Alloc(uniforms, GCHandleType.Pinned);
+        // Vertex uniforms: scale and offset
+        float[] vertexUniforms = [scaleX, scaleY, (float)_offset.X, (float)_offset.Y];
+        var vertexUniformHandle = GCHandle.Alloc(vertexUniforms, GCHandleType.Pinned);
         try
         {
-            encoder.SetVertexBytes(uniformHandle.AddrOfPinnedObject(), (nuint)(uniforms.Length * sizeof(float)), 1);
+            encoder.SetVertexBytes(vertexUniformHandle.AddrOfPinnedObject(), (nuint)(vertexUniforms.Length * sizeof(float)), 1);
         }
         finally
         {
-            uniformHandle.Free();
+            vertexUniformHandle.Free();
+        }
+
+        // Fragment uniforms: HDR brightness scale
+        float[] fragmentUniforms = [_hdrBrightnessScale];
+        var fragmentUniformHandle = GCHandle.Alloc(fragmentUniforms, GCHandleType.Pinned);
+        try
+        {
+            encoder.SetFragmentBytes(fragmentUniformHandle.AddrOfPinnedObject(), (nuint)(fragmentUniforms.Length * sizeof(float)), 1);
+        }
+        finally
+        {
+            fragmentUniformHandle.Free();
         }
 
         encoder.DrawPrimitives(MTLPrimitiveType.TriangleStrip, 0, 4);
