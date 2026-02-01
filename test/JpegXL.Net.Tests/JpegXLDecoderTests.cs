@@ -1095,4 +1095,103 @@ public class JxlDecoderTests
 
         Assert.IsTrue(framesDiffer, "Animation frames should have different pixel content");
     }
+
+    [TestMethod]
+    public void ParseFrameMetadata_WithIncludeNames_ReturnsFrameNamesList()
+    {
+        // Arrange - use animation file with multiple frames
+        var data = File.ReadAllBytes("TestData/animation_spline.jxl");
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+
+        // Act - parse with includeNames = true
+        var metadata = decoder.ParseFrameMetadata(includeNames: true);
+
+        // Assert - FrameNames should be populated (even if names are empty strings)
+        Assert.IsNotNull(metadata.FrameNames, "FrameNames should not be null when includeNames is true");
+        Assert.AreEqual(metadata.FrameCount, metadata.FrameNames.Count,
+            "FrameNames count should match FrameCount");
+
+        // Verify each frame name corresponds to its NameLength
+        for (int i = 0; i < metadata.Frames.Count; i++)
+        {
+            var frame = metadata.Frames[i];
+            var name = metadata.FrameNames[i];
+
+            if (frame.NameLength == 0)
+            {
+                Assert.AreEqual(string.Empty, name,
+                    $"Frame {i}: name should be empty when NameLength is 0");
+            }
+            else
+            {
+                Assert.IsTrue(name.Length > 0,
+                    $"Frame {i}: name should be non-empty when NameLength is {frame.NameLength}");
+            }
+        }
+    }
+
+    [TestMethod]
+    public void GetFrameName_ReturnsEmptyStringForUnnamedFrame()
+    {
+        // Arrange - use a file with frames that have no names
+        var data = File.ReadAllBytes("TestData/animation_spline.jxl");
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+
+        // Read info first
+        decoder.ReadInfo();
+
+        // Process until we get the frame header
+        var evt = decoder.Process();
+        while (evt != JxlDecoderEvent.HaveFrameHeader && evt != JxlDecoderEvent.Complete)
+        {
+            evt = decoder.Process();
+        }
+
+        Assert.AreEqual(JxlDecoderEvent.HaveFrameHeader, evt, "Should receive HaveFrameHeader event");
+
+        // Act - get frame header and name
+        var header = decoder.GetFrameHeader();
+        var frameName = decoder.GetFrameName();
+
+        // Assert - for unnamed frames, GetFrameName should return empty string
+        Assert.AreEqual(0u, header.NameLength, "This test file should have unnamed frames");
+        Assert.AreEqual(string.Empty, frameName, "Unnamed frame should return empty string");
+    }
+
+    [TestMethod]
+    public void GetFrameName_WithNamedFrame_ReturnsFrameName()
+    {
+        // Arrange - use the test file with a named frame
+        var data = File.ReadAllBytes("TestData/named_frame_test.jxl");
+
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+
+        // Read info first
+        decoder.ReadInfo();
+
+        // Process until we get the frame header
+        var evt = decoder.Process();
+        while (evt != JxlDecoderEvent.HaveFrameHeader && evt != JxlDecoderEvent.Complete)
+        {
+            evt = decoder.Process();
+        }
+
+        Assert.AreEqual(JxlDecoderEvent.HaveFrameHeader, evt, "Should receive HaveFrameHeader event");
+
+        // Act - get frame header and name
+        var header = decoder.GetFrameHeader();
+        Console.WriteLine($"NameLength from header: {header.NameLength}");
+
+        var frameName = decoder.GetFrameName();
+        Console.WriteLine($"Frame name: '{frameName}'");
+
+        // Assert - this file should have a named frame
+        Assert.AreEqual(13u, header.NameLength, $"Expected NameLength=13, got {header.NameLength}");
+        Assert.AreEqual("TestFrameName", frameName, $"Expected 'TestFrameName', got '{frameName}'");
+    }
 }
