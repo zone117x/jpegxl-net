@@ -23,6 +23,7 @@ public class HdrMetalView : NSView
     // Animation texture array support
     private IMTLTexture? _animationTextureArray;
     private IMTLBuffer? _frameIndexBuffer;
+    private int _currentArrayFrameIndex;
 
     private int _imageWidth;
     private int _imageHeight;
@@ -459,10 +460,98 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
     {
         if (_animationTextureArray == null || _frameIndexBuffer == null) return;
 
+        // Track current frame for readback
+        _currentArrayFrameIndex = index;
+
         // Update frame index in buffer
         Marshal.WriteInt32(_frameIndexBuffer.Contents, index);
 
         Render();
+    }
+
+    /// <summary>
+    /// Reads current frame pixels from GPU texture and converts to SDR RGBA8.
+    /// Used for export to PNG/JPEG.
+    /// </summary>
+    public byte[]? ReadbackPixelsAsSdr()
+    {
+        var texture = _animationTextureArray ?? _imageTexture;
+        if (texture == null || _imageWidth == 0 || _imageHeight == 0) return null;
+
+        var width = _imageWidth;
+        var height = _imageHeight;
+        var floatBytesPerRow = width * 4 * sizeof(float);  // RGBA32Float
+
+        // Allocate managed array for float pixels
+        var floatPixels = new float[width * height * 4];
+
+        // Copy from GPU texture to CPU
+        var region = new MTLRegion(new MTLOrigin(0, 0, 0), new MTLSize(width, height, 1));
+
+        // Pin the array and get bytes
+        var handle = GCHandle.Alloc(floatPixels, GCHandleType.Pinned);
+        try
+        {
+            var ptr = handle.AddrOfPinnedObject();
+
+            if (_animationTextureArray != null)
+            {
+                // Read current frame from texture array
+                texture.GetBytes(ptr, (nuint)floatBytesPerRow, (nuint)0, region,
+                    (nuint)_currentArrayFrameIndex, 0);
+            }
+            else
+            {
+                texture.GetBytes(ptr, (nuint)floatBytesPerRow, region, 0);
+            }
+        }
+        finally
+        {
+            handle.Free();
+        }
+
+        // Convert RGBA32Float (HDR, linear P3) to RGBA8 (SDR, sRGB)
+        var sdrPixels = new byte[width * height * 4];
+        for (int i = 0; i < width * height; i++)
+        {
+            var r = floatPixels[i * 4 + 0];
+            var g = floatPixels[i * 4 + 1];
+            var b = floatPixels[i * 4 + 2];
+            var a = floatPixels[i * 4 + 3];
+
+            // Un-premultiply alpha
+            if (a > 0.001f)
+            {
+                r /= a;
+                g /= a;
+                b /= a;
+            }
+
+            // Simple tone mapping: clamp HDR to [0,1]
+            r = Math.Clamp(r, 0f, 1f);
+            g = Math.Clamp(g, 0f, 1f);
+            b = Math.Clamp(b, 0f, 1f);
+
+            // Linear to sRGB gamma
+            r = LinearToSrgb(r);
+            g = LinearToSrgb(g);
+            b = LinearToSrgb(b);
+
+            // Convert to 8-bit
+            sdrPixels[i * 4 + 0] = (byte)(r * 255f + 0.5f);
+            sdrPixels[i * 4 + 1] = (byte)(g * 255f + 0.5f);
+            sdrPixels[i * 4 + 2] = (byte)(b * 255f + 0.5f);
+            sdrPixels[i * 4 + 3] = (byte)(a * 255f + 0.5f);
+        }
+
+        return sdrPixels;
+    }
+
+    private static float LinearToSrgb(float linear)
+    {
+        if (linear <= 0.0031308f)
+            return linear * 12.92f;
+        return 1.055f * MathF.Pow(linear, 1f / 2.4f) - 0.055f;
     }
 
     private static float SrgbToLinear(float srgb)

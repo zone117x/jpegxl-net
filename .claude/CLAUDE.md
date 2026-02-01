@@ -26,6 +26,8 @@ Use `examples/JpegXL.MacOS/run.sh` for iterative development:
 
 The script kills the previously running app (if any), builds, codesigns, and runs the app with a test animation file.
 
+The script changes the current directory automatically, so do not use a `cd ...` command to run it.
+
 **Optional flags:**
 - `--log` - Log stdout to `examples/JpegXL.MacOS/logs/run.txt` (existing logs are renamed with unix timestamp)
 - `--kill-after=<seconds>` - Auto-kill the app after N seconds (useful for automated testing)

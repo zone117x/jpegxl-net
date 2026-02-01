@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo test:*)",
+      "Bash(cargo check:*)",
+      "Bash(./rebuild-all.sh:*)",
+      "WebFetch(domain:docs.avaloniaui.net)"
+    ]
+  }
+}

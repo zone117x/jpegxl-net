@@ -7,6 +7,7 @@ namespace JpegXL.MacOS;
 public class AppDelegate : NSApplicationDelegate
 {
     private MainWindow? _mainWindow;
+    private NSTimer? _exitTimer;
 
     public override void DidFinishLaunching(NSNotification notification)
     {
@@ -17,14 +18,28 @@ public class AppDelegate : NSApplicationDelegate
         _mainWindow.MakeKeyAndOrderFront(this);
 
         // Load file from command line if provided
-        if (!string.IsNullOrEmpty(Program.InitialFilePath))
+        if (!string.IsNullOrEmpty(Program.Args.InputFile))
         {
-            _mainWindow.LoadImage(Program.InitialFilePath);
+            _mainWindow.LoadImage(Program.Args.InputFile);
+        }
+
+        // Set up exit timer if requested
+        if (Program.Args.ExitAfterSeconds.HasValue)
+        {
+            var seconds = Program.Args.ExitAfterSeconds.Value;
+            Console.WriteLine($"[AppDelegate] Will exit after {seconds} seconds");
+            _exitTimer = NSTimer.CreateScheduledTimer(seconds, false, _ =>
+            {
+                Console.WriteLine("[AppDelegate] Exit timer fired, terminating");
+                NSApplication.SharedApplication.Terminate(null);
+            });
         }
     }
 
     public override void WillTerminate(NSNotification notification)
     {
+        _exitTimer?.Invalidate();
+        _exitTimer?.Dispose();
         _mainWindow?.Dispose();
     }
 

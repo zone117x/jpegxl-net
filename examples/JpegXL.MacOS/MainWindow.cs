@@ -26,6 +26,8 @@ public class MainWindow : NSWindow
     private DateTime _frameStartTime;
     private bool _isPlaying;
     private JxlBasicInfo? _currentInfo;
+    private string? _currentFilePath;
+    private DateTime _currentFileModified;
 
     // Memory monitoring
     private NSTimer? _memoryTimer;
@@ -229,17 +231,277 @@ public class MainWindow : NSWindow
         UpdatePlayPauseButton();
     }
 
+    private void ExportImage()
+    {
+        if (_metalView == null || _currentInfo == null || _currentFilePath == null)
+        {
+            return;
+        }
+
+        // If animated and playing, pause the animation
+        var isAnimated = _frameDurations != null && _frameDurations.Length > 1;
+        if (isAnimated && _isPlaying)
+        {
+            StopAnimation();
+            UpdatePlayPauseButton();
+        }
+
+        // For animated images, confirm which frame to export
+        if (isAnimated)
+        {
+            var alert = new NSAlert
+            {
+                AlertStyle = NSAlertStyle.Informational,
+                MessageText = "Export Frame",
+                InformativeText = $"Export the current frame ({_currentFrameIndex + 1} of {_frameDurations!.Length})?"
+            };
+            alert.AddButton("Export");
+            alert.AddButton("Cancel");
+
+            if (alert.RunModal() != (long)NSAlertButtonReturn.First)
+            {
+                return;
+            }
+        }
+
+        // Validate source file still exists and hasn't changed
+        if (!File.Exists(_currentFilePath))
+        {
+            ShowAlert("Source File Missing",
+                "The original file no longer exists. Please reload the image.");
+            return;
+        }
+
+        var currentModified = File.GetLastWriteTimeUtc(_currentFilePath);
+        if (currentModified != _currentFileModified)
+        {
+            ShowAlert("Source File Changed",
+                "The original file has been modified. Please reload to export the updated version.");
+            return;
+        }
+
+        using var panel = NSSavePanel.SavePanel;
+        panel.Title = "Export Image";
+        panel.NameFieldStringValue = GetExportFilename();
+
+        // Create accessory view with format selector and quality slider (like Preview.app)
+        var accessoryView = new NSView(new CGRect(0, 0, 280, 80));
+
+        // Format row
+        var formatLabel = new NSTextField(new CGRect(0, 52, 60, 20))
+        {
+            StringValue = "Format:",
+            Editable = false,
+            Bordered = false,
+            DrawsBackground = false
+        };
+        accessoryView.AddSubview(formatLabel);
+
+        var formatPopup = new NSPopUpButton(new CGRect(65, 48, 120, 26), pullsDown: false);
+        formatPopup.AddItems(["PNG", "JPEG", "TIFF"]);
+        formatPopup.SelectItem(0);  // Default to PNG
+        accessoryView.AddSubview(formatPopup);
+
+        // Quality row (for JPEG only)
+        var qualityLabel = new NSTextField(new CGRect(0, 22, 60, 20))
+        {
+            StringValue = "Quality:",
+            Editable = false,
+            Bordered = false,
+            DrawsBackground = false,
+            Hidden = true
+        };
+        accessoryView.AddSubview(qualityLabel);
+
+        var qualitySlider = new NSSlider(new CGRect(65, 22, 140, 20))
+        {
+            MinValue = 0.0,
+            MaxValue = 1.0,
+            DoubleValue = 0.85,
+            Hidden = true
+        };
+        accessoryView.AddSubview(qualitySlider);
+
+        var leastLabel = new NSTextField(new CGRect(65, 6, 40, 14))
+        {
+            StringValue = "Least",
+            Editable = false,
+            Bordered = false,
+            DrawsBackground = false,
+            Font = NSFont.SystemFontOfSize(10)!,
+            TextColor = NSColor.SecondaryLabel,
+            Hidden = true
+        };
+        accessoryView.AddSubview(leastLabel);
+
+        var bestLabel = new NSTextField(new CGRect(175, 6, 30, 14))
+        {
+            StringValue = "Best",
+            Editable = false,
+            Bordered = false,
+            DrawsBackground = false,
+            Font = NSFont.SystemFontOfSize(10)!,
+            TextColor = NSColor.SecondaryLabel,
+            Hidden = true
+        };
+        accessoryView.AddSubview(bestLabel);
+
+        // Show/hide quality controls based on format
+        void UpdateQualityVisibility()
+        {
+            var isJpeg = formatPopup.TitleOfSelectedItem == "JPEG";
+            qualityLabel.Hidden = !isJpeg;
+            qualitySlider.Hidden = !isJpeg;
+            leastLabel.Hidden = !isJpeg;
+            bestLabel.Hidden = !isJpeg;
+        }
+
+        formatPopup.Activated += (s, e) =>
+        {
+            UpdateSaveExtension(panel, formatPopup);
+            UpdateQualityVisibility();
+        };
+
+        panel.AccessoryView = accessoryView;
+        var pngType = UniformTypeIdentifiers.UTType.CreateFromExtension("png");
+        if (pngType != null) panel.AllowedContentTypes = [pngType];
+
+        if (panel.RunModal() == 1 && panel.Url?.Path != null)
+        {
+            var exportPath = panel.Url.Path;
+            var format = formatPopup.TitleOfSelectedItem;
+            var quality = (float)qualitySlider.DoubleValue;
+            PerformExport(exportPath, format!, quality);
+        }
+    }
+
+    private string GetExportFilename()
+    {
+        if (_currentFilePath == null) return "export";
+        return Path.GetFileNameWithoutExtension(_currentFilePath);
+    }
+
+    private static void UpdateSaveExtension(NSSavePanel panel, NSPopUpButton formatPopup)
+    {
+        var format = formatPopup.TitleOfSelectedItem;
+        var ext = format switch
+        {
+            "PNG" => "png",
+            "JPEG" => "jpg",
+            "TIFF" => "tiff",
+            _ => "png"
+        };
+        var utType = UniformTypeIdentifiers.UTType.CreateFromExtension(ext);
+        if (utType != null) panel.AllowedContentTypes = [utType];
+    }
+
+    private void PerformExport(string path, string format, float quality)
+    {
+        if (_currentFilePath == null || _currentInfo == null) return;
+
+        var width = (int)_currentInfo.Size.Width;
+        var height = (int)_currentInfo.Size.Height;
+
+        // Create fresh decoder with Rgba8 format for export
+        var exportOptions = JxlDecodeOptions.Default;
+        exportOptions.PremultiplyAlpha = false;  // Straight alpha for PNG/TIFF
+        exportOptions.PixelFormat = JxlPixelFormat.Rgba8;
+
+        using var exportDecoder = new JxlDecoder(exportOptions);
+        exportDecoder.SetInputFile(_currentFilePath);
+        exportDecoder.ReadInfo();
+
+        // Decode to Rgba8 bytes
+        var pixels = new byte[width * height * 4];
+
+        // GetPixels decodes the first frame (works for both static and animated)
+        // TODO: Animation frame-specific export needs investigation in the Rust decoder
+        exportDecoder.GetPixels(pixels);
+
+        // Create CGImage from sRGB RGBA8 data
+        using var colorSpace = CGColorSpace.CreateSrgb();
+        using var dataProvider = new CGDataProvider(pixels);
+
+        using var cgImage = new CGImage(
+            width, height,
+            8,              // bits per component
+            32,             // bits per pixel
+            width * 4,      // bytes per row
+            colorSpace,
+            CGBitmapFlags.ByteOrderDefault | CGBitmapFlags.Last, // RGBA with alpha last
+            dataProvider,
+            null,           // decode array
+            false,          // should interpolate
+            CGColorRenderingIntent.Default
+        );
+
+        // Create NSBitmapImageRep from CGImage
+        using var rep = new NSBitmapImageRep(cgImage);
+
+        var fileType = format switch
+        {
+            "PNG" => NSBitmapImageFileType.Png,
+            "JPEG" => NSBitmapImageFileType.Jpeg,
+            "TIFF" => NSBitmapImageFileType.Tiff,
+            _ => NSBitmapImageFileType.Png
+        };
+
+        NSDictionary properties = format == "JPEG"
+            ? NSDictionary.FromObjectAndKey(
+                NSNumber.FromFloat(quality),
+                new NSString("NSImageCompressionFactor"))
+            : new NSDictionary();
+
+        var outputData = rep.RepresentationUsingTypeProperties(fileType, properties);
+        outputData?.Save(NSUrl.FromFilename(path), atomically: true);
+    }
+
+    private void PerformCommandLineExport()
+    {
+        var exportPath = Program.Args.ExportFile!;
+        var format = Program.Args.ExportFormat!;
+
+        // Seek to specified frame if provided (frame export is TODO)
+        if (Program.Args.ExportFrameIndex.HasValue && _frameDurations != null)
+        {
+            var frameIndex = Math.Clamp(Program.Args.ExportFrameIndex.Value, 0, _frameDurations.Length - 1);
+            _currentFrameIndex = frameIndex;
+        }
+
+        try
+        {
+            PerformExport(exportPath, format, 0.85f);
+            NSApplication.SharedApplication.Terminate(null);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Export failed: {ex.Message}");
+            NSApplication.SharedApplication.Terminate(null);
+        }
+    }
+
     public async void LoadImage(string path)
     {
         try
         {
+            Console.WriteLine($"[LoadImage] Path: {path}");
+            Console.WriteLine($"[LoadImage] File exists: {File.Exists(path)}");
+            Console.WriteLine($"[LoadImage] Current directory: {Environment.CurrentDirectory}");
+
+            if (!File.Exists(path))
+            {
+                throw new FileNotFoundException($"File not found: {path}");
+            }
+
+            _currentFilePath = path;
+            _currentFileModified = File.GetLastWriteTimeUtc(path);
             StopAnimation();
             var filename = Path.GetFileName(path);
             Subtitle = $"Loading {filename}";
             _hdrLabel!.Hidden = true;
             _frameLabel!.Hidden = true;
 
-            Console.WriteLine($"Loading image: {path}");
+            Console.WriteLine($"[LoadImage] Loading image: {path}");
 
             var options = new JxlDecodeOptions {
                 PremultiplyAlpha = true,
@@ -337,6 +599,12 @@ public class MainWindow : NSWindow
             _metalView!.ResetView();  // Display at 1:1 pixel ratio
             UpdateStatus();  // Show zoom level
             UpdatePlayPauseButton();
+
+            // Handle command-line export if requested
+            if (Program.Args.ExportFile != null && Program.Args.ExportFormat != null)
+            {
+                PerformCommandLineExport();
+            }
         }
         catch (Exception ex)
         {
@@ -481,6 +749,18 @@ public class MainWindow : NSWindow
         }
     }
 
+    private static void ShowAlert(string title, string message)
+    {
+        var alert = new NSAlert
+        {
+            AlertStyle = NSAlertStyle.Warning,
+            MessageText = title,
+            InformativeText = message
+        };
+        alert.AddButton("OK");
+        alert.RunModal();
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -517,10 +797,33 @@ public class MainWindow : NSWindow
             switch (itemIdentifier)
             {
                 case "OpenFile":
-                    item.Label = "Open";
-                    item.ToolTip = "Open a JPEG XL file";
-                    item.View = NSButton.CreateButton("Open File...", _window.OpenFile);
-                    item.Navigational = true;  // Positions left of title
+                    item.Label = "File";
+                    item.ToolTip = "File operations";
+
+                    // Create pull-down popup button
+                    var popup = new NSPopUpButton(new CGRect(0, 0, 80, 24), pullsDown: true);
+                    ((NSPopUpButtonCell)popup.Cell).ArrowPosition = NSPopUpArrowPosition.None;
+
+                    // First item is the button title (shown when closed)
+                    popup.AddItem("File ⌵");
+                    popup.AddItem("Open...");
+                    popup.AddItem("Export...");
+
+                    // Handle selection
+                    var window = _window;  // Capture for closure
+                    popup.Activated += (s, e) =>
+                    {
+                        var selectedIndex = popup.IndexOfSelectedItem;
+                        switch (selectedIndex)
+                        {
+                            case 1: window.OpenFile(); break;
+                            case 2: window.ExportImage(); break;
+                        }
+                        popup.SelectItem(0);  // Reset to show "File"
+                    };
+
+                    item.View = popup;
+                    item.Navigational = true;
                     break;
                 case "ZoomIn":
                     item.Label = "Zoom In";

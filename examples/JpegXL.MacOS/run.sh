@@ -9,6 +9,7 @@ CONFIG="Debug"
 KILL_AFTER=""
 LOG_FILE=""
 CUSTOM_FILE=""
+EXTRA_ARGS=()
 
 for arg in "$@"; do
     case $arg in
@@ -23,6 +24,10 @@ for arg in "$@"; do
             ;;
         --file=*)
             CUSTOM_FILE="${arg#*=}"
+            ;;
+        *)
+            # Pass through unknown arguments to the app
+            EXTRA_ARGS+=("$arg")
             ;;
     esac
 done
@@ -55,20 +60,20 @@ fi
 # Run the app
 if [[ -n "$KILL_AFTER" ]]; then
     if [[ -n "$LOG_FILE" ]]; then
-        "$EXE_PATH" "$TEST_FILE" 2>&1 | tee "$LOG_FILE" &
+        "$EXE_PATH" "$TEST_FILE" "${EXTRA_ARGS[@]}" 2>&1 | tee "$LOG_FILE" &
         TEE_PID=$!
         APP_PID=$(pgrep -n "JpegXL.MacOS")
         sleep "$KILL_AFTER"
         kill $APP_PID 2>/dev/null || true
         kill $TEE_PID 2>/dev/null || true
     else
-        "$EXE_PATH" "$TEST_FILE" &
+        "$EXE_PATH" "$TEST_FILE" "${EXTRA_ARGS[@]}" &
         APP_PID=$!
         sleep "$KILL_AFTER"
         kill $APP_PID 2>/dev/null || true
     fi
 elif [[ -n "$LOG_FILE" ]]; then
-    "$EXE_PATH" "$TEST_FILE" 2>&1 | tee "$LOG_FILE"
+    "$EXE_PATH" "$TEST_FILE" "${EXTRA_ARGS[@]}" 2>&1 | tee "$LOG_FILE"
 else
-    "$EXE_PATH" "$TEST_FILE"
+    "$EXE_PATH" "$TEST_FILE" "${EXTRA_ARGS[@]}"
 fi

@@ -702,6 +702,71 @@ public sealed unsafe class JxlDecoder : IDisposable
     }
 
     /// <summary>
+    /// Seeks to a specific frame in an animated image by skipping preceding frames.
+    /// </summary>
+    /// <param name="frameIndex">The zero-based frame index to seek to.</param>
+    /// <remarks>
+    /// <para>
+    /// This method must be called after <see cref="ReadInfo"/> has been called.
+    /// It uses <see cref="SkipFrame"/> internally to efficiently skip frames without
+    /// decoding pixel data.
+    /// </para>
+    /// <para>
+    /// After calling this method, the decoder is positioned at the target frame and
+    /// ready to decode pixels via <see cref="GetPixels"/> or <see cref="ReadPixels"/>.
+    /// </para>
+    /// <para>
+    /// Performance note: This is O(n) where n is the frame index. For random access
+    /// to many frames, consider caching decoded frames instead.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if frameIndex is negative.</exception>
+    /// <exception cref="JxlException">Thrown if seeking fails or frameIndex is out of range.</exception>
+    public void SeekToFrame(int frameIndex)
+    {
+        ThrowIfDisposed();
+
+        if (frameIndex < 0)
+            throw new ArgumentOutOfRangeException(nameof(frameIndex), "Frame index must be non-negative");
+
+        // Skip frames until we reach the target
+        for (int i = 0; i < frameIndex; i++)
+        {
+            var evt = Process();
+
+            // Handle frame header event
+            if (evt == JxlDecoderEvent.HaveFrameHeader)
+                evt = Process();
+
+            if (evt == JxlDecoderEvent.NeedOutputBuffer)
+            {
+                // Skip this frame without decoding
+                SkipFrame();
+            }
+            else if (evt == JxlDecoderEvent.Complete)
+            {
+                throw new JxlException(JxlStatus.Error,
+                    $"Frame index {frameIndex} is out of range (only {i} frames available)");
+            }
+            else if (evt == JxlDecoderEvent.Error)
+            {
+                throw new JxlException(JxlStatus.Error, GetLastError() ?? "Failed to seek to frame");
+            }
+        }
+
+        // Process to get to NeedOutputBuffer state for the target frame
+        var finalEvt = Process();
+        if (finalEvt == JxlDecoderEvent.HaveFrameHeader)
+            finalEvt = Process();
+
+        if (finalEvt != JxlDecoderEvent.NeedOutputBuffer)
+        {
+            throw new JxlException(JxlStatus.Error,
+                $"Failed to position at frame {frameIndex}: unexpected event {finalEvt}");
+        }
+    }
+
+    /// <summary>
     /// Gets the required buffer size for a specific extra channel.
     /// </summary>
     /// <param name="index">The extra channel index (0-based).</param>
