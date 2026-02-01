@@ -102,7 +102,25 @@ public class HdrMetalView : NSView
     }
 
     /// <summary>
-    /// Configures the Metal layer for SDR or manually-managed HDR content.
+    /// Configures the Metal layer for SDR sRGB content.
+    /// Uses extended sRGB color space for standard gamma-encoded content.
+    /// </summary>
+    public void ConfigureForSrgb()
+    {
+        if (_metalLayer == null) return;
+
+        // Use extended sRGB for SDR content (supports values outside 0-1 range)
+        var srgbColorSpace = CGColorSpace.CreateWithName(CGColorSpaceNames.ExtendedSrgb);
+        _metalLayer.ColorSpace = srgbColorSpace;
+
+        // No EDR metadata for SDR content
+        _metalLayer.EdrMetadata = null;
+
+        Console.WriteLine("[HdrMetalView] Configured for sRGB color space");
+    }
+
+    /// <summary>
+    /// Configures the Metal layer for HDR content with manual brightness control.
     /// Uses extended linear Display P3 for flexibility.
     /// </summary>
     public void ConfigureForLinear()

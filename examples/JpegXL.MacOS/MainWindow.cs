@@ -726,7 +726,7 @@ public class MainWindow : NSWindow
             _profileLabel!.StringValue = colorProfileDesc;
 
             // Configure Metal view and show HDR info
-            _hdrLabel!.Hidden = !isHdr;
+            _hdrLabel!.Hidden = !(isHdr || isHlg || isPq);
 
             // Query EDR headroom
             var screen = Screen ?? NSScreen.MainScreen;
@@ -777,8 +777,8 @@ public class MainWindow : NSWindow
             }
             else
             {
-                // SDR: Use linear color space with no brightness boost
-                _metalView!.ConfigureForLinear();
+                // SDR: Use sRGB color space for standard gamma-encoded content
+                _metalView!.ConfigureForSrgb();
                 _metalView.HdrBrightnessScale = 1.0f;
             }
 

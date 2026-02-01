@@ -72,7 +72,8 @@ public class JxlBasicInfo
     public bool IsAnimated => Animation != null;
 
     /// <summary>
-    /// Whether the image is HDR.
+    /// Whether the image is HDR based on its intensity target.
+    /// Note: Floating-point bit depth alone does not indicate HDR - it's about precision, not dynamic range.
     /// </summary>
-    public bool IsHdr => ToneMapping.IntensityTarget > 255f || BitDepth is JxlBitDepth.Float;
+    public bool IsHdr => ToneMapping.IntensityTarget > 255f;
 }
