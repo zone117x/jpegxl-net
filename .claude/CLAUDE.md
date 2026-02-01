@@ -74,6 +74,13 @@ The script changes the current directory automatically, so do not use a `cd ...`
 
 Tests are in `test/JpegXL.Net.Tests/`. The rebuild script runs them automatically.
 
+## Test Files
+
+When debugging, evaluating, and looking for JXL test files, check:
+- `./external/conformance/**/*.jxl` - Optional conformance test suite
+- `./native/jxl-rs/jxl/resources/test/**/*.jxl` - Test resources from the upstream jxl-rs decoder
+- `./native/jxl-rs/**/*.rs` - Look in this project for unit tests related to JXL files/properties/behaviors
+
 ## Common Patterns
 
 ### Adding New FFI Functions

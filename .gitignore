@@ -64,3 +64,6 @@ native/**/artifacts/
 src/JpegXL.Net/runtimes/**/native/*.dll
 src/JpegXL.Net/runtimes/**/native/*.so
 src/JpegXL.Net/runtimes/**/native/*.dylib
+
+# Optional development dependencies
+external/conformance/
