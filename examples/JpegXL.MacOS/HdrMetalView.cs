@@ -241,7 +241,10 @@ public class HdrMetalView : NSView
             PixelFormat = MTLPixelFormat.RGBA16Float,
             FramebufferOnly = false,
             Opaque = false,
-            ContentsScale = NSScreen.MainScreen?.BackingScaleFactor ?? (nfloat)2.0
+            // Use window's screen if available, fall back to main screen
+            ContentsScale = Window?.Screen?.BackingScaleFactor
+                ?? NSScreen.MainScreen?.BackingScaleFactor
+                ?? (nfloat)2.0
         };
 
         // Enable EDR for HDR content
@@ -252,6 +255,23 @@ public class HdrMetalView : NSView
         _metalLayer.ColorSpace = colorSpace;
 
         return _metalLayer;
+    }
+
+    /// <summary>
+    /// Updates the Metal layer's ContentsScale to match the current screen's backing scale factor.
+    /// Call this when the window moves to a different screen.
+    /// </summary>
+    public void UpdateContentsScale()
+    {
+        var newScale = Window?.Screen?.BackingScaleFactor
+            ?? NSScreen.MainScreen?.BackingScaleFactor
+            ?? (nfloat)2.0;
+
+        if (_metalLayer != null && _metalLayer.ContentsScale != newScale)
+        {
+            _metalLayer.ContentsScale = newScale;
+            NeedsDisplay = true;
+        }
     }
 
     private void CreatePipelineState()

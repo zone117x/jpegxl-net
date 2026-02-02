@@ -53,6 +53,9 @@ public class MainWindow : NSWindow
     // Cached metadata for clipboard copy
     private JxlImageMetadata? _metadata;
 
+    // Screen change notification observer
+    private NSObject? _screenChangeObserver;
+
     public MainWindow() : base(
         new CGRect(100, 100, 900, 700),
         NSWindowStyle.Titled | NSWindowStyle.Closable | NSWindowStyle.Miniaturizable | NSWindowStyle.Resizable,
@@ -73,9 +76,73 @@ public class MainWindow : NSWindow
         TitleVisibility = NSWindowTitleVisibility.Visible;
 
         CreateUI();
+
+        // Subscribe to screen change notifications to update HDR/EDR when moving between monitors
+        _screenChangeObserver = NSNotificationCenter.DefaultCenter.AddObserver(
+            NSWindow.DidChangeScreenNotification,
+            OnScreenChanged,
+            this);
+
         #if DEBUG
         StartMemoryMonitor();
         #endif
+    }
+
+    /// <summary>
+    /// Called when the window moves to a different screen.
+    /// Updates the Metal view's backing scale and reconfigures HDR settings for the new screen.
+    /// </summary>
+    private void OnScreenChanged(NSNotification notification)
+    {
+        _metalView?.UpdateContentsScale();
+        UpdateHdrLabel();
+    }
+
+    /// <summary>
+    /// Updates the HDR label and brightness scale based on current screen's EDR headroom.
+    /// </summary>
+    private void UpdateHdrLabel()
+    {
+        if (_metadata == null) return;
+
+        var screen = Screen ?? NSScreen.MainScreen;
+        var edrHeadroom = (float)(screen?.MaximumExtendedDynamicRangeColorComponentValue ?? 1.0);
+        var intensityTarget = _metadata.BasicInfo.ToneMapping.IntensityTarget;
+
+        if (_metadata.IsHlg)
+        {
+            _hdrLabel!.StringValue = $"HDR HLG: {intensityTarget:F0} nits";
+            if (edrHeadroom > 1.0)
+            {
+                _hdrLabel.StringValue += $" | EDR: {edrHeadroom:F1}x";
+            }
+            Console.WriteLine($"[HDR] HLG system tone mapping (EDR headroom: {edrHeadroom:F1}x)");
+        }
+        else if (_metadata.IsPq)
+        {
+            _hdrLabel!.StringValue = $"HDR PQ: {intensityTarget:F0} nits";
+            if (edrHeadroom > 1.0)
+            {
+                _hdrLabel.StringValue += $" | EDR: {edrHeadroom:F1}x";
+            }
+            Console.WriteLine($"[HDR] PQ system tone mapping (max: {intensityTarget} nits, EDR headroom: {edrHeadroom:F1}x)");
+        }
+        else if (_metadata.BasicInfo.IsHdr)
+        {
+            _hdrLabel!.StringValue = $"HDR: {intensityTarget:F0} nits";
+            if (edrHeadroom > 1.0)
+            {
+                _hdrLabel.StringValue += $" | EDR: {edrHeadroom:F1}x";
+            }
+
+            // Manual HDR mode needs brightness scale recalculation
+            // 203 nits is the SDR reference white level defined in ITU-R BT.2408
+            const float SdrReferenceWhiteNits = 203f;
+            var idealScale = intensityTarget / SdrReferenceWhiteNits;
+            var brightnessScale = Math.Min(idealScale, edrHeadroom);
+            _metalView!.HdrBrightnessScale = brightnessScale;
+            Console.WriteLine($"[HDR] Linear mode with brightness scale: {brightnessScale:F2}x (EDR headroom: {edrHeadroom:F1}x)");
+        }
     }
 
     private void StartMemoryMonitor()
@@ -782,55 +849,23 @@ public class MainWindow : NSWindow
             _dimensionsLabel!.StringValue = $"{info.Size.Width}×{info.Size.Height}";
             _profileLabel!.StringValue = colorProfileDesc;
 
-            // Configure Metal view and show HDR info
+            // Configure Metal view for the content type
             _hdrLabel!.Hidden = !(isHdr || isHlg || isPq);
-
-            // Query EDR headroom
-            var screen = Screen ?? NSScreen.MainScreen;
-            var edrHeadroom = (float)(screen?.MaximumExtendedDynamicRangeColorComponentValue ?? 1.0);
 
             if (isHlg)
             {
                 // HLG: Use system tone mapping via CAEdrMetadata
                 _metalView!.ConfigureForHlg();
-
-                _hdrLabel.StringValue = $"HDR HLG: {info.ToneMapping.IntensityTarget:F0} nits";
-                if (edrHeadroom > 1.0)
-                {
-                    _hdrLabel.StringValue += $" | EDR: {edrHeadroom:F1}x";
-                }
-                Console.WriteLine($"[HDR] Using HLG system tone mapping (EDR headroom: {edrHeadroom:F1}x)");
             }
             else if (isPq)
             {
                 // PQ: Use system tone mapping via CAEdrMetadata
                 _metalView!.ConfigureForPq(info.ToneMapping.IntensityTarget);
-
-                _hdrLabel.StringValue = $"HDR PQ: {info.ToneMapping.IntensityTarget:F0} nits";
-                if (edrHeadroom > 1.0)
-                {
-                    _hdrLabel.StringValue += $" | EDR: {edrHeadroom:F1}x";
-                }
-                Console.WriteLine($"[HDR] Using PQ system tone mapping (max: {info.ToneMapping.IntensityTarget} nits, EDR headroom: {edrHeadroom:F1}x)");
             }
             else if (isHdr)
             {
                 // Other HDR (rare): Use linear color space with manual brightness scaling
                 _metalView!.ConfigureForLinear();
-
-                _hdrLabel.StringValue = $"HDR: {info.ToneMapping.IntensityTarget:F0} nits";
-                if (edrHeadroom > 1.0)
-                {
-                    _hdrLabel.StringValue += $" | EDR: {edrHeadroom:F1}x";
-                }
-
-                // Set HDR brightness scale for EDR display
-                // 203 nits is the SDR reference white level defined in ITU-R BT.2408
-                const float SdrReferenceWhiteNits = 203f;
-                var idealScale = info.ToneMapping.IntensityTarget / SdrReferenceWhiteNits;
-                var brightnessScale = Math.Min(idealScale, edrHeadroom);
-                _metalView.HdrBrightnessScale = brightnessScale;
-                Console.WriteLine($"[HDR] Using linear mode with brightness scale: {brightnessScale:F2}x");
             }
             else
             {
@@ -838,6 +873,9 @@ public class MainWindow : NSWindow
                 _metalView!.ConfigureForSrgb();
                 _metalView.HdrBrightnessScale = 1.0f;
             }
+
+            // Update HDR label with current screen's EDR headroom
+            UpdateHdrLabel();
 
             Subtitle = filename;
             _metalView.ResetView();  // Display at 1:1 pixel ratio
