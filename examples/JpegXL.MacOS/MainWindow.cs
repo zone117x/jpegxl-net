@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using AppKit;
 using CoreGraphics;
 using Foundation;
@@ -8,6 +9,19 @@ using JpegXL.Net;
 using UniformTypeIdentifiers;
 
 namespace JpegXL.MacOS;
+
+/// <summary>
+/// Cached metadata from the loaded JXL image for display and clipboard copy.
+/// </summary>
+internal sealed class JxlImageMetadata
+{
+    public required string FilePath { get; init; }
+    public required JxlBasicInfo BasicInfo { get; init; }
+    public required string ColorProfileDescription { get; init; }
+    public required bool IsHlg { get; init; }
+    public required bool IsPq { get; init; }
+    public int FrameCount { get; init; }
+}
 
 public class MainWindow : NSWindow
 {
@@ -33,6 +47,9 @@ public class MainWindow : NSWindow
 
     // Memory monitoring
     private NSTimer? _memoryTimer;
+
+    // Cached metadata for clipboard copy
+    private JxlImageMetadata? _metadata;
 
     public MainWindow() : base(
         new CGRect(100, 100, 900, 700),
@@ -87,6 +104,12 @@ public class MainWindow : NSWindow
             AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.HeightSizable,
             OnZoomChanged = _ => UpdateStatus()
         };
+
+        // Context menu for right-click
+        var contextMenu = new NSMenu();
+        contextMenu.AddItem(new NSMenuItem("Copy Metadata", (s, e) => CopyMetadata()));
+        _metalView.Menu = contextMenu;
+
         contentView.AddSubview(_metalView);
 
         // Status bar - horizontal stack view for responsive layout
@@ -140,12 +163,13 @@ public class MainWindow : NSWindow
         ContentView = contentView;
     }
 
-    private static NSTextField CreateStackLabel(string text, NSColor color, bool hugging)
+    private NSTextField CreateStackLabel(string text, NSColor color, bool hugging)
     {
-        var label = new NSTextField
+        var label = new SelectableLabel(FormatMetadata)
         {
             StringValue = text,
             Editable = false,
+            Selectable = true,
             Bordered = false,
             DrawsBackground = false,
             TextColor = color,
@@ -721,6 +745,17 @@ public class MainWindow : NSWindow
                 DecodeStaticImageToGpu(decoder, info);
             }
 
+            // Cache metadata for clipboard copy
+            _metadata = new JxlImageMetadata
+            {
+                FilePath = path,
+                BasicInfo = info,
+                ColorProfileDescription = colorProfileDesc,
+                IsHlg = isHlg,
+                IsPq = isPq,
+                FrameCount = _frameDurations?.Length ?? 1
+            };
+
             // Set status bar labels
             _dimensionsLabel!.StringValue = $"{info.Size.Width}×{info.Size.Height}";
             _profileLabel!.StringValue = colorProfileDesc;
@@ -936,6 +971,94 @@ public class MainWindow : NSWindow
         }
     }
 
+    private string FormatMetadata()
+    {
+        if (_metadata == null) return string.Empty;
+
+        var info = _metadata.BasicInfo;
+        var sb = new StringBuilder();
+
+        sb.AppendLine($"File: {_metadata.FilePath}");
+        sb.AppendLine($"Dimensions: {info.Size.Width} x {info.Size.Height}");
+
+        // Bit depth
+        if (info.BitDepth.IsFloat)
+        {
+            sb.AppendLine($"Bit Depth: {info.BitDepth.BitsPerSample}-bit float ({info.BitDepth.ExponentBitsPerSample} exponent bits)");
+        }
+        else
+        {
+            sb.AppendLine($"Bit Depth: {info.BitDepth.BitsPerSample}-bit integer");
+        }
+
+        // Color profile
+        sb.AppendLine($"Color Profile: {_metadata.ColorProfileDescription}");
+
+        // HDR info
+        if (_metadata.IsHlg)
+        {
+            sb.AppendLine($"HDR: HLG ({info.ToneMapping.IntensityTarget:F0} nits)");
+        }
+        else if (_metadata.IsPq)
+        {
+            sb.AppendLine($"HDR: PQ ({info.ToneMapping.IntensityTarget:F0} nits)");
+        }
+        else if (info.IsHdr)
+        {
+            sb.AppendLine($"HDR: Yes ({info.ToneMapping.IntensityTarget:F0} nits)");
+        }
+        else
+        {
+            sb.AppendLine("HDR: No");
+        }
+
+        // Animation
+        if (info.IsAnimated && info.Animation.HasValue)
+        {
+            var anim = info.Animation.Value;
+            var fps = (double)anim.TpsNumerator / anim.TpsDenominator;
+            sb.AppendLine($"Animation: {_metadata.FrameCount} frames, {fps:F2} fps");
+            if (anim.NumLoops != 0)
+            {
+                sb.AppendLine($"Loops: {anim.NumLoops}");
+            }
+        }
+
+        // Alpha
+        sb.AppendLine($"Has Alpha: {(info.HasAlpha ? "Yes" : "No")}");
+        if (info.AlphaPremultiplied)
+        {
+            sb.AppendLine("Alpha Premultiplied: Yes");
+        }
+
+        // Orientation
+        if (info.Orientation != JxlOrientation.Identity)
+        {
+            sb.AppendLine($"Orientation: {info.Orientation}");
+        }
+
+        // Extra channels (beyond alpha)
+        var extraChannels = info.ExtraChannels
+            .Where(ec => ec.ChannelType != JxlExtraChannelType.Alpha)
+            .ToList();
+        if (extraChannels.Count > 0)
+        {
+            sb.AppendLine($"Extra Channels: {string.Join(", ", extraChannels.Select(ec => ec.ChannelType))}");
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private void CopyMetadata()
+    {
+        var metadata = FormatMetadata();
+        if (string.IsNullOrEmpty(metadata)) return;
+
+        var pasteboard = NSPasteboard.GeneralPasteboard;
+        pasteboard.ClearContents();
+        pasteboard.SetStringForType(metadata, NSPasteboardType.String.GetConstant()!);
+    }
+
     private static void ShowAlert(string title, string message)
     {
         var alert = new NSAlert
@@ -959,6 +1082,53 @@ public class MainWindow : NSWindow
             _metalView?.Dispose();
         }
         base.Dispose(disposing);
+    }
+
+    /// <summary>
+    /// NSTextField subclass that stores metadata getter for use by the custom field editor.
+    /// </summary>
+    private sealed class SelectableLabel : NSTextField
+    {
+        public Func<string>? GetMetadata { get; }
+
+        public SelectableLabel(Func<string> getMetadata)
+        {
+            GetMetadata = getMetadata;
+        }
+    }
+
+    // Custom field editor for status bar labels
+    private NSTextView? _metadataFieldEditor;
+
+    public override NSText FieldEditor(bool createWhenNeeded, NSObject? forObject)
+    {
+        if (forObject is SelectableLabel selectableLabel)
+        {
+            if (_metadataFieldEditor == null && createWhenNeeded)
+            {
+                _metadataFieldEditor = new NSTextView
+                {
+                    FieldEditor = true
+                };
+            }
+
+            if (_metadataFieldEditor != null)
+            {
+
+                // Build custom menu with Copy Metadata
+                var menu = new NSMenu();
+                menu.AddItem(new NSMenuItem("Cut", new ObjCRuntime.Selector("cut:"), "x"));
+                menu.AddItem(new NSMenuItem("Copy", new ObjCRuntime.Selector("copy:"), "c"));
+                menu.AddItem(new NSMenuItem("Paste", new ObjCRuntime.Selector("paste:"), "v"));
+                menu.AddItem(NSMenuItem.SeparatorItem);
+                menu.AddItem(new NSMenuItem("Copy Metadata", (s, e) => CopyMetadata()));
+
+                _metadataFieldEditor.Menu = menu;
+                return _metadataFieldEditor;
+            }
+        }
+
+        return base.FieldEditor(createWhenNeeded, forObject);
     }
 
     private class ToolbarDelegate : NSToolbarDelegate
