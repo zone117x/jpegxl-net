@@ -21,6 +21,8 @@ internal sealed class JxlImageMetadata
     public required bool IsHlg { get; init; }
     public required bool IsPq { get; init; }
     public int FrameCount { get; init; }
+    public IccHeaderInfo? IccHeader { get; init; }
+    public IccColorSpaceInfo? IccColorSpace { get; init; }
 }
 
 public class MainWindow : NSWindow
@@ -673,14 +675,32 @@ public class MainWindow : NSWindow
             string colorProfileDesc;
             bool isHlg = false;
             bool isPq = false;
+            IccHeaderInfo? iccHeader = null;
+            IccColorSpaceInfo? iccColorSpace = null;
             using (var profile = decoder.GetEmbeddedColorProfile())
             {
                 Console.WriteLine($"[ColorProfile] IsIcc={profile.IsIcc}");
                 if (profile.IsIcc)
                 {
-                    var iccName = IccProfileParser.TryGetDescription(profile.IccData);
-                    Console.WriteLine($"[ColorProfile] ICC name from parser: '{iccName}'");
-                    colorProfileDesc = iccName != null ? $"ICC: {iccName}" : "ICC";
+                    // Parse ICC profile header and color space info
+                    iccHeader = IccProfileParser.TryGetHeaderInfo(profile.IccData);
+                    iccColorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+
+                    if (iccColorSpace.HasValue)
+                    {
+                        isHlg = iccColorSpace.Value.IsHlg;
+                        isPq = iccColorSpace.Value.IsPq;
+                        // Use color space description (e.g., "Rec.2100 HLG") if available
+                        colorProfileDesc = $"ICC: {iccColorSpace.Value}";
+                        Console.WriteLine($"[ColorProfile] ICC parsed: {iccColorSpace.Value}, IsHlg={isHlg}, IsPq={isPq}");
+                    }
+                    else
+                    {
+                        // Fallback to profile description
+                        var iccName = IccProfileParser.TryGetDescription(profile.IccData);
+                        colorProfileDesc = iccName != null ? $"ICC: {iccName}" : "ICC";
+                        Console.WriteLine($"[ColorProfile] ICC name from parser: '{iccName}'");
+                    }
                 }
                 else
                 {
@@ -753,7 +773,9 @@ public class MainWindow : NSWindow
                 ColorProfileDescription = colorProfileDesc,
                 IsHlg = isHlg,
                 IsPq = isPq,
-                FrameCount = _frameDurations?.Length ?? 1
+                FrameCount = _frameDurations?.Length ?? 1,
+                IccHeader = iccHeader,
+                IccColorSpace = iccColorSpace
             };
 
             // Set status bar labels
@@ -993,6 +1015,45 @@ public class MainWindow : NSWindow
 
         // Color profile
         sb.AppendLine($"Color Profile: {_metadata.ColorProfileDescription}");
+
+        // ICC profile details (if available)
+        if (_metadata.IccHeader.HasValue)
+        {
+            var header = _metadata.IccHeader.Value;
+            sb.AppendLine($"  ICC Version: {header.IccVersion.Major}.{header.IccVersion.Minor}");
+            sb.AppendLine($"  Profile Class: {header.ProfileClass}");
+            sb.AppendLine($"  Color Space: {header.ColorSpace}");
+            sb.AppendLine($"  Rendering Intent: {header.RenderingIntent}");
+        }
+
+        if (_metadata.IccColorSpace.HasValue)
+        {
+            var cs = _metadata.IccColorSpace.Value;
+            if (cs.WhitePoint.HasValue)
+            {
+                var wp = cs.WhitePoint.Value;
+                var wpName = cs.IsD65WhitePoint ? " (D65)" : cs.IsD50WhitePoint ? " (D50)" : "";
+                sb.AppendLine($"  White Point: ({wp.X:F4}, {wp.Y:F4}, {wp.Z:F4}){wpName}");
+            }
+            if (cs.TransferFunction.HasValue)
+            {
+                var tf = cs.TransferFunction.Value;
+                var tfStr = tf.ToString();
+                if (tf == IccTransferFunction.Gamma && cs.GammaValue.HasValue)
+                {
+                    tfStr = $"Gamma {cs.GammaValue.Value:F2}";
+                }
+                sb.AppendLine($"  Transfer Function: {tfStr}");
+            }
+            if (cs.CicpPrimaries.HasValue && cs.CicpPrimaries != IccCicpPrimaries.Unknown)
+            {
+                sb.AppendLine($"  CICP Primaries: {cs.CicpPrimaries}");
+            }
+            if (cs.CicpTransfer.HasValue && cs.CicpTransfer != IccCicpTransfer.Unknown)
+            {
+                sb.AppendLine($"  CICP Transfer: {cs.CicpTransfer}");
+            }
+        }
 
         // HDR info
         if (_metadata.IsHlg)

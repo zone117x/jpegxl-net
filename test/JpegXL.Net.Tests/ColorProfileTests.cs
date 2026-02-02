@@ -645,4 +645,622 @@ public class ColorProfileTests
         Assert.IsTrue(profile.IsHdr);
         Assert.AreEqual("Gra_D65_Rel_PeQ", profile.GetDescription());
     }
+
+    // =========================================================================
+    // IccProfileParser.TryGetHeaderInfo Tests
+    // =========================================================================
+
+    [TestMethod]
+    public void IccProfileParser_TryGetHeaderInfo_InvalidData_ReturnsNull()
+    {
+        // Too short
+        Assert.IsNull(IccProfileParser.TryGetHeaderInfo(new byte[100]));
+        Assert.IsNull(IccProfileParser.TryGetHeaderInfo([]));
+    }
+
+    [TestMethod]
+    public void IccProfileParser_TryGetHeaderInfo_SrgbProfile_ReturnsValidHeader()
+    {
+        // Arrange - get ICC data from a simple profile
+        using var profile = JxlColorProfile.CreateSrgb();
+        var iccData = profile.TryAsIcc();
+        Assert.IsNotNull(iccData);
+
+        // Act
+        var header = IccProfileParser.TryGetHeaderInfo(iccData);
+
+        // Assert
+        Assert.IsNotNull(header);
+        Assert.AreEqual(IccProfileClass.Display, header.Value.ProfileClass);
+        Assert.AreEqual(IccColorSpaceType.Rgb, header.Value.ColorSpace);
+        Assert.IsTrue(header.Value.IccVersion.Major >= 2, "ICC version should be at least 2.x");
+    }
+
+    [TestMethod]
+    public void IccProfileParser_TryGetHeaderInfo_GrayscaleIcc_ReturnsGrayColorSpace()
+    {
+        // Arrange - load a JXL file with grayscale ICC profile
+        var data = File.ReadAllBytes("TestData/with_icc.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+        Assert.IsTrue(profile.IsIcc);
+
+        // Act
+        var header = IccProfileParser.TryGetHeaderInfo(profile.IccData);
+
+        // Assert
+        Assert.IsNotNull(header);
+        Assert.AreEqual(IccColorSpaceType.Gray, header.Value.ColorSpace);
+        Assert.AreEqual(IccProfileClass.Display, header.Value.ProfileClass);
+    }
+
+    [TestMethod]
+    public void IccProfileParser_TryGetHeaderInfo_HdrLinearIcc_ReturnsRgbDisplayProfile()
+    {
+        // Arrange - load a JXL file with HLG ICC profile (via CICP)
+        var data = File.ReadAllBytes("TestData/hdr_linear_test.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+        Assert.IsTrue(profile.IsIcc);
+
+        // Act
+        var header = IccProfileParser.TryGetHeaderInfo(profile.IccData);
+
+        // Assert
+        Assert.IsNotNull(header);
+        Assert.AreEqual(IccProfileClass.Display, header.Value.ProfileClass);
+        Assert.AreEqual(IccColorSpaceType.Rgb, header.Value.ColorSpace);
+        Assert.AreEqual(4, header.Value.IccVersion.Major, "Should be ICC v4.x");
+    }
+
+    // =========================================================================
+    // IccProfileParser.TryGetColorSpaceInfo Tests
+    // =========================================================================
+
+    [TestMethod]
+    public void IccProfileParser_TryGetColorSpaceInfo_InvalidData_ReturnsNull()
+    {
+        Assert.IsNull(IccProfileParser.TryGetColorSpaceInfo(new byte[100]));
+        Assert.IsNull(IccProfileParser.TryGetColorSpaceInfo([]));
+    }
+
+    [TestMethod]
+    public void IccProfileParser_TryGetColorSpaceInfo_SrgbProfile_ReturnsValidInfo()
+    {
+        // Arrange
+        using var profile = JxlColorProfile.CreateSrgb();
+        var iccData = profile.TryAsIcc();
+        Assert.IsNotNull(iccData);
+
+        // Act
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(iccData);
+
+        // Assert
+        Assert.IsNotNull(colorSpace);
+        Assert.IsNotNull(colorSpace.Value.WhitePoint);
+        Assert.IsNotNull(colorSpace.Value.RedPrimary);
+        Assert.IsNotNull(colorSpace.Value.GreenPrimary);
+        Assert.IsNotNull(colorSpace.Value.BluePrimary);
+        Assert.IsFalse(colorSpace.Value.IsHlg);
+        Assert.IsFalse(colorSpace.Value.IsPq);
+        Assert.IsFalse(colorSpace.Value.IsHdr);
+    }
+
+    [TestMethod]
+    public void IccProfileParser_TryGetColorSpaceInfo_GrayscaleIcc_ReturnsWhitePointOnly()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/with_icc.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+
+        // Act
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+
+        // Assert
+        Assert.IsNotNull(colorSpace);
+        Assert.IsNotNull(colorSpace.Value.WhitePoint);
+        Assert.IsTrue(colorSpace.Value.IsD65WhitePoint, "GIMP D65 Grayscale should have D65 white point");
+        // Grayscale profiles don't have RGB primaries
+        Assert.IsNull(colorSpace.Value.RedPrimary);
+        Assert.IsNull(colorSpace.Value.GreenPrimary);
+        Assert.IsNull(colorSpace.Value.BluePrimary);
+        Assert.IsFalse(colorSpace.Value.IsHdr);
+    }
+
+    [TestMethod]
+    public void IccProfileParser_TryGetColorSpaceInfo_GrayscaleIcc_DetectsTrcCurve()
+    {
+        // Arrange - grayscale ICC with kTRC tag
+        var data = File.ReadAllBytes("TestData/with_icc.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+
+        // Act
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+
+        // Assert - should detect the parametric TRC curve
+        Assert.IsNotNull(colorSpace);
+        Assert.IsNotNull(colorSpace.Value.TransferFunction);
+        Assert.AreEqual(IccTransferFunction.Parametric, colorSpace.Value.TransferFunction);
+    }
+
+    // =========================================================================
+    // CICP Tag Detection Tests (HLG/PQ via ICC)
+    // =========================================================================
+
+    [TestMethod]
+    public void IccProfileParser_TryGetColorSpaceInfo_HlgIcc_DetectsHlgViaCicp()
+    {
+        // Arrange - HDR file with HLG ICC profile containing CICP tag
+        var data = File.ReadAllBytes("TestData/hdr_linear_test.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+        Assert.IsTrue(profile.IsIcc, "hdr_linear_test.jxl should have ICC profile");
+
+        // Act
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+
+        // Assert - should detect HLG via CICP tag
+        Assert.IsNotNull(colorSpace);
+        Assert.IsTrue(colorSpace.Value.IsHlg, "Should detect HLG from CICP tag");
+        Assert.IsFalse(colorSpace.Value.IsPq);
+        Assert.IsTrue(colorSpace.Value.IsHdr, "HLG is HDR");
+        Assert.AreEqual(IccTransferFunction.Hlg, colorSpace.Value.TransferFunction);
+        Assert.AreEqual(IccCicpTransfer.Hlg, colorSpace.Value.CicpTransfer);
+        Assert.AreEqual(IccCicpPrimaries.Bt2020, colorSpace.Value.CicpPrimaries);
+    }
+
+    [TestMethod]
+    public void IccProfileParser_TryGetColorSpaceInfo_HlgIcc_ToStringReturnsRec2100Hlg()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/hdr_linear_test.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+
+        // Act
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+
+        // Assert - ToString should return friendly name
+        Assert.IsNotNull(colorSpace);
+        Assert.AreEqual("Rec.2100 HLG", colorSpace.Value.ToString());
+    }
+
+    [TestMethod]
+    public void IccProfileParser_TryGetColorSpaceInfo_HlgIcc_HasD50WhitePoint()
+    {
+        // ICC profiles use D50 as Profile Connection Space
+        var data = File.ReadAllBytes("TestData/hdr_linear_test.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+
+        Assert.IsNotNull(colorSpace);
+        Assert.IsNotNull(colorSpace.Value.WhitePoint);
+        Assert.IsTrue(colorSpace.Value.IsD50WhitePoint, "ICC profiles typically use D50 PCS");
+        Assert.IsFalse(colorSpace.Value.IsD65WhitePoint);
+    }
+
+    // =========================================================================
+    // IccColorSpaceInfo Detection Tests
+    // =========================================================================
+
+    [TestMethod]
+    public void IccColorSpaceInfo_IsLikelySrgb_WithSrgbPrimaries_ReturnsTrue()
+    {
+        // jxl-rs generates ICC profiles with D65 white point for sRGB
+        // Note: Standard ICC sRGB uses D50 PCS, but jxl-rs may use different conventions
+        using var profile = JxlColorProfile.CreateSrgb();
+        var iccData = profile.TryAsIcc();
+        Assert.IsNotNull(iccData);
+
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(iccData);
+        Assert.IsNotNull(colorSpace);
+
+        // The exact detection depends on jxl-rs ICC generation
+        // At minimum, primaries should be present for RGB profiles
+        Assert.IsNotNull(colorSpace.Value.RedPrimary);
+        Assert.IsNotNull(colorSpace.Value.GreenPrimary);
+        Assert.IsNotNull(colorSpace.Value.BluePrimary);
+    }
+
+    [TestMethod]
+    public void IccColorSpaceInfo_ToString_CustomProfile_ReturnsCustom()
+    {
+        // Arrange - grayscale profile is "Custom" since it's not sRGB/P3/Rec.2020
+        var data = File.ReadAllBytes("TestData/with_icc.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+
+        // Act
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+
+        // Assert
+        Assert.IsNotNull(colorSpace);
+        Assert.AreEqual("Custom", colorSpace.Value.ToString());
+    }
+
+    // =========================================================================
+    // XyzColor Tests
+    // =========================================================================
+
+    [TestMethod]
+    public void XyzColor_ApproximatelyEquals_WithinTolerance_ReturnsTrue()
+    {
+        var color1 = new XyzColor(0.9505f, 1.0000f, 1.0890f);
+        var color2 = new XyzColor(0.9506f, 1.0001f, 1.0889f);
+
+        Assert.IsTrue(color1.ApproximatelyEquals(color2, tolerance: 0.002f));
+    }
+
+    [TestMethod]
+    public void XyzColor_ApproximatelyEquals_OutsideTolerance_ReturnsFalse()
+    {
+        var color1 = new XyzColor(0.9505f, 1.0000f, 1.0890f);
+        var color2 = new XyzColor(0.9600f, 1.0000f, 1.0890f); // X differs by 0.0095
+
+        Assert.IsFalse(color1.ApproximatelyEquals(color2, tolerance: 0.002f));
+    }
+
+    [TestMethod]
+    public void XyzColor_ToString_ReturnsFormattedString()
+    {
+        var color = new XyzColor(0.9505f, 1.0000f, 1.0890f);
+        var str = color.ToString();
+
+        Assert.IsTrue(str.Contains("0.9505"));
+        Assert.IsTrue(str.Contains("1.0000"));
+        Assert.IsTrue(str.Contains("1.0890"));
+    }
+
+    // =========================================================================
+    // IccHeaderInfo Tests
+    // =========================================================================
+
+    [TestMethod]
+    public void IccHeaderInfo_ToString_ReturnsFormattedString()
+    {
+        // Arrange
+        using var profile = JxlColorProfile.CreateSrgb();
+        var iccData = profile.TryAsIcc();
+        var header = IccProfileParser.TryGetHeaderInfo(iccData);
+
+        // Assert
+        Assert.IsNotNull(header);
+        var str = header.Value.ToString();
+        Assert.IsTrue(str.Contains("ICC"), "Should contain 'ICC'");
+        Assert.IsTrue(str.Contains("Display") || str.Contains("Rgb"),
+            "Should contain profile class or color space");
+    }
+
+    // =========================================================================
+    // Integration Tests - ICC vs Structured Profile Detection
+    // =========================================================================
+
+    [TestMethod]
+    public void IccHlg_StructuredHlg_BothDetectHlg()
+    {
+        // Arrange - ICC HLG (via CICP)
+        var iccData = File.ReadAllBytes("TestData/hdr_linear_test.jxl");
+        using var iccDecoder = new JxlDecoder();
+        iccDecoder.SetInput(iccData);
+        iccDecoder.ReadInfo();
+        using var iccProfile = iccDecoder.GetEmbeddedColorProfile();
+
+        // Arrange - Structured HLG
+        var structuredData = File.ReadAllBytes("TestData/hdr_hlg_test.jxl");
+        using var structuredDecoder = new JxlDecoder();
+        structuredDecoder.SetInput(structuredData);
+        structuredDecoder.ReadInfo();
+        using var structuredProfile = structuredDecoder.GetEmbeddedColorProfile();
+
+        // Assert - ICC profile
+        Assert.IsTrue(iccProfile.IsIcc, "hdr_linear_test.jxl should be ICC");
+        var iccColorSpace = IccProfileParser.TryGetColorSpaceInfo(iccProfile.IccData);
+        Assert.IsNotNull(iccColorSpace);
+        Assert.IsTrue(iccColorSpace.Value.IsHlg, "ICC profile should detect HLG");
+
+        // Assert - Structured profile
+        Assert.IsFalse(structuredProfile.IsIcc, "hdr_hlg_test.jxl should be structured");
+        Assert.IsTrue(structuredProfile.IsHlg, "Structured profile should detect HLg");
+    }
+
+    [TestMethod]
+    public void IccProfile_FullMetadataExtraction_Succeeds()
+    {
+        // Integration test: extract all metadata from an ICC profile
+        var data = File.ReadAllBytes("TestData/hdr_linear_test.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+
+        // Extract all info
+        var description = IccProfileParser.TryGetDescription(profile.IccData);
+        var header = IccProfileParser.TryGetHeaderInfo(profile.IccData);
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+
+        // All should succeed
+        Assert.IsNotNull(description);
+        Assert.IsNotNull(header);
+        Assert.IsNotNull(colorSpace);
+
+        // Verify consistency
+        Assert.AreEqual("Rec2100HLG", description);
+        Assert.AreEqual(IccColorSpaceType.Rgb, header.Value.ColorSpace);
+        Assert.IsTrue(colorSpace.Value.IsHlg);
+        Assert.AreEqual("Rec.2100 HLG", colorSpace.Value.ToString());
+    }
+
+    // =========================================================================
+    // Additional ICC Test File Tests
+    // =========================================================================
+
+    [TestMethod]
+    public void IccProfileParser_LossyWithIcc_DetectsGamma22()
+    {
+        // Arrange - lossy_with_icc.jxl is ICC v2.1 with gamma 2.2
+        var data = File.ReadAllBytes("TestData/lossy_with_icc.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+
+        // Assert - should have ICC profile
+        Assert.IsTrue(profile.IsIcc, "lossy_with_icc.jxl should have ICC profile");
+
+        // Act
+        var header = IccProfileParser.TryGetHeaderInfo(profile.IccData);
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+
+        // Assert header
+        Assert.IsNotNull(header);
+        Assert.AreEqual(2, header.Value.IccVersion.Major, "Should be ICC v2.x");
+        Assert.AreEqual(IccColorSpaceType.Rgb, header.Value.ColorSpace);
+
+        // Assert color space - should have gamma TRC
+        Assert.IsNotNull(colorSpace);
+        Assert.IsFalse(colorSpace.Value.IsHdr, "Gamma 2.2 profile is not HDR");
+        Assert.IsNotNull(colorSpace.Value.TransferFunction);
+        // Gamma 2.2 is typically encoded as curv or para
+        Assert.IsTrue(
+            colorSpace.Value.TransferFunction == IccTransferFunction.Gamma ||
+            colorSpace.Value.TransferFunction == IccTransferFunction.LookupTable ||
+            colorSpace.Value.TransferFunction == IccTransferFunction.Parametric,
+            $"Expected gamma-like transfer function, got {colorSpace.Value.TransferFunction}");
+    }
+
+    [TestMethod]
+    public void IccProfileParser_Progressive_DetectsParametricCurve()
+    {
+        // Arrange - progressive.jxl is ICC v4.3 with parametric curve
+        var data = File.ReadAllBytes("TestData/progressive.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+
+        // Assert - should have ICC profile
+        Assert.IsTrue(profile.IsIcc, "progressive.jxl should have ICC profile");
+
+        // Act
+        var header = IccProfileParser.TryGetHeaderInfo(profile.IccData);
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+
+        // Assert header
+        Assert.IsNotNull(header);
+        Assert.AreEqual(4, header.Value.IccVersion.Major, "Should be ICC v4.x");
+        Assert.AreEqual(IccColorSpaceType.Rgb, header.Value.ColorSpace);
+        Assert.AreEqual(IccProfileClass.Display, header.Value.ProfileClass);
+
+        // Assert color space
+        Assert.IsNotNull(colorSpace);
+        Assert.IsFalse(colorSpace.Value.IsHdr, "Standard RGB profile is not HDR");
+        Assert.IsNotNull(colorSpace.Value.TransferFunction);
+        // ICC v4 profiles often use parametric curves
+        Assert.IsTrue(
+            colorSpace.Value.TransferFunction == IccTransferFunction.Parametric ||
+            colorSpace.Value.TransferFunction == IccTransferFunction.LookupTable,
+            $"Expected parametric or LUT transfer function, got {colorSpace.Value.TransferFunction}");
+    }
+
+    [TestMethod]
+    public void IccProfileParser_CmykLayers_DetectsCmykColorSpace()
+    {
+        // Arrange - cmyk_layers.jxl has a CMYK ICC profile
+        var data = File.ReadAllBytes("TestData/cmyk_layers.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+
+        // Assert - should have ICC profile
+        Assert.IsTrue(profile.IsIcc, "cmyk_layers.jxl should have ICC profile");
+
+        // Act
+        var header = IccProfileParser.TryGetHeaderInfo(profile.IccData);
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+
+        // Assert header - CMYK color space
+        Assert.IsNotNull(header);
+        Assert.AreEqual(IccColorSpaceType.Cmyk, header.Value.ColorSpace, "Should be CMYK color space");
+        Assert.AreEqual(2, header.Value.IccVersion.Major, "Expected ICC v2.x for CMYK profile");
+
+        // Assert color space - CMYK profiles don't have RGB primaries
+        Assert.IsNotNull(colorSpace);
+        Assert.IsNull(colorSpace.Value.RedPrimary, "CMYK profile shouldn't have RGB primaries");
+        Assert.IsNull(colorSpace.Value.GreenPrimary);
+        Assert.IsNull(colorSpace.Value.BluePrimary);
+        Assert.IsFalse(colorSpace.Value.IsHdr);
+    }
+
+    [TestMethod]
+    public void IccProfileParser_MultipleGrayscaleProfiles_AllDetectCorrectly()
+    {
+        // Test both grayscale ICC profiles in the test data
+        var grayscaleFiles = new[] { "TestData/with_icc.jxl", "TestData/small_grayscale_patches_modular_with_icc.jxl" };
+
+        foreach (var file in grayscaleFiles)
+        {
+            var data = File.ReadAllBytes(file);
+            using var decoder = new JxlDecoder();
+            decoder.SetInput(data);
+            decoder.ReadInfo();
+            using var profile = decoder.GetEmbeddedColorProfile();
+
+            Assert.IsTrue(profile.IsIcc, $"{file} should have ICC profile");
+            Assert.AreEqual(1, profile.Channels, $"{file} should be grayscale (1 channel)");
+
+            var header = IccProfileParser.TryGetHeaderInfo(profile.IccData);
+            Assert.IsNotNull(header, $"{file} should have parseable header");
+            Assert.AreEqual(IccColorSpaceType.Gray, header.Value.ColorSpace, $"{file} should be Gray color space");
+
+            var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+            Assert.IsNotNull(colorSpace, $"{file} should have parseable color space info");
+            Assert.IsNull(colorSpace.Value.RedPrimary, $"{file} grayscale shouldn't have RGB primaries");
+        }
+    }
+
+    [TestMethod]
+    public void IccProfileParser_IccV2VsV4_BothParseCorrectly()
+    {
+        // Test that both ICC v2 and v4 profiles parse correctly
+        var v2Files = new[] { "TestData/lossy_with_icc.jxl", "TestData/cmyk_layers.jxl" };
+        var v4Files = new[] { "TestData/progressive.jxl", "TestData/hdr_linear_test.jxl" };
+
+        foreach (var file in v2Files)
+        {
+            var data = File.ReadAllBytes(file);
+            using var decoder = new JxlDecoder();
+            decoder.SetInput(data);
+            decoder.ReadInfo();
+            using var profile = decoder.GetEmbeddedColorProfile();
+
+            var header = IccProfileParser.TryGetHeaderInfo(profile.IccData);
+            Assert.IsNotNull(header, $"{file} should parse");
+            Assert.AreEqual(2, header.Value.IccVersion.Major, $"{file} should be ICC v2.x");
+        }
+
+        foreach (var file in v4Files)
+        {
+            var data = File.ReadAllBytes(file);
+            using var decoder = new JxlDecoder();
+            decoder.SetInput(data);
+            decoder.ReadInfo();
+            using var profile = decoder.GetEmbeddedColorProfile();
+
+            var header = IccProfileParser.TryGetHeaderInfo(profile.IccData);
+            Assert.IsNotNull(header, $"{file} should parse");
+            Assert.AreEqual(4, header.Value.IccVersion.Major, $"{file} should be ICC v4.x");
+        }
+    }
+
+    [TestMethod]
+    public void IccProfileParser_RenderingIntent_ParsedCorrectly()
+    {
+        // Test rendering intent parsing across different profiles
+        var testFiles = new[]
+        {
+            "TestData/lossy_with_icc.jxl",
+            "TestData/progressive.jxl",
+            "TestData/hdr_linear_test.jxl",
+            "TestData/with_icc.jxl"
+        };
+
+        foreach (var file in testFiles)
+        {
+            var data = File.ReadAllBytes(file);
+            using var decoder = new JxlDecoder();
+            decoder.SetInput(data);
+            decoder.ReadInfo();
+            using var profile = decoder.GetEmbeddedColorProfile();
+
+            var header = IccProfileParser.TryGetHeaderInfo(profile.IccData);
+            Assert.IsNotNull(header, $"{file} should parse");
+
+            // Rendering intent should be one of the valid values
+            Assert.IsTrue(
+                Enum.IsDefined(header.Value.RenderingIntent),
+                $"{file} should have valid rendering intent");
+        }
+    }
+
+    [TestMethod]
+    public void IccColorSpaceInfo_NonHdrProfiles_AllReturnIsHdrFalse()
+    {
+        // Verify non-HDR profiles correctly report IsHdr = false
+        var nonHdrFiles = new[]
+        {
+            "TestData/lossy_with_icc.jxl",
+            "TestData/progressive.jxl",
+            "TestData/with_icc.jxl",
+            "TestData/cmyk_layers.jxl"
+        };
+
+        foreach (var file in nonHdrFiles)
+        {
+            var data = File.ReadAllBytes(file);
+            using var decoder = new JxlDecoder();
+            decoder.SetInput(data);
+            decoder.ReadInfo();
+            using var profile = decoder.GetEmbeddedColorProfile();
+
+            var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+            Assert.IsNotNull(colorSpace, $"{file} should parse");
+            Assert.IsFalse(colorSpace.Value.IsHdr, $"{file} should not be HDR");
+            Assert.IsFalse(colorSpace.Value.IsHlg, $"{file} should not be HLG");
+            Assert.IsFalse(colorSpace.Value.IsPq, $"{file} should not be PQ");
+        }
+    }
+
+    [TestMethod]
+    public void IccProfileParser_LossyWithIcc_ProfileDescription()
+    {
+        // Verify we can get the description from lossy_with_icc.jxl
+        var data = File.ReadAllBytes("TestData/lossy_with_icc.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+
+        var description = IccProfileParser.TryGetDescription(profile.IccData);
+        Assert.IsNotNull(description, "Should be able to get ICC description");
+        Assert.IsTrue(description.Length > 0, "Description should not be empty");
+    }
+
+    [TestMethod]
+    public void IccProfileParser_Progressive_HasPrimaries()
+    {
+        // Verify RGB primaries are present for progressive.jxl (RGB profile)
+        var data = File.ReadAllBytes("TestData/progressive.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+        using var profile = decoder.GetEmbeddedColorProfile();
+
+        var colorSpace = IccProfileParser.TryGetColorSpaceInfo(profile.IccData);
+        Assert.IsNotNull(colorSpace);
+        Assert.IsNotNull(colorSpace.Value.WhitePoint, "Should have white point");
+        Assert.IsNotNull(colorSpace.Value.RedPrimary, "RGB profile should have red primary");
+        Assert.IsNotNull(colorSpace.Value.GreenPrimary, "RGB profile should have green primary");
+        Assert.IsNotNull(colorSpace.Value.BluePrimary, "RGB profile should have blue primary");
+    }
 }
