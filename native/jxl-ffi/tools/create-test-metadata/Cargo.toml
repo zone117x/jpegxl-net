@@ -5,6 +5,7 @@ edition = "2021"
 description = "Tool for creating JXL test files with metadata boxes"
 
 [dependencies]
+brotli = "8.0"
 
 [[bin]]
 name = "create-test-metadata"

@@ -74,6 +74,12 @@ enum DecoderState {
     Processing,
 }
 
+/// Cached metadata box with compression flag.
+struct CachedMetadataBox {
+    data: Vec<u8>,
+    is_brotli_compressed: bool,
+}
+
 /// Internal decoder structure.
 struct DecoderInner {
     /// Current decoder state.
@@ -91,11 +97,11 @@ struct DecoderInner {
     /// Decoder options (stored for reset).
     options: JxlDecodeOptions,
     /// Cached EXIF boxes (avoids re-cloning on repeated access).
-    exif_boxes_cache: Option<Vec<Vec<u8>>>,
+    exif_boxes_cache: Option<Vec<CachedMetadataBox>>,
     /// Cached XML boxes (avoids re-cloning on repeated access).
-    xml_boxes_cache: Option<Vec<Vec<u8>>>,
+    xml_boxes_cache: Option<Vec<CachedMetadataBox>>,
     /// Cached JUMBF boxes (avoids re-cloning on repeated access).
-    jumbf_boxes_cache: Option<Vec<Vec<u8>>>,
+    jumbf_boxes_cache: Option<Vec<CachedMetadataBox>>,
 }
 
 impl DecoderInner {
@@ -1522,6 +1528,7 @@ pub unsafe extern "C" fn jxl_decoder_get_jumbf_box_count(
 /// * `index` - Zero-based box index.
 /// * `data_out` - Output pointer for EXIF data bytes.
 /// * `length_out` - Output for EXIF data length.
+/// * `is_brotli_compressed` - Output for brotli compression flag (true if brob box).
 ///
 /// # Returns
 /// - `Success` if EXIF data is available.
@@ -1538,6 +1545,7 @@ pub unsafe extern "C" fn jxl_decoder_get_exif_box_at(
     index: u32,
     data_out: *mut *const u8,
     length_out: *mut usize,
+    is_brotli_compressed: *mut bool,
 ) -> JxlStatus {
     let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
 
@@ -1561,8 +1569,16 @@ pub unsafe extern "C" fn jxl_decoder_get_exif_box_at(
             return JxlStatus::Error;
         }
 
-        // Cache all boxes
-        inner.exif_boxes_cache = Some(boxes.iter().map(|b| b.data.clone()).collect());
+        // Cache all boxes with compression flag
+        inner.exif_boxes_cache = Some(
+            boxes
+                .iter()
+                .map(|b| CachedMetadataBox {
+                    data: b.data.clone(),
+                    is_brotli_compressed: b.is_brotli_compressed,
+                })
+                .collect(),
+        );
     }
 
     let cached = inner.exif_boxes_cache.as_ref().unwrap();
@@ -1575,13 +1591,16 @@ pub unsafe extern "C" fn jxl_decoder_get_exif_box_at(
 
     clear_last_error();
 
-    let box_data = &cached[idx];
+    let cached_box = &cached[idx];
 
     if let Some(out) = unsafe { data_out.as_mut() } {
-        *out = box_data.as_ptr();
+        *out = cached_box.data.as_ptr();
     }
     if let Some(out) = unsafe { length_out.as_mut() } {
-        *out = box_data.len();
+        *out = cached_box.data.len();
+    }
+    if let Some(out) = unsafe { is_brotli_compressed.as_mut() } {
+        *out = cached_box.is_brotli_compressed;
     }
 
     JxlStatus::Success
@@ -1597,6 +1616,7 @@ pub unsafe extern "C" fn jxl_decoder_get_exif_box_at(
 /// * `index` - Zero-based box index.
 /// * `data_out` - Output pointer for XML data bytes.
 /// * `length_out` - Output for XML data length.
+/// * `is_brotli_compressed` - Output for brotli compression flag (true if brob box).
 ///
 /// # Returns
 /// - `Success` if XML data is available.
@@ -1613,6 +1633,7 @@ pub unsafe extern "C" fn jxl_decoder_get_xml_box_at(
     index: u32,
     data_out: *mut *const u8,
     length_out: *mut usize,
+    is_brotli_compressed: *mut bool,
 ) -> JxlStatus {
     let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
 
@@ -1636,8 +1657,16 @@ pub unsafe extern "C" fn jxl_decoder_get_xml_box_at(
             return JxlStatus::Error;
         }
 
-        // Cache all boxes
-        inner.xml_boxes_cache = Some(boxes.iter().map(|b| b.data.clone()).collect());
+        // Cache all boxes with compression flag
+        inner.xml_boxes_cache = Some(
+            boxes
+                .iter()
+                .map(|b| CachedMetadataBox {
+                    data: b.data.clone(),
+                    is_brotli_compressed: b.is_brotli_compressed,
+                })
+                .collect(),
+        );
     }
 
     let cached = inner.xml_boxes_cache.as_ref().unwrap();
@@ -1650,13 +1679,16 @@ pub unsafe extern "C" fn jxl_decoder_get_xml_box_at(
 
     clear_last_error();
 
-    let box_data = &cached[idx];
+    let cached_box = &cached[idx];
 
     if let Some(out) = unsafe { data_out.as_mut() } {
-        *out = box_data.as_ptr();
+        *out = cached_box.data.as_ptr();
     }
     if let Some(out) = unsafe { length_out.as_mut() } {
-        *out = box_data.len();
+        *out = cached_box.data.len();
+    }
+    if let Some(out) = unsafe { is_brotli_compressed.as_mut() } {
+        *out = cached_box.is_brotli_compressed;
     }
 
     JxlStatus::Success
@@ -1672,6 +1704,7 @@ pub unsafe extern "C" fn jxl_decoder_get_xml_box_at(
 /// * `index` - Zero-based box index.
 /// * `data_out` - Output pointer for JUMBF data bytes.
 /// * `length_out` - Output for JUMBF data length.
+/// * `is_brotli_compressed` - Output for brotli compression flag (true if brob box).
 ///
 /// # Returns
 /// - `Success` if JUMBF data is available.
@@ -1688,6 +1721,7 @@ pub unsafe extern "C" fn jxl_decoder_get_jumbf_box_at(
     index: u32,
     data_out: *mut *const u8,
     length_out: *mut usize,
+    is_brotli_compressed: *mut bool,
 ) -> JxlStatus {
     let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
 
@@ -1711,8 +1745,16 @@ pub unsafe extern "C" fn jxl_decoder_get_jumbf_box_at(
             return JxlStatus::Error;
         }
 
-        // Cache all boxes
-        inner.jumbf_boxes_cache = Some(boxes.iter().map(|b| b.data.clone()).collect());
+        // Cache all boxes with compression flag
+        inner.jumbf_boxes_cache = Some(
+            boxes
+                .iter()
+                .map(|b| CachedMetadataBox {
+                    data: b.data.clone(),
+                    is_brotli_compressed: b.is_brotli_compressed,
+                })
+                .collect(),
+        );
     }
 
     let cached = inner.jumbf_boxes_cache.as_ref().unwrap();
@@ -1725,16 +1767,107 @@ pub unsafe extern "C" fn jxl_decoder_get_jumbf_box_at(
 
     clear_last_error();
 
-    let box_data = &cached[idx];
+    let cached_box = &cached[idx];
 
     if let Some(out) = unsafe { data_out.as_mut() } {
-        *out = box_data.as_ptr();
+        *out = cached_box.data.as_ptr();
     }
     if let Some(out) = unsafe { length_out.as_mut() } {
-        *out = box_data.len();
+        *out = cached_box.data.len();
+    }
+    if let Some(out) = unsafe { is_brotli_compressed.as_mut() } {
+        *out = cached_box.is_brotli_compressed;
     }
 
     JxlStatus::Success
+}
+
+// ============================================================================
+// Metadata Box Compression Status (deprecated - use get_*_box_at with is_brotli_compressed)
+// ============================================================================
+
+/// Returns whether the EXIF box at the given index is brotli-compressed.
+///
+/// Only valid after `jxl_decoder_get_exif_box_at` has been called to populate the cache.
+///
+/// # Arguments
+/// * `decoder` - The decoder instance.
+/// * `index` - Zero-based box index.
+///
+/// # Returns
+/// - `true` if the box was brotli-compressed in the file (brob box).
+/// - `false` if uncompressed or if cache not populated.
+///
+/// # Safety
+/// - `decoder` must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_is_exif_box_compressed(
+    decoder: *const NativeDecoderHandle,
+    index: u32,
+) -> bool {
+    let inner = get_decoder_ref_silent!(decoder, false);
+    inner
+        .exif_boxes_cache
+        .as_ref()
+        .and_then(|boxes| boxes.get(index as usize))
+        .map(|b| b.is_brotli_compressed)
+        .unwrap_or(false)
+}
+
+/// Returns whether the XML box at the given index is brotli-compressed.
+///
+/// Only valid after `jxl_decoder_get_xml_box_at` has been called to populate the cache.
+///
+/// # Arguments
+/// * `decoder` - The decoder instance.
+/// * `index` - Zero-based box index.
+///
+/// # Returns
+/// - `true` if the box was brotli-compressed in the file (brob box).
+/// - `false` if uncompressed or if cache not populated.
+///
+/// # Safety
+/// - `decoder` must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_is_xml_box_compressed(
+    decoder: *const NativeDecoderHandle,
+    index: u32,
+) -> bool {
+    let inner = get_decoder_ref_silent!(decoder, false);
+    inner
+        .xml_boxes_cache
+        .as_ref()
+        .and_then(|boxes| boxes.get(index as usize))
+        .map(|b| b.is_brotli_compressed)
+        .unwrap_or(false)
+}
+
+/// Returns whether the JUMBF box at the given index is brotli-compressed.
+///
+/// Only valid after `jxl_decoder_get_jumbf_box_at` has been called to populate the cache.
+///
+/// # Arguments
+/// * `decoder` - The decoder instance.
+/// * `index` - Zero-based box index.
+///
+/// # Returns
+/// - `true` if the box was brotli-compressed in the file (brob box).
+/// - `false` if uncompressed or if cache not populated.
+///
+/// # Safety
+/// - `decoder` must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_is_jumbf_box_compressed(
+    decoder: *const NativeDecoderHandle,
+    index: u32,
+) -> bool {
+    let inner = get_decoder_ref_silent!(decoder, false);
+    inner
+        .jumbf_boxes_cache
+        .as_ref()
+        .and_then(|boxes| boxes.get(index as usize))
+        .map(|b| b.is_brotli_compressed)
+        .unwrap_or(false)
 }
 
 // ============================================================================

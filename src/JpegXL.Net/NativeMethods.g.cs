@@ -546,6 +546,7 @@ namespace JpegXL.Net
         ///  * `index` - Zero-based box index.
         ///  * `data_out` - Output pointer for EXIF data bytes.
         ///  * `length_out` - Output for EXIF data length.
+        ///  * `is_brotli_compressed` - Output for brotli compression flag (true if brob box).
         ///
         ///  # Returns
         ///  - `Success` if EXIF data is available.
@@ -558,7 +559,7 @@ namespace JpegXL.Net
         ///  - Output pointers must be writable.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_exif_box_at", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        public static extern JxlStatus jxl_decoder_get_exif_box_at(NativeDecoderHandle* decoder, uint index, byte** data_out, System.UIntPtr* length_out);
+        public static extern JxlStatus jxl_decoder_get_exif_box_at(NativeDecoderHandle* decoder, uint index, byte** data_out, System.UIntPtr* length_out, bool* is_brotli_compressed);
 
         /// <summary>
         ///  Gets XML/XMP data from a specific box by index.
@@ -571,6 +572,7 @@ namespace JpegXL.Net
         ///  * `index` - Zero-based box index.
         ///  * `data_out` - Output pointer for XML data bytes.
         ///  * `length_out` - Output for XML data length.
+        ///  * `is_brotli_compressed` - Output for brotli compression flag (true if brob box).
         ///
         ///  # Returns
         ///  - `Success` if XML data is available.
@@ -583,7 +585,7 @@ namespace JpegXL.Net
         ///  - Output pointers must be writable.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_xml_box_at", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        public static extern JxlStatus jxl_decoder_get_xml_box_at(NativeDecoderHandle* decoder, uint index, byte** data_out, System.UIntPtr* length_out);
+        public static extern JxlStatus jxl_decoder_get_xml_box_at(NativeDecoderHandle* decoder, uint index, byte** data_out, System.UIntPtr* length_out, bool* is_brotli_compressed);
 
         /// <summary>
         ///  Gets JUMBF data from a specific box by index.
@@ -596,6 +598,7 @@ namespace JpegXL.Net
         ///  * `index` - Zero-based box index.
         ///  * `data_out` - Output pointer for JUMBF data bytes.
         ///  * `length_out` - Output for JUMBF data length.
+        ///  * `is_brotli_compressed` - Output for brotli compression flag (true if brob box).
         ///
         ///  # Returns
         ///  - `Success` if JUMBF data is available.
@@ -608,7 +611,67 @@ namespace JpegXL.Net
         ///  - Output pointers must be writable.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "jxl_decoder_get_jumbf_box_at", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        public static extern JxlStatus jxl_decoder_get_jumbf_box_at(NativeDecoderHandle* decoder, uint index, byte** data_out, System.UIntPtr* length_out);
+        public static extern JxlStatus jxl_decoder_get_jumbf_box_at(NativeDecoderHandle* decoder, uint index, byte** data_out, System.UIntPtr* length_out, bool* is_brotli_compressed);
+
+        /// <summary>
+        ///  Returns whether the EXIF box at the given index is brotli-compressed.
+        ///
+        ///  Only valid after `jxl_decoder_get_exif_box_at` has been called to populate the cache.
+        ///
+        ///  # Arguments
+        ///  * `decoder` - The decoder instance.
+        ///  * `index` - Zero-based box index.
+        ///
+        ///  # Returns
+        ///  - `true` if the box was brotli-compressed in the file (brob box).
+        ///  - `false` if uncompressed or if cache not populated.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_is_exif_box_compressed", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.U1)]
+        public static extern bool jxl_decoder_is_exif_box_compressed(NativeDecoderHandle* decoder, uint index);
+
+        /// <summary>
+        ///  Returns whether the XML box at the given index is brotli-compressed.
+        ///
+        ///  Only valid after `jxl_decoder_get_xml_box_at` has been called to populate the cache.
+        ///
+        ///  # Arguments
+        ///  * `decoder` - The decoder instance.
+        ///  * `index` - Zero-based box index.
+        ///
+        ///  # Returns
+        ///  - `true` if the box was brotli-compressed in the file (brob box).
+        ///  - `false` if uncompressed or if cache not populated.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_is_xml_box_compressed", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.U1)]
+        public static extern bool jxl_decoder_is_xml_box_compressed(NativeDecoderHandle* decoder, uint index);
+
+        /// <summary>
+        ///  Returns whether the JUMBF box at the given index is brotli-compressed.
+        ///
+        ///  Only valid after `jxl_decoder_get_jumbf_box_at` has been called to populate the cache.
+        ///
+        ///  # Arguments
+        ///  * `decoder` - The decoder instance.
+        ///  * `index` - Zero-based box index.
+        ///
+        ///  # Returns
+        ///  - `true` if the box was brotli-compressed in the file (brob box).
+        ///  - `false` if uncompressed or if cache not populated.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_is_jumbf_box_compressed", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        [return: MarshalAs(UnmanagedType.U1)]
+        public static extern bool jxl_decoder_is_jumbf_box_compressed(NativeDecoderHandle* decoder, uint index);
 
         /// <summary>
         ///  Checks if data appears to be a JPEG XL file.

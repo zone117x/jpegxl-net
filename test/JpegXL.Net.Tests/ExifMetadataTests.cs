@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using JpegXL.Net;
 
 namespace JpegXL.Net.Tests;
@@ -180,8 +181,8 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert
-        Assert.IsFalse(decoder.ExifBoxCount > 0);
-        Assert.AreEqual(0, (decoder.GetExifBox(0)?.Length ?? 0));
+        Assert.IsFalse(decoder.Metadata.ExifBoxCount > 0);
+        Assert.AreEqual(0, (decoder.Metadata.GetExifBox(0)?.Data.Length ?? 0));
     }
 
     [TestMethod]
@@ -194,7 +195,7 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act
-        var exif = decoder.GetExifBox(0);
+        var exif = decoder.Metadata.GetExifBox(0);
 
         // Assert
         Assert.IsNull(exif);
@@ -210,8 +211,8 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert
-        Assert.IsFalse(decoder.XmlBoxCount > 0);
-        Assert.AreEqual(0, (decoder.GetXmlBox(0)?.Length ?? 0));
+        Assert.IsFalse(decoder.Metadata.XmlBoxCount > 0);
+        Assert.AreEqual(0, (decoder.Metadata.GetXmlBox(0)?.Data.Length ?? 0));
     }
 
     [TestMethod]
@@ -224,7 +225,7 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act
-        var xml = decoder.GetXmlBox(0);
+        var xml = decoder.Metadata.GetXmlBox(0);
 
         // Assert
         Assert.IsNull(xml);
@@ -240,7 +241,8 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act
-        var xml = (decoder.GetXmlBox(0) is { } xmlBytes ? System.Text.Encoding.UTF8.GetString(xmlBytes) : null);
+        var xmlBox = decoder.Metadata.GetXmlBox(0);
+        var xml = xmlBox.HasValue ? System.Text.Encoding.UTF8.GetString(xmlBox.Value.Data) : null;
 
         // Assert
         Assert.IsNull(xml);
@@ -260,8 +262,8 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert
-        Assert.IsTrue(decoder.ExifBoxCount > 0);
-        Assert.IsTrue((decoder.GetExifBox(0)?.Length ?? 0) > 0);
+        Assert.IsTrue(decoder.Metadata.ExifBoxCount > 0);
+        Assert.IsTrue((decoder.Metadata.GetExifBox(0)?.Data.Length ?? 0) > 0);
     }
 
     [TestMethod]
@@ -274,11 +276,11 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act
-        var exif = decoder.GetExifBox(0);
+        var exif = decoder.Metadata.GetExifBox(0);
 
         // Assert
         Assert.IsNotNull(exif);
-        var description = GetExifImageDescription(exif);
+        var description = GetExifImageDescription(exif.Value.Data);
         Assert.AreEqual("Test EXIF content", description);
     }
 
@@ -292,8 +294,8 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert
-        Assert.IsTrue(decoder.XmlBoxCount > 0);
-        Assert.IsTrue((decoder.GetXmlBox(0)?.Length ?? 0) > 0);
+        Assert.IsTrue(decoder.Metadata.XmlBoxCount > 0);
+        Assert.IsTrue((decoder.Metadata.GetXmlBox(0)?.Data.Length ?? 0) > 0);
     }
 
     [TestMethod]
@@ -306,11 +308,11 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act
-        var xml = decoder.GetXmlBox(0);
+        var xml = decoder.Metadata.GetXmlBox(0);
 
         // Assert
         Assert.IsNotNull(xml);
-        var description = GetXmpDescription(xml);
+        var description = GetXmpDescription(xml.Value.Data);
         Assert.AreEqual("Test XMP content", description);
     }
 
@@ -324,11 +326,11 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act
-        var xml = decoder.GetXmlBox(0);
+        var xml = decoder.Metadata.GetXmlBox(0);
 
         // Assert
         Assert.IsNotNull(xml);
-        var xmlString = System.Text.Encoding.UTF8.GetString(xml);
+        var xmlString = System.Text.Encoding.UTF8.GetString(xml.Value.Data);
         Assert.IsTrue(xmlString.Contains("xmpmeta"));
         Assert.IsTrue(xmlString.Contains("Test XMP content"));
     }
@@ -343,8 +345,8 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert
-        Assert.IsTrue(decoder.JumbfBoxCount > 0);
-        Assert.IsTrue((decoder.GetJumbfBox(0)?.Length ?? 0) > 0);
+        Assert.IsTrue(decoder.Metadata.JumbfBoxCount > 0);
+        Assert.IsTrue((decoder.Metadata.GetJumbfBox(0)?.Data.Length ?? 0) > 0);
     }
 
     [TestMethod]
@@ -357,11 +359,11 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act
-        var jumbf = decoder.GetJumbfBox(0);
+        var jumbf = decoder.Metadata.GetJumbfBox(0);
 
         // Assert
         Assert.IsNotNull(jumbf);
-        var testValue = GetJumbfTestValue(jumbf);
+        var testValue = GetJumbfTestValue(jumbf.Value.Data);
         Assert.AreEqual("Test JUMBF content", testValue);
     }
 
@@ -375,8 +377,8 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert
-        Assert.IsFalse(decoder.JumbfBoxCount > 0);
-        Assert.AreEqual(0, (decoder.GetJumbfBox(0)?.Length ?? 0));
+        Assert.IsFalse(decoder.Metadata.JumbfBoxCount > 0);
+        Assert.AreEqual(0, (decoder.Metadata.GetJumbfBox(0)?.Data.Length ?? 0));
     }
 
     [TestMethod]
@@ -389,7 +391,7 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act
-        var jumbf = decoder.GetJumbfBox(0);
+        var jumbf = decoder.Metadata.GetJumbfBox(0);
 
         // Assert
         Assert.IsNull(jumbf);
@@ -409,13 +411,13 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert - verify all metadata types present with expected content
-        Assert.IsTrue(decoder.ExifBoxCount > 0, "Should have EXIF");
-        Assert.IsTrue(decoder.XmlBoxCount > 0, "Should have XML");
-        Assert.IsTrue(decoder.JumbfBoxCount > 0, "Should have JUMBF");
+        Assert.IsTrue(decoder.Metadata.ExifBoxCount > 0, "Should have EXIF");
+        Assert.IsTrue(decoder.Metadata.XmlBoxCount > 0, "Should have XML");
+        Assert.IsTrue(decoder.Metadata.JumbfBoxCount > 0, "Should have JUMBF");
 
-        Assert.AreEqual("EXIF data", GetExifImageDescription(decoder.GetExifBox(0)!));
-        Assert.AreEqual("XMP data", GetXmpDescription(decoder.GetXmlBox(0)!));
-        Assert.AreEqual("JUMBF data", GetJumbfTestValue(decoder.GetJumbfBox(0)!));
+        Assert.AreEqual("EXIF data", GetExifImageDescription(decoder.Metadata.GetExifBox(0)!.Value.Data));
+        Assert.AreEqual("XMP data", GetXmpDescription(decoder.Metadata.GetXmlBox(0)!.Value.Data));
+        Assert.AreEqual("JUMBF data", GetJumbfTestValue(decoder.Metadata.GetJumbfBox(0)!.Value.Data));
     }
 
     // =========================================
@@ -435,7 +437,7 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert - EXIF should not be captured
-        Assert.IsFalse(decoder.ExifBoxCount > 0);
+        Assert.IsFalse(decoder.Metadata.ExifBoxCount > 0);
     }
 
     [TestMethod]
@@ -451,7 +453,7 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert - XML should not be captured
-        Assert.IsFalse(decoder.XmlBoxCount > 0);
+        Assert.IsFalse(decoder.Metadata.XmlBoxCount > 0);
     }
 
     [TestMethod]
@@ -467,7 +469,7 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert - JUMBF should not be captured
-        Assert.IsFalse(decoder.JumbfBoxCount > 0);
+        Assert.IsFalse(decoder.Metadata.JumbfBoxCount > 0);
     }
 
     [TestMethod]
@@ -483,9 +485,9 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert - Nothing should be captured
-        Assert.IsFalse(decoder.ExifBoxCount > 0, "EXIF should not be captured");
-        Assert.IsFalse(decoder.XmlBoxCount > 0, "XML should not be captured");
-        Assert.IsFalse(decoder.JumbfBoxCount > 0, "JUMBF should not be captured");
+        Assert.IsFalse(decoder.Metadata.ExifBoxCount > 0, "EXIF should not be captured");
+        Assert.IsFalse(decoder.Metadata.XmlBoxCount > 0, "XML should not be captured");
+        Assert.IsFalse(decoder.Metadata.JumbfBoxCount > 0, "JUMBF should not be captured");
     }
 
     [TestMethod]
@@ -501,9 +503,9 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert
-        Assert.IsTrue(decoder.ExifBoxCount > 0, "EXIF should be captured");
-        Assert.IsFalse(decoder.XmlBoxCount > 0, "XML should not be captured");
-        Assert.IsFalse(decoder.JumbfBoxCount > 0, "JUMBF should not be captured");
+        Assert.IsTrue(decoder.Metadata.ExifBoxCount > 0, "EXIF should be captured");
+        Assert.IsFalse(decoder.Metadata.XmlBoxCount > 0, "XML should not be captured");
+        Assert.IsFalse(decoder.Metadata.JumbfBoxCount > 0, "JUMBF should not be captured");
     }
 
     // =========================================
@@ -523,7 +525,7 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert - EXIF should not be captured because it exceeds limit
-        Assert.IsFalse(decoder.ExifBoxCount > 0);
+        Assert.IsFalse(decoder.Metadata.ExifBoxCount > 0);
     }
 
     [TestMethod]
@@ -539,7 +541,7 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert - EXIF should be captured
-        Assert.IsTrue(decoder.ExifBoxCount > 0);
+        Assert.IsTrue(decoder.Metadata.ExifBoxCount > 0);
     }
 
     [TestMethod]
@@ -555,7 +557,7 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert - XML should not be captured because it exceeds limit
-        Assert.IsFalse(decoder.XmlBoxCount > 0);
+        Assert.IsFalse(decoder.Metadata.XmlBoxCount > 0);
     }
 
     // =========================================
@@ -572,16 +574,16 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert - verify multiple boxes are captured
-        Assert.IsTrue(decoder.ExifBoxCount > 1,
-            $"Expected multiple EXIF boxes, got {decoder.ExifBoxCount}");
+        Assert.IsTrue(decoder.Metadata.ExifBoxCount > 1,
+            $"Expected multiple EXIF boxes, got {decoder.Metadata.ExifBoxCount}");
 
         // Verify each box has distinct, expected content
-        var box0 = decoder.GetExifBox(0);
-        var box1 = decoder.GetExifBox(1);
+        var box0 = decoder.Metadata.GetExifBox(0);
+        var box1 = decoder.Metadata.GetExifBox(1);
         Assert.IsNotNull(box0);
         Assert.IsNotNull(box1);
-        Assert.AreEqual("First EXIF", GetExifImageDescription(box0));
-        Assert.AreEqual("Second EXIF", GetExifImageDescription(box1));
+        Assert.AreEqual("First EXIF", GetExifImageDescription(box0.Value.Data));
+        Assert.AreEqual("Second EXIF", GetExifImageDescription(box1.Value.Data));
     }
 
     [TestMethod]
@@ -594,16 +596,16 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert - verify multiple boxes are captured
-        Assert.IsTrue(decoder.XmlBoxCount > 1,
-            $"Expected multiple XML boxes, got {decoder.XmlBoxCount}");
+        Assert.IsTrue(decoder.Metadata.XmlBoxCount > 1,
+            $"Expected multiple XML boxes, got {decoder.Metadata.XmlBoxCount}");
 
         // Verify each box has distinct, expected content
-        var box0 = decoder.GetXmlBox(0);
-        var box1 = decoder.GetXmlBox(1);
+        var box0 = decoder.Metadata.GetXmlBox(0);
+        var box1 = decoder.Metadata.GetXmlBox(1);
         Assert.IsNotNull(box0);
         Assert.IsNotNull(box1);
-        Assert.AreEqual("First XMP", GetXmpDescription(box0));
-        Assert.AreEqual("Second XMP", GetXmpDescription(box1));
+        Assert.AreEqual("First XMP", GetXmpDescription(box0.Value.Data));
+        Assert.AreEqual("Second XMP", GetXmpDescription(box1.Value.Data));
     }
 
     [TestMethod]
@@ -616,16 +618,16 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert - verify multiple boxes are captured
-        Assert.IsTrue(decoder.JumbfBoxCount > 1,
-            $"Expected multiple JUMBF boxes, got {decoder.JumbfBoxCount}");
+        Assert.IsTrue(decoder.Metadata.JumbfBoxCount > 1,
+            $"Expected multiple JUMBF boxes, got {decoder.Metadata.JumbfBoxCount}");
 
         // Verify each box has distinct, expected content
-        var box0 = decoder.GetJumbfBox(0);
-        var box1 = decoder.GetJumbfBox(1);
+        var box0 = decoder.Metadata.GetJumbfBox(0);
+        var box1 = decoder.Metadata.GetJumbfBox(1);
         Assert.IsNotNull(box0);
         Assert.IsNotNull(box1);
-        Assert.AreEqual("First JUMBF", GetJumbfTestValue(box0));
-        Assert.AreEqual("Second JUMBF", GetJumbfTestValue(box1));
+        Assert.AreEqual("First JUMBF", GetJumbfTestValue(box0.Value.Data));
+        Assert.AreEqual("Second JUMBF", GetJumbfTestValue(box1.Value.Data));
     }
 
     [TestMethod]
@@ -638,7 +640,7 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act - try to access box beyond count
-        var box = decoder.GetExifBox(100);
+        var box = decoder.Metadata.GetExifBox(100);
 
         // Assert
         Assert.IsNull(box);
@@ -654,7 +656,7 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert
-        Assert.AreEqual(1, decoder.ExifBoxCount);
+        Assert.AreEqual(1, decoder.Metadata.ExifBoxCount);
     }
 
     [TestMethod]
@@ -667,7 +669,7 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act & Assert
-        Assert.AreEqual(0, decoder.ExifBoxCount);
+        Assert.AreEqual(0, decoder.Metadata.ExifBoxCount);
     }
 
     // =========================================
@@ -684,13 +686,13 @@ public class ExifMetadataTests
         decoder.ReadInfo();
 
         // Act
-        var exif1 = decoder.GetExifBox(0);
-        var exif2 = decoder.GetExifBox(0);
+        var exif1 = decoder.Metadata.GetExifBox(0);
+        var exif2 = decoder.Metadata.GetExifBox(0);
 
         // Assert - should return identical data
         Assert.IsNotNull(exif1);
         Assert.IsNotNull(exif2);
-        CollectionAssert.AreEqual(exif1, exif2);
+        CollectionAssert.AreEqual(exif1.Value.Data, exif2.Value.Data);
     }
 
     // =========================================
@@ -805,6 +807,195 @@ public class ExifMetadataTests
     }
 
     // =========================================
+    // Brotli Compression Tests (brob boxes)
+    // =========================================
+
+    [TestMethod]
+    public void GetExifBox_BrotliCompressed_ReturnsCompressedData()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/single_exif_brob.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+
+        // Act
+        var exif = decoder.Metadata.GetExifBox(0);
+
+        // Assert
+        Assert.IsNotNull(exif);
+        Assert.IsTrue(exif.Value.IsBrotliCompressed, "EXIF box should be marked as brotli-compressed");
+        Assert.IsTrue(exif.Value.Data.Length > 0, "Should have data");
+
+        // Decompress and validate content
+        var decompressed = DecompressBrotli(exif.Value);
+        Assert.AreEqual("Test EXIF content", GetExifImageDescription(decompressed));
+    }
+
+    [TestMethod]
+    public void GetXmlBox_BrotliCompressed_ReturnsCompressedData()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/single_xmp_brob.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+
+        // Act
+        var xml = decoder.Metadata.GetXmlBox(0);
+
+        // Assert
+        Assert.IsNotNull(xml);
+        Assert.IsTrue(xml.Value.IsBrotliCompressed, "XML box should be marked as brotli-compressed");
+        Assert.IsTrue(xml.Value.Data.Length > 0, "Should have data");
+
+        // Decompress and validate content
+        var decompressed = DecompressBrotli(xml.Value);
+        Assert.AreEqual("Test XMP content", GetXmpDescription(decompressed));
+    }
+
+    [TestMethod]
+    public void GetJumbfBox_BrotliCompressed_ReturnsCompressedData()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/single_jumbf_brob.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+
+        // Act
+        var jumbf = decoder.Metadata.GetJumbfBox(0);
+
+        // Assert
+        Assert.IsNotNull(jumbf);
+        Assert.IsTrue(jumbf.Value.IsBrotliCompressed, "JUMBF box should be marked as brotli-compressed");
+        Assert.IsTrue(jumbf.Value.Data.Length > 0, "Should have data");
+
+        // Decompress and validate content
+        var decompressed = DecompressBrotli(jumbf.Value);
+        Assert.AreEqual("Test JUMBF content", GetJumbfTestValue(decompressed));
+    }
+
+    [TestMethod]
+    public void GetExifBox_Uncompressed_ReturnsNotCompressed()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/single_exif.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+
+        // Act
+        var exif = decoder.Metadata.GetExifBox(0);
+
+        // Assert
+        Assert.IsNotNull(exif);
+        Assert.IsFalse(exif.Value.IsBrotliCompressed, "Uncompressed EXIF box should not be marked as compressed");
+    }
+
+    [TestMethod]
+    public void MixedCompression_TracksCorrectly()
+    {
+        // Arrange - file with uncompressed first, compressed second
+        var data = File.ReadAllBytes("TestData/mixed_compression.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+
+        // Act
+        var box0 = decoder.Metadata.GetExifBox(0);
+        var box1 = decoder.Metadata.GetExifBox(1);
+
+        // Assert
+        Assert.IsNotNull(box0);
+        Assert.IsNotNull(box1);
+        Assert.IsFalse(box0.Value.IsBrotliCompressed, "First box should be uncompressed");
+        Assert.IsTrue(box1.Value.IsBrotliCompressed, "Second box should be brotli-compressed");
+
+        // Validate content - uncompressed box directly, compressed box via decompression
+        Assert.AreEqual("Uncompressed EXIF", GetExifImageDescription(box0.Value.Data));
+        Assert.AreEqual("Compressed EXIF", GetExifImageDescription(DecompressBrotli(box1.Value)));
+    }
+
+    [TestMethod]
+    public void AllMetadataBrob_AllBoxesCompressed()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/all_metadata_brob.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+
+        // Act
+        var exif = decoder.Metadata.GetExifBox(0);
+        var xml = decoder.Metadata.GetXmlBox(0);
+        var jumbf = decoder.Metadata.GetJumbfBox(0);
+
+        // Assert
+        Assert.IsNotNull(exif);
+        Assert.IsNotNull(xml);
+        Assert.IsNotNull(jumbf);
+        Assert.IsTrue(exif.Value.IsBrotliCompressed, "EXIF should be compressed");
+        Assert.IsTrue(xml.Value.IsBrotliCompressed, "XML should be compressed");
+        Assert.IsTrue(jumbf.Value.IsBrotliCompressed, "JUMBF should be compressed");
+
+        // Decompress and validate content
+        Assert.AreEqual("EXIF data", GetExifImageDescription(DecompressBrotli(exif.Value)));
+        Assert.AreEqual("XMP data", GetXmpDescription(DecompressBrotli(xml.Value)));
+        Assert.AreEqual("JUMBF data", GetJumbfTestValue(DecompressBrotli(jumbf.Value)));
+    }
+
+    [TestMethod]
+    public void MultipleBrotliExifBoxes_AllMarkedCompressed()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/multi_exif_brob.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+
+        // Act
+        var count = decoder.Metadata.ExifBoxCount;
+        var box0 = decoder.Metadata.GetExifBox(0);
+        var box1 = decoder.Metadata.GetExifBox(1);
+
+        // Assert
+        Assert.AreEqual(2, count);
+        Assert.IsNotNull(box0);
+        Assert.IsNotNull(box1);
+        Assert.IsTrue(box0.Value.IsBrotliCompressed, "First box should be compressed");
+        Assert.IsTrue(box1.Value.IsBrotliCompressed, "Second box should be compressed");
+
+        // Decompress and validate content
+        Assert.AreEqual("First EXIF", GetExifImageDescription(DecompressBrotli(box0.Value)));
+        Assert.AreEqual("Second EXIF", GetExifImageDescription(DecompressBrotli(box1.Value)));
+    }
+
+    [TestMethod]
+    public void GetExifBox_BrotliCompressed_DataCanBeDecompressed()
+    {
+        // Arrange
+        var data = File.ReadAllBytes("TestData/single_exif_brob.jxl");
+        using var decoder = new JxlDecoder();
+        decoder.SetInput(data);
+        decoder.ReadInfo();
+
+        // Act
+        var exif = decoder.Metadata.GetExifBox(0);
+
+        // Assert - the data should be compressed, and should decompress to valid EXIF
+        Assert.IsNotNull(exif);
+        Assert.IsTrue(exif.Value.IsBrotliCompressed, "Box should be marked as compressed");
+        Assert.IsTrue(exif.Value.Data.Length > 0, "Compressed data should not be empty");
+
+        // Decompress and validate content
+        var decompressed = DecompressBrotli(exif.Value);
+        Assert.IsTrue(decompressed.Length > exif.Value.Data.Length,
+            "Decompressed data should be larger than compressed data for this test file");
+        Assert.AreEqual("Test EXIF content", GetExifImageDescription(decompressed));
+    }
+
+    // =========================================
     // Helper methods
     // =========================================
 
@@ -843,6 +1034,15 @@ public class ExifMetadataTests
         var match = System.Text.RegularExpressions.Regex.Match(
             json, @"""test"":\s*""([^""]+)""");
         return match.Success ? match.Groups[1].Value : null;
+    }
+
+    private static byte[] DecompressBrotli(JxlMetadataBox box)
+    {
+        using var input = new MemoryStream(box.Data);
+        using var brotli = new BrotliStream(input, CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        brotli.CopyTo(output);
+        return output.ToArray();
     }
 
     private static byte[] BuildMinimalExifData(bool bigEndian = false)

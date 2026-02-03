@@ -4,17 +4,16 @@
 
 use std::env;
 use std::fs;
-use std::io::{self, Read, Write};
-use std::path::Path;
+use std::io;
 
 /// JXL container box types
-const BOX_JXL_SIGNATURE: &[u8; 4] = b"\x00\x00\x00\x0C";  // First 4 bytes
 const BOX_TYPE_FTYP: &[u8; 4] = b"ftyp";
 const BOX_TYPE_JXLC: &[u8; 4] = b"jxlc";
 const BOX_TYPE_JXLP: &[u8; 4] = b"jxlp";
 const BOX_TYPE_EXIF: &[u8; 4] = b"Exif";
 const BOX_TYPE_XML: &[u8; 4] = b"xml ";
 const BOX_TYPE_JUMB: &[u8; 4] = b"jumb";
+const BOX_TYPE_BROB: &[u8; 4] = b"brob";
 
 /// JXL signature bytes
 const JXL_SIGNATURE: &[u8; 12] = b"\x00\x00\x00\x0CJXL \x0D\x0A\x87\x0A";
@@ -247,6 +246,25 @@ fn create_minimal_jumbf(content: &str) -> Vec<u8> {
     data
 }
 
+/// Compress data using brotli
+fn brotli_compress(data: &[u8]) -> Vec<u8> {
+    let mut output = Vec::new();
+    let params = brotli::enc::BrotliEncoderParams::default();
+    brotli::BrotliCompress(&mut std::io::Cursor::new(data), &mut output, &params)
+        .expect("Brotli compression failed");
+    output
+}
+
+/// Create a brob (Brotli-compressed) box wrapping another box type.
+/// The brob box format is: [4-byte inner type][brotli-compressed data]
+fn create_brob_box(inner_type: &[u8; 4], uncompressed_data: &[u8]) -> Box {
+    let compressed = brotli_compress(uncompressed_data);
+    let mut content = Vec::with_capacity(4 + compressed.len());
+    content.extend_from_slice(inner_type);
+    content.extend_from_slice(&compressed);
+    Box::new(*BOX_TYPE_BROB, content)
+}
+
 fn print_usage() {
     eprintln!("Usage: create-test-metadata <input.jxl> <output.jxl> [options]");
     eprintln!();
@@ -257,9 +275,13 @@ fn print_usage() {
     eprintln!("  --exif-file <path>  Add EXIF box from file (can repeat)");
     eprintln!("  --xml-file <path>   Add XML box from file (can repeat)");
     eprintln!("  --jumbf-file <path> Add JUMBF box from file (can repeat)");
+    eprintln!("  --brotli            Enable brotli compression (brob) for following metadata boxes");
+    eprintln!("  --no-brotli         Disable brotli compression (default)");
     eprintln!();
-    eprintln!("Example:");
+    eprintln!("Examples:");
     eprintln!("  create-test-metadata input.jxl output.jxl --exif 'test1' --exif 'test2'");
+    eprintln!("  create-test-metadata input.jxl output.jxl --brotli --exif 'compressed'");
+    eprintln!("  create-test-metadata input.jxl output.jxl --exif 'plain' --brotli --exif 'compressed'");
 }
 
 fn main() -> io::Result<()> {
@@ -274,20 +296,28 @@ fn main() -> io::Result<()> {
     let output_path = &args[2];
 
     // Parse options
-    let mut exif_boxes: Vec<Vec<u8>> = Vec::new();
-    let mut xml_boxes: Vec<Vec<u8>> = Vec::new();
-    let mut jumbf_boxes: Vec<Vec<u8>> = Vec::new();
+    // Each entry is (data, use_brotli)
+    let mut exif_boxes: Vec<(Vec<u8>, bool)> = Vec::new();
+    let mut xml_boxes: Vec<(Vec<u8>, bool)> = Vec::new();
+    let mut jumbf_boxes: Vec<(Vec<u8>, bool)> = Vec::new();
+    let mut use_brotli = false;
 
     let mut i = 3;
     while i < args.len() {
         match args[i].as_str() {
+            "--brotli" => {
+                use_brotli = true;
+            }
+            "--no-brotli" => {
+                use_brotli = false;
+            }
             "--exif" => {
                 i += 1;
                 if i >= args.len() {
                     eprintln!("Error: --exif requires a content argument");
                     std::process::exit(1);
                 }
-                exif_boxes.push(create_minimal_exif(&args[i]));
+                exif_boxes.push((create_minimal_exif(&args[i]), use_brotli));
             }
             "--xml" => {
                 i += 1;
@@ -295,7 +325,7 @@ fn main() -> io::Result<()> {
                     eprintln!("Error: --xml requires a content argument");
                     std::process::exit(1);
                 }
-                xml_boxes.push(create_minimal_xmp(&args[i]));
+                xml_boxes.push((create_minimal_xmp(&args[i]), use_brotli));
             }
             "--jumbf" => {
                 i += 1;
@@ -303,7 +333,7 @@ fn main() -> io::Result<()> {
                     eprintln!("Error: --jumbf requires a content argument");
                     std::process::exit(1);
                 }
-                jumbf_boxes.push(create_minimal_jumbf(&args[i]));
+                jumbf_boxes.push((create_minimal_jumbf(&args[i]), use_brotli));
             }
             "--exif-file" => {
                 i += 1;
@@ -311,7 +341,7 @@ fn main() -> io::Result<()> {
                     eprintln!("Error: --exif-file requires a path argument");
                     std::process::exit(1);
                 }
-                exif_boxes.push(fs::read(&args[i])?);
+                exif_boxes.push((fs::read(&args[i])?, use_brotli));
             }
             "--xml-file" => {
                 i += 1;
@@ -319,7 +349,7 @@ fn main() -> io::Result<()> {
                     eprintln!("Error: --xml-file requires a path argument");
                     std::process::exit(1);
                 }
-                xml_boxes.push(fs::read(&args[i])?);
+                xml_boxes.push((fs::read(&args[i])?, use_brotli));
             }
             "--jumbf-file" => {
                 i += 1;
@@ -327,7 +357,7 @@ fn main() -> io::Result<()> {
                     eprintln!("Error: --jumbf-file requires a path argument");
                     std::process::exit(1);
                 }
-                jumbf_boxes.push(fs::read(&args[i])?);
+                jumbf_boxes.push((fs::read(&args[i])?, use_brotli));
             }
             "--help" | "-h" => {
                 print_usage();
@@ -374,17 +404,44 @@ fn main() -> io::Result<()> {
 
     // Insert metadata boxes
     let mut new_boxes = Vec::new();
-    for data in &exif_boxes {
-        new_boxes.push(Box::new(*BOX_TYPE_EXIF, data.clone()));
-        println!("Added EXIF box ({} bytes)", data.len());
+    for (data, compress) in &exif_boxes {
+        let new_box = if *compress {
+            create_brob_box(BOX_TYPE_EXIF, data)
+        } else {
+            Box::new(*BOX_TYPE_EXIF, data.clone())
+        };
+        new_boxes.push(new_box);
+        println!(
+            "Added {} EXIF box ({} bytes uncompressed)",
+            if *compress { "brob-wrapped" } else { "uncompressed" },
+            data.len()
+        );
     }
-    for data in &xml_boxes {
-        new_boxes.push(Box::new(*BOX_TYPE_XML, data.clone()));
-        println!("Added XML box ({} bytes)", data.len());
+    for (data, compress) in &xml_boxes {
+        let new_box = if *compress {
+            create_brob_box(BOX_TYPE_XML, data)
+        } else {
+            Box::new(*BOX_TYPE_XML, data.clone())
+        };
+        new_boxes.push(new_box);
+        println!(
+            "Added {} XML box ({} bytes uncompressed)",
+            if *compress { "brob-wrapped" } else { "uncompressed" },
+            data.len()
+        );
     }
-    for data in &jumbf_boxes {
-        new_boxes.push(Box::new(*BOX_TYPE_JUMB, data.clone()));
-        println!("Added JUMBF box ({} bytes)", data.len());
+    for (data, compress) in &jumbf_boxes {
+        let new_box = if *compress {
+            create_brob_box(BOX_TYPE_JUMB, data)
+        } else {
+            Box::new(*BOX_TYPE_JUMB, data.clone())
+        };
+        new_boxes.push(new_box);
+        println!(
+            "Added {} JUMBF box ({} bytes uncompressed)",
+            if *compress { "brob-wrapped" } else { "uncompressed" },
+            data.len()
+        );
     }
 
     // Insert new boxes at the insertion point
