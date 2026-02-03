@@ -8,6 +8,7 @@ public class AppDelegate : NSApplicationDelegate
 {
     private MainWindow? _mainWindow;
     private NSTimer? _exitTimer;
+    private string? _pendingOpenFile;
 
     public override void DidFinishLaunching(NSNotification notification)
     {
@@ -17,10 +18,13 @@ public class AppDelegate : NSApplicationDelegate
         _mainWindow = new MainWindow();
         _mainWindow.MakeKeyAndOrderFront(this);
 
-        // Load file from command line if provided
-        if (!string.IsNullOrEmpty(Program.Args.InputFile))
+        // Load file: prefer file received via OpenFile (e.g. Finder "Open With"),
+        // fall back to command line argument
+        var fileToLoad = _pendingOpenFile ?? Program.Args.InputFile;
+        _pendingOpenFile = null;
+        if (!string.IsNullOrEmpty(fileToLoad))
         {
-            _mainWindow.LoadImage(Program.Args.InputFile);
+            _mainWindow.LoadImage(fileToLoad);
         }
 
         // Set up exit timer if requested
@@ -47,7 +51,16 @@ public class AppDelegate : NSApplicationDelegate
 
     public override bool OpenFile(NSApplication sender, string filename)
     {
-        _mainWindow?.LoadImage(filename);
+        if (_mainWindow != null)
+        {
+            _mainWindow.LoadImage(filename);
+        }
+        else
+        {
+            // OpenFile is called before DidFinishLaunching when launched via
+            // Finder "Open With" — buffer the path for DidFinishLaunching to pick up
+            _pendingOpenFile = filename;
+        }
         return true;
     }
 }
