@@ -1,0 +1,11 @@
+[package]
+name = "create-test-metadata"
+version = "0.1.0"
+edition = "2021"
+description = "Tool for creating JXL test files with metadata boxes"
+
+[dependencies]
+
+[[bin]]
+name = "create-test-metadata"
+path = "src/main.rs"

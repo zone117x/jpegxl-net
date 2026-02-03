@@ -90,6 +90,12 @@ struct DecoderInner {
     pixel_format: JxlPixelFormat,
     /// Decoder options (stored for reset).
     options: JxlDecodeOptions,
+    /// Cached EXIF boxes (avoids re-cloning on repeated access).
+    exif_boxes_cache: Option<Vec<Vec<u8>>>,
+    /// Cached XML boxes (avoids re-cloning on repeated access).
+    xml_boxes_cache: Option<Vec<Vec<u8>>>,
+    /// Cached JUMBF boxes (avoids re-cloning on repeated access).
+    jumbf_boxes_cache: Option<Vec<Vec<u8>>>,
 }
 
 impl DecoderInner {
@@ -106,6 +112,9 @@ impl DecoderInner {
             extra_channels: Vec::new(),
             pixel_format: options.PixelFormat,
             options,
+            exif_boxes_cache: None,
+            xml_boxes_cache: None,
+            jumbf_boxes_cache: None,
         }
     }
 
@@ -115,6 +124,9 @@ impl DecoderInner {
         self.data_offset = 0;
         self.basic_info = None;
         self.extra_channels.clear();
+        self.exif_boxes_cache = None;
+        self.xml_boxes_cache = None;
+        self.jumbf_boxes_cache = None;
     }
 
     /// Rewinds the decoder to the beginning of the input without clearing the data buffer.
@@ -124,6 +136,9 @@ impl DecoderInner {
         self.data_offset = 0;
         self.basic_info = None;
         self.extra_channels.clear();
+        self.exif_boxes_cache = None;
+        self.xml_boxes_cache = None;
+        self.jumbf_boxes_cache = None;
     }
 
     /// Resets only the decoder state (used for error recovery).
@@ -1422,6 +1437,304 @@ pub unsafe extern "C" fn jxl_color_encoding_linear_srgb(
     if let Some(out) = unsafe { encoding_out.as_mut() } {
         *out = convert_color_encoding(&encoding);
     }
+}
+
+// ============================================================================
+// Metadata Box Access
+// ============================================================================
+
+/// Gets the number of EXIF boxes in the image.
+///
+/// Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+///
+/// # Returns
+/// The number of EXIF boxes, or 0 if none or not accessible.
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_get_exif_box_count(
+    decoder: *const NativeDecoderHandle,
+) -> u32 {
+    let inner = get_decoder_ref_silent!(decoder, 0);
+
+    match &inner.state {
+        DecoderState::WithImageInfo(d) => {
+            d.exif_boxes().map_or(0, |boxes| boxes.len() as u32)
+        }
+        _ => 0,
+    }
+}
+
+/// Gets the number of XML/XMP boxes in the image.
+///
+/// Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+///
+/// # Returns
+/// The number of XML boxes, or 0 if none or not accessible.
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_get_xml_box_count(
+    decoder: *const NativeDecoderHandle,
+) -> u32 {
+    let inner = get_decoder_ref_silent!(decoder, 0);
+
+    match &inner.state {
+        DecoderState::WithImageInfo(d) => {
+            d.xml_boxes().map_or(0, |boxes| boxes.len() as u32)
+        }
+        _ => 0,
+    }
+}
+
+/// Gets the number of JUMBF boxes in the image.
+///
+/// Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+///
+/// # Returns
+/// The number of JUMBF boxes, or 0 if none or not accessible.
+///
+/// # Safety
+/// The decoder pointer must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_get_jumbf_box_count(
+    decoder: *const NativeDecoderHandle,
+) -> u32 {
+    let inner = get_decoder_ref_silent!(decoder, 0);
+
+    match &inner.state {
+        DecoderState::WithImageInfo(d) => {
+            d.jumbf_boxes().map_or(0, |boxes| boxes.len() as u32)
+        }
+        _ => 0,
+    }
+}
+
+/// Gets EXIF data from a specific box by index.
+///
+/// Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+/// The returned pointer is valid until the decoder is reset, rewound, or freed.
+///
+/// # Arguments
+/// * `decoder` - The decoder instance (mutable for caching).
+/// * `index` - Zero-based box index.
+/// * `data_out` - Output pointer for EXIF data bytes.
+/// * `length_out` - Output for EXIF data length.
+///
+/// # Returns
+/// - `Success` if EXIF data is available.
+/// - `InvalidState` if called before basic info is available.
+/// - `InvalidArgument` if index is out of range.
+/// - `Error` if no EXIF data exists in the image.
+///
+/// # Safety
+/// - `decoder` must be valid.
+/// - Output pointers must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_get_exif_box_at(
+    decoder: *mut NativeDecoderHandle,
+    index: u32,
+    data_out: *mut *const u8,
+    length_out: *mut usize,
+) -> JxlStatus {
+    let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
+
+    // Populate cache if needed
+    if inner.exif_boxes_cache.is_none() {
+        let boxes = match &inner.state {
+            DecoderState::WithImageInfo(d) => d.exif_boxes(),
+            _ => {
+                set_last_error("EXIF data not accessible - call jxl_decoder_process until HaveBasicInfo");
+                return JxlStatus::InvalidState;
+            }
+        };
+
+        let Some(boxes) = boxes else {
+            set_last_error("Image does not contain EXIF data");
+            return JxlStatus::Error;
+        };
+
+        if boxes.is_empty() {
+            set_last_error("Image does not contain EXIF data");
+            return JxlStatus::Error;
+        }
+
+        // Cache all boxes
+        inner.exif_boxes_cache = Some(boxes.iter().map(|b| b.data.clone()).collect());
+    }
+
+    let cached = inner.exif_boxes_cache.as_ref().unwrap();
+    let idx = index as usize;
+
+    if idx >= cached.len() {
+        set_last_error(format!("EXIF box index {} out of range (max {})", index, cached.len() - 1));
+        return JxlStatus::InvalidArgument;
+    }
+
+    clear_last_error();
+
+    let box_data = &cached[idx];
+
+    if let Some(out) = unsafe { data_out.as_mut() } {
+        *out = box_data.as_ptr();
+    }
+    if let Some(out) = unsafe { length_out.as_mut() } {
+        *out = box_data.len();
+    }
+
+    JxlStatus::Success
+}
+
+/// Gets XML/XMP data from a specific box by index.
+///
+/// Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+/// The returned pointer is valid until the decoder is reset, rewound, or freed.
+///
+/// # Arguments
+/// * `decoder` - The decoder instance (mutable for caching).
+/// * `index` - Zero-based box index.
+/// * `data_out` - Output pointer for XML data bytes.
+/// * `length_out` - Output for XML data length.
+///
+/// # Returns
+/// - `Success` if XML data is available.
+/// - `InvalidState` if called before basic info is available.
+/// - `InvalidArgument` if index is out of range.
+/// - `Error` if no XML data exists in the image.
+///
+/// # Safety
+/// - `decoder` must be valid.
+/// - Output pointers must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_get_xml_box_at(
+    decoder: *mut NativeDecoderHandle,
+    index: u32,
+    data_out: *mut *const u8,
+    length_out: *mut usize,
+) -> JxlStatus {
+    let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
+
+    // Populate cache if needed
+    if inner.xml_boxes_cache.is_none() {
+        let boxes = match &inner.state {
+            DecoderState::WithImageInfo(d) => d.xml_boxes(),
+            _ => {
+                set_last_error("XML data not accessible - call jxl_decoder_process until HaveBasicInfo");
+                return JxlStatus::InvalidState;
+            }
+        };
+
+        let Some(boxes) = boxes else {
+            set_last_error("Image does not contain XML data");
+            return JxlStatus::Error;
+        };
+
+        if boxes.is_empty() {
+            set_last_error("Image does not contain XML data");
+            return JxlStatus::Error;
+        }
+
+        // Cache all boxes
+        inner.xml_boxes_cache = Some(boxes.iter().map(|b| b.data.clone()).collect());
+    }
+
+    let cached = inner.xml_boxes_cache.as_ref().unwrap();
+    let idx = index as usize;
+
+    if idx >= cached.len() {
+        set_last_error(format!("XML box index {} out of range (max {})", index, cached.len() - 1));
+        return JxlStatus::InvalidArgument;
+    }
+
+    clear_last_error();
+
+    let box_data = &cached[idx];
+
+    if let Some(out) = unsafe { data_out.as_mut() } {
+        *out = box_data.as_ptr();
+    }
+    if let Some(out) = unsafe { length_out.as_mut() } {
+        *out = box_data.len();
+    }
+
+    JxlStatus::Success
+}
+
+/// Gets JUMBF data from a specific box by index.
+///
+/// Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+/// The returned pointer is valid until the decoder is reset, rewound, or freed.
+///
+/// # Arguments
+/// * `decoder` - The decoder instance (mutable for caching).
+/// * `index` - Zero-based box index.
+/// * `data_out` - Output pointer for JUMBF data bytes.
+/// * `length_out` - Output for JUMBF data length.
+///
+/// # Returns
+/// - `Success` if JUMBF data is available.
+/// - `InvalidState` if called before basic info is available.
+/// - `InvalidArgument` if index is out of range.
+/// - `Error` if no JUMBF data exists in the image.
+///
+/// # Safety
+/// - `decoder` must be valid.
+/// - Output pointers must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jxl_decoder_get_jumbf_box_at(
+    decoder: *mut NativeDecoderHandle,
+    index: u32,
+    data_out: *mut *const u8,
+    length_out: *mut usize,
+) -> JxlStatus {
+    let inner = get_decoder_mut!(decoder, JxlStatus::InvalidArgument);
+
+    // Populate cache if needed
+    if inner.jumbf_boxes_cache.is_none() {
+        let boxes = match &inner.state {
+            DecoderState::WithImageInfo(d) => d.jumbf_boxes(),
+            _ => {
+                set_last_error("JUMBF data not accessible - call jxl_decoder_process until HaveBasicInfo");
+                return JxlStatus::InvalidState;
+            }
+        };
+
+        let Some(boxes) = boxes else {
+            set_last_error("Image does not contain JUMBF data");
+            return JxlStatus::Error;
+        };
+
+        if boxes.is_empty() {
+            set_last_error("Image does not contain JUMBF data");
+            return JxlStatus::Error;
+        }
+
+        // Cache all boxes
+        inner.jumbf_boxes_cache = Some(boxes.iter().map(|b| b.data.clone()).collect());
+    }
+
+    let cached = inner.jumbf_boxes_cache.as_ref().unwrap();
+    let idx = index as usize;
+
+    if idx >= cached.len() {
+        set_last_error(format!("JUMBF box index {} out of range (max {})", index, cached.len() - 1));
+        return JxlStatus::InvalidArgument;
+    }
+
+    clear_last_error();
+
+    let box_data = &cached[idx];
+
+    if let Some(out) = unsafe { data_out.as_mut() } {
+        *out = box_data.as_ptr();
+    }
+    if let Some(out) = unsafe { length_out.as_mut() } {
+        *out = box_data.len();
+    }
+
+    JxlStatus::Success
 }
 
 // ============================================================================

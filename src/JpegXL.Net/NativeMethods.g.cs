@@ -494,6 +494,123 @@ namespace JpegXL.Net
         public static extern void jxl_color_encoding_linear_srgb([MarshalAs(UnmanagedType.U1)] bool grayscale, JxlColorEncodingRaw* encoding_out);
 
         /// <summary>
+        ///  Gets the number of EXIF boxes in the image.
+        ///
+        ///  Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+        ///
+        ///  # Returns
+        ///  The number of EXIF boxes, or 0 if none or not accessible.
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_exif_box_count", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern uint jxl_decoder_get_exif_box_count(NativeDecoderHandle* decoder);
+
+        /// <summary>
+        ///  Gets the number of XML/XMP boxes in the image.
+        ///
+        ///  Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+        ///
+        ///  # Returns
+        ///  The number of XML boxes, or 0 if none or not accessible.
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_xml_box_count", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern uint jxl_decoder_get_xml_box_count(NativeDecoderHandle* decoder);
+
+        /// <summary>
+        ///  Gets the number of JUMBF boxes in the image.
+        ///
+        ///  Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+        ///
+        ///  # Returns
+        ///  The number of JUMBF boxes, or 0 if none or not accessible.
+        ///
+        ///  # Safety
+        ///  The decoder pointer must be valid.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_jumbf_box_count", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern uint jxl_decoder_get_jumbf_box_count(NativeDecoderHandle* decoder);
+
+        /// <summary>
+        ///  Gets EXIF data from a specific box by index.
+        ///
+        ///  Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+        ///  The returned pointer is valid until the decoder is reset, rewound, or freed.
+        ///
+        ///  # Arguments
+        ///  * `decoder` - The decoder instance (mutable for caching).
+        ///  * `index` - Zero-based box index.
+        ///  * `data_out` - Output pointer for EXIF data bytes.
+        ///  * `length_out` - Output for EXIF data length.
+        ///
+        ///  # Returns
+        ///  - `Success` if EXIF data is available.
+        ///  - `InvalidState` if called before basic info is available.
+        ///  - `InvalidArgument` if index is out of range.
+        ///  - `Error` if no EXIF data exists in the image.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        ///  - Output pointers must be writable.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_exif_box_at", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlStatus jxl_decoder_get_exif_box_at(NativeDecoderHandle* decoder, uint index, byte** data_out, System.UIntPtr* length_out);
+
+        /// <summary>
+        ///  Gets XML/XMP data from a specific box by index.
+        ///
+        ///  Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+        ///  The returned pointer is valid until the decoder is reset, rewound, or freed.
+        ///
+        ///  # Arguments
+        ///  * `decoder` - The decoder instance (mutable for caching).
+        ///  * `index` - Zero-based box index.
+        ///  * `data_out` - Output pointer for XML data bytes.
+        ///  * `length_out` - Output for XML data length.
+        ///
+        ///  # Returns
+        ///  - `Success` if XML data is available.
+        ///  - `InvalidState` if called before basic info is available.
+        ///  - `InvalidArgument` if index is out of range.
+        ///  - `Error` if no XML data exists in the image.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        ///  - Output pointers must be writable.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_xml_box_at", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlStatus jxl_decoder_get_xml_box_at(NativeDecoderHandle* decoder, uint index, byte** data_out, System.UIntPtr* length_out);
+
+        /// <summary>
+        ///  Gets JUMBF data from a specific box by index.
+        ///
+        ///  Only valid after `jxl_decoder_process` returns `HaveBasicInfo`.
+        ///  The returned pointer is valid until the decoder is reset, rewound, or freed.
+        ///
+        ///  # Arguments
+        ///  * `decoder` - The decoder instance (mutable for caching).
+        ///  * `index` - Zero-based box index.
+        ///  * `data_out` - Output pointer for JUMBF data bytes.
+        ///  * `length_out` - Output for JUMBF data length.
+        ///
+        ///  # Returns
+        ///  - `Success` if JUMBF data is available.
+        ///  - `InvalidState` if called before basic info is available.
+        ///  - `InvalidArgument` if index is out of range.
+        ///  - `Error` if no JUMBF data exists in the image.
+        ///
+        ///  # Safety
+        ///  - `decoder` must be valid.
+        ///  - Output pointers must be writable.
+        /// </summary>
+        [DllImport(__DllName, EntryPoint = "jxl_decoder_get_jumbf_box_at", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        public static extern JxlStatus jxl_decoder_get_jumbf_box_at(NativeDecoderHandle* decoder, uint index, byte** data_out, System.UIntPtr* length_out);
+
+        /// <summary>
         ///  Checks if data appears to be a JPEG XL file.
         ///
         ///  Only needs the first 12 bytes to determine.
@@ -731,6 +848,42 @@ namespace JpegXL.Net
     }
 
     /// <summary>
+    ///  Options for capturing metadata boxes during container parsing.
+    ///  All capture flags default to true to match legacy behavior.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct JxlMetadataCaptureOptions
+    {
+        /// <summary>
+        ///  Whether to capture EXIF metadata boxes.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool CaptureExif;
+        /// <summary>
+        ///  Whether to capture XML/XMP metadata boxes.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool CaptureXml;
+        /// <summary>
+        ///  Whether to capture JUMBF metadata boxes.
+        /// </summary>
+        [MarshalAs(UnmanagedType.U1)] public bool CaptureJumbf;
+        /// <summary>
+        ///  Maximum aggregate size in bytes for all EXIF boxes.
+        ///  0 = no limit.
+        /// </summary>
+        public ulong ExifSizeLimit;
+        /// <summary>
+        ///  Maximum aggregate size in bytes for all XML boxes.
+        ///  0 = no limit.
+        /// </summary>
+        public ulong XmlSizeLimit;
+        /// <summary>
+        ///  Maximum aggregate size in bytes for all JUMBF boxes.
+        ///  0 = no limit.
+        /// </summary>
+        public ulong JumbfSizeLimit;
+    }
+
+    /// <summary>
     ///  Decoder options.
     ///  All options should be set before decoding begins.
     ///  Fields are ordered by size (largest first) to minimize padding.
@@ -788,6 +941,10 @@ namespace JpegXL.Net
         ///  Desired output pixel format.
         /// </summary>
         public JxlPixelFormat PixelFormat;
+        /// <summary>
+        ///  Options for capturing metadata boxes (EXIF, XML, JUMBF).
+        /// </summary>
+        public JxlMetadataCaptureOptions MetadataCapture;
     }
 
     /// <summary>

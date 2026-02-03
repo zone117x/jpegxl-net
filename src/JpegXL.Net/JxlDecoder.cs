@@ -421,6 +421,158 @@ public sealed unsafe class JxlDecoder : IDisposable
         SetOutputColorProfile(profile);
     }
 
+    // ========================================================================
+    // EXIF/XML Metadata
+    // ========================================================================
+
+    /// <summary>
+    /// Gets the number of EXIF metadata boxes in the image.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ReadInfo"/> must be called before this property is accurate.
+    /// </remarks>
+    public int ExifBoxCount
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return (int)NativeMethods.jxl_decoder_get_exif_box_count(_handle);
+        }
+    }
+
+    /// <summary>
+    /// Gets EXIF data from a specific box by index.
+    /// </summary>
+    /// <param name="index">Zero-based box index.</param>
+    /// <returns>EXIF data as a byte array, or null if index is out of range or no EXIF data exists.</returns>
+    /// <remarks>
+    /// <para><see cref="ReadInfo"/> must be called before this method.</para>
+    /// <para>Use <see cref="ExifBoxCount"/> to check the number of available boxes.</para>
+    /// </remarks>
+    /// <exception cref="JxlException">Thrown if called before basic info is available.</exception>
+    public byte[]? GetExifBox(int index)
+    {
+        ThrowIfDisposed();
+
+        byte* dataPtr;
+        UIntPtr length;
+
+        var status = NativeMethods.jxl_decoder_get_exif_box_at(
+            _handle, (uint)index, &dataPtr, &length);
+
+        if (status == JxlStatus.Error || status == JxlStatus.InvalidArgument)
+        {
+            return null;
+        }
+
+        ThrowIfFailed(status);
+
+        var len = (int)(nuint)length;
+        var result = new byte[len];
+        Marshal.Copy((IntPtr)dataPtr, result, 0, len);
+        return result;
+    }
+
+    /// <summary>
+    /// Gets the number of XML/XMP metadata boxes in the image.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ReadInfo"/> must be called before this property is accurate.
+    /// </remarks>
+    public int XmlBoxCount
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return (int)NativeMethods.jxl_decoder_get_xml_box_count(_handle);
+        }
+    }
+
+    /// <summary>
+    /// Gets XML/XMP data from a specific box by index.
+    /// </summary>
+    /// <param name="index">Zero-based box index.</param>
+    /// <returns>XML data as a byte array, or null if index is out of range or no XML data exists.</returns>
+    /// <remarks>
+    /// <para><see cref="ReadInfo"/> must be called before this method.</para>
+    /// <para>Use <see cref="XmlBoxCount"/> to check the number of available boxes.</para>
+    /// </remarks>
+    /// <exception cref="JxlException">Thrown if called before basic info is available.</exception>
+    public byte[]? GetXmlBox(int index)
+    {
+        ThrowIfDisposed();
+
+        byte* dataPtr;
+        UIntPtr length;
+
+        var status = NativeMethods.jxl_decoder_get_xml_box_at(
+            _handle, (uint)index, &dataPtr, &length);
+
+        if (status == JxlStatus.Error || status == JxlStatus.InvalidArgument)
+        {
+            return null;
+        }
+
+        ThrowIfFailed(status);
+
+        var len = (int)(nuint)length;
+        var result = new byte[len];
+        Marshal.Copy((IntPtr)dataPtr, result, 0, len);
+        return result;
+    }
+
+    /// <summary>
+    /// Gets the number of JUMBF metadata boxes in the image.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ReadInfo"/> must be called before this property is accurate.
+    /// </remarks>
+    public int JumbfBoxCount
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return (int)NativeMethods.jxl_decoder_get_jumbf_box_count(_handle);
+        }
+    }
+
+    /// <summary>
+    /// Gets JUMBF data from a specific box by index.
+    /// </summary>
+    /// <param name="index">Zero-based box index.</param>
+    /// <returns>JUMBF data as a byte array, or null if index is out of range or no JUMBF data exists.</returns>
+    /// <remarks>
+    /// <para><see cref="ReadInfo"/> must be called before this method.</para>
+    /// <para>Use <see cref="JumbfBoxCount"/> to check the number of available boxes.</para>
+    /// </remarks>
+    /// <exception cref="JxlException">Thrown if called before basic info is available.</exception>
+    public byte[]? GetJumbfBox(int index)
+    {
+        ThrowIfDisposed();
+
+        byte* dataPtr;
+        UIntPtr length;
+
+        var status = NativeMethods.jxl_decoder_get_jumbf_box_at(
+            _handle, (uint)index, &dataPtr, &length);
+
+        if (status == JxlStatus.Error || status == JxlStatus.InvalidArgument)
+        {
+            return null;
+        }
+
+        ThrowIfFailed(status);
+
+        var len = (int)(nuint)length;
+        var result = new byte[len];
+        Marshal.Copy((IntPtr)dataPtr, result, 0, len);
+        return result;
+    }
+
+    // ========================================================================
+    // Decoder State
+    // ========================================================================
+
     /// <summary>
     /// Resets the decoder to its initial state.
     /// </summary>

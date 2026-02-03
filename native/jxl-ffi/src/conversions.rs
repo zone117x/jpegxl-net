@@ -6,7 +6,7 @@
 //! Type conversion functions between C API types and upstream jxl-rs types.
 
 use crate::types::*;
-use jxl::api::{Endianness, JxlDecoderOptions};
+use jxl::api::{Endianness, JxlDecoderOptions, MetadataCaptureOptions};
 use jxl::api::JxlProgressiveMode as UpstreamProgressiveMode;
 use jxl::api::{
     JxlColorEncoding as UpstreamColorEncoding,
@@ -53,7 +53,32 @@ pub(crate) fn convert_options_to_upstream(c_options: &JxlDecodeOptions) -> JxlDe
     };
     options.high_precision = c_options.HighPrecision;
     options.premultiply_output = c_options.PremultiplyAlpha;
+    options.metadata_capture = convert_metadata_capture(&c_options.MetadataCapture);
     options
+}
+
+/// Converts C-compatible metadata capture options to upstream type.
+fn convert_metadata_capture(c_opts: &JxlMetadataCaptureOptions) -> MetadataCaptureOptions {
+    MetadataCaptureOptions {
+        capture_exif: c_opts.CaptureExif,
+        capture_xml: c_opts.CaptureXml,
+        capture_jumbf: c_opts.CaptureJumbf,
+        exif_size_limit: if c_opts.ExifSizeLimit == 0 {
+            None
+        } else {
+            Some(c_opts.ExifSizeLimit)
+        },
+        xml_size_limit: if c_opts.XmlSizeLimit == 0 {
+            None
+        } else {
+            Some(c_opts.XmlSizeLimit)
+        },
+        jumbf_size_limit: if c_opts.JumbfSizeLimit == 0 {
+            None
+        } else {
+            Some(c_opts.JumbfSizeLimit)
+        },
+    }
 }
 
 // ============================================================================

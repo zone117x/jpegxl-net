@@ -32,6 +32,8 @@ The script changes the current directory automatically, so do not use a `cd ...`
 - `--file=<path>` - Open a specific image file instead of the default test animation
 - `--log` - Log stdout to `examples/JpegXL.MacOS/logs/run.txt` (existing logs are renamed with unix timestamp)
 - `--kill-after=<seconds>` - Auto-kill the app after N seconds (useful for automated testing)
+- `--brotli-compress=<path>` - Compress file using macOS native Compression framework, output to `<path>.br`
+- `--brotli-decompress=<path>` - Decompress `.br` file using macOS native Compression framework, output without `.br` extension
 
 **Sample files:** Test images of different types (HDR, animation, etc.) are available in `./examples/sample-files/`
 
@@ -42,6 +44,19 @@ The script changes the current directory automatically, so do not use a `cd ...`
 # Run for 5 seconds with logging
 ./examples/JpegXL.MacOS/run.sh --log --kill-after=5
 ```
+
+**Brotli compression/decompression** (uses macOS native `libcompression.dylib`):
+```bash
+# Compress a file (outputs to /path/to/file.br)
+./examples/JpegXL.MacOS/run.sh --brotli-compress=/path/to/file
+
+# Decompress a .br file (outputs to /path/to/file)
+./examples/JpegXL.MacOS/run.sh --brotli-decompress=/path/to/file.br
+
+# Round-trip: compress then decompress (useful for testing)
+./examples/JpegXL.MacOS/run.sh --brotli-compress=/path/to/file --brotli-decompress=/path/to/file
+```
+Note: Use absolute paths when running via `run.sh` since the script changes the working directory to the app bundle. When Brotli flags are specified, the app performs the operation and exits without launching the GUI.
 
 **Development loop:**
 1. Modify C# code
@@ -148,9 +163,9 @@ Tests are in `test/JpegXL.Net.Tests/`. The rebuild script runs them automaticall
 - `with_icc.jxl` - ICC color profile
 
 **Additional test resources:**
-- `./external/conformance/**/*.jxl` - Optional conformance test suite
-- `./native/jxl-rs/jxl/resources/test/**/*.jxl` - Test resources from the upstream jxl-rs decoder
-- `./native/jxl-rs/**/*.rs` - Look here for unit tests related to JXL files/properties/behaviors
+- `external/conformance/**/*.jxl` - Optional conformance test suite
+- `native/jxl-rs/jxl/resources/test/*.jxl` and `native/jxl-rs/jxl/resources/test/conformance_test_images/*.jxl` - Test resources from the upstream jxl-rs decoder
+- `native/jxl-rs/**/*.rs` - Look here for unit tests related to JXL files/properties/behaviors
 
 ## Common Patterns
 

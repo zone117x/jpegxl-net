@@ -301,6 +301,42 @@ impl Default for JxlPixelFormat {
     }
 }
 
+/// Options for capturing metadata boxes during container parsing.
+/// All capture flags default to true to match legacy behavior.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+#[allow(non_snake_case)]
+pub struct JxlMetadataCaptureOptions {
+    /// Whether to capture EXIF metadata boxes.
+    pub CaptureExif: bool,
+    /// Whether to capture XML/XMP metadata boxes.
+    pub CaptureXml: bool,
+    /// Whether to capture JUMBF metadata boxes.
+    pub CaptureJumbf: bool,
+    /// Maximum aggregate size in bytes for all EXIF boxes.
+    /// 0 = no limit.
+    pub ExifSizeLimit: u64,
+    /// Maximum aggregate size in bytes for all XML boxes.
+    /// 0 = no limit.
+    pub XmlSizeLimit: u64,
+    /// Maximum aggregate size in bytes for all JUMBF boxes.
+    /// 0 = no limit.
+    pub JumbfSizeLimit: u64,
+}
+
+impl Default for JxlMetadataCaptureOptions {
+    fn default() -> Self {
+        Self {
+            CaptureExif: true,
+            CaptureXml: true,
+            CaptureJumbf: true,
+            ExifSizeLimit: 1024 * 1024,       // 1MB
+            XmlSizeLimit: 1024 * 1024,        // 1MB
+            JumbfSizeLimit: 16 * 1024 * 1024, // 16MB
+        }
+    }
+}
+
 /// Decoder options.
 /// All options should be set before decoding begins.
 /// Fields are ordered by size (largest first) to minimize padding.
@@ -334,6 +370,8 @@ pub struct JxlDecodeOptions {
     pub DecodeExtraChannels: bool,
     /// Desired output pixel format.
     pub PixelFormat: JxlPixelFormat,
+    /// Options for capturing metadata boxes (EXIF, XML, JUMBF).
+    pub MetadataCapture: JxlMetadataCaptureOptions,
 }
 
 impl Default for JxlDecodeOptions {
@@ -351,6 +389,7 @@ impl Default for JxlDecodeOptions {
             PremultiplyAlpha: false,
             DecodeExtraChannels: false,
             PixelFormat: JxlPixelFormat::default(),
+            MetadataCapture: JxlMetadataCaptureOptions::default(),
         }
     }
 }

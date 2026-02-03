@@ -26,6 +26,7 @@ public partial struct JxlDecodeOptions
     /// <item><description>PremultiplyAlpha: false</description></item>
     /// <item><description>DecodeExtraChannels: false</description></item>
     /// <item><description>PixelFormat: RGBA8 (default)</description></item>
+    /// <item><description>MetadataCapture: Default (all enabled with limits)</description></item>
     /// </list>
     /// </remarks>
     public static JxlDecodeOptions Default => new()
@@ -42,5 +43,6 @@ public partial struct JxlDecodeOptions
         PremultiplyAlpha = false,
         DecodeExtraChannels = false,
         PixelFormat = JxlPixelFormat.Default,
+        MetadataCapture = JxlMetadataCaptureOptions.Default,
     };
 }

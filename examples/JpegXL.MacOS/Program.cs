@@ -10,6 +10,8 @@ public record ProgramArgs
     public string? ExportFile { get; init; }
     public int? ExportFrameIndex { get; init; }
     public int? ExitAfterSeconds { get; init; }
+    public string? BrotliCompressFile { get; init; }
+    public string? BrotliDecompressFile { get; init; }
 }
 
 static class Program
@@ -62,13 +64,25 @@ static class Program
             Description = "Exit after N seconds (useful for automated testing)"
         };
 
+        var brotliCompressOption = new Option<string?>("--brotli-compress")
+        {
+            Description = "Compress file using .NET BrotliStream, output to <file>.br"
+        };
+
+        var brotliDecompressOption = new Option<string?>("--brotli-decompress")
+        {
+            Description = "Decompress .br file using macOS Compression framework, output without .br extension"
+        };
+
         var rootCommand = new RootCommand("JPEG XL Viewer")
         {
             fileArg,
             exportAsOption,
             exportFileOption,
             exportFrameOption,
-            exitAfterOption
+            exitAfterOption,
+            brotliCompressOption,
+            brotliDecompressOption
         };
 
         rootCommand.SetAction((parseResult) =>
@@ -78,10 +92,49 @@ static class Program
             var exportFile = parseResult.GetValue(exportFileOption);
             var exportFrame = parseResult.GetValue(exportFrameOption);
             var exitAfter = parseResult.GetValue(exitAfterOption);
+            var brotliCompress = parseResult.GetValue(brotliCompressOption);
+            var brotliDecompress = parseResult.GetValue(brotliDecompressOption);
 
             // Resolve paths relative to original working directory
             var inputFile = file != null ? ResolvePath(file) : null;
             var exportFilePath = exportFile != null ? ResolvePath(exportFile) : null;
+            var brotliCompressPath = brotliCompress != null ? ResolvePath(brotliCompress) : null;
+            var brotliDecompressPath = brotliDecompress != null ? ResolvePath(brotliDecompress) : null;
+
+            // Handle Brotli operations (before GUI initialization)
+            if (brotliCompressPath != null || brotliDecompressPath != null)
+            {
+                try
+                {
+                    string? compressedFile = null;
+
+                    // Step 1: Compress with macOS native (if requested)
+                    if (brotliCompressPath != null)
+                    {
+                        compressedFile = BrotliOperations.CompressWithMacOS(brotliCompressPath);
+                    }
+
+                    // Step 2: Decompress with macOS native (if requested)
+                    if (brotliDecompressPath != null)
+                    {
+                        // If both flags specified for the same file, decompress the output from compression
+                        string fileToDecompress = (brotliCompressPath != null && brotliDecompressPath == brotliCompressPath)
+                            ? compressedFile!
+                            : brotliDecompressPath;
+
+                        BrotliOperations.DecompressWithMacOS(fileToDecompress);
+                    }
+
+                    Console.WriteLine("[Brotli] Operations completed successfully");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Brotli] Error: {ex.Message}");
+                    Environment.Exit(1);
+                    return;
+                }
+            }
 
             // Normalize and validate format
             string? exportFormat = null;
@@ -121,7 +174,9 @@ static class Program
                 ExportFormat = exportFormat,
                 ExportFile = exportFilePath,
                 ExportFrameIndex = exportFrame.HasValue ? exportFrame.Value - 1 : null, // Convert to 0-based
-                ExitAfterSeconds = exitAfter
+                ExitAfterSeconds = exitAfter,
+                BrotliCompressFile = brotliCompressPath,
+                BrotliDecompressFile = brotliDecompressPath
             };
 
             Console.WriteLine($"[Program] Input file: {Args.InputFile}");
