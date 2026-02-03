@@ -26,8 +26,13 @@ for arg in "$@"; do
             CUSTOM_FILE="${arg#*=}"
             ;;
         *)
-            # Pass through unknown arguments to the app
-            EXTRA_ARGS+=("$arg")
+            # First non-flag argument that is an existing file is treated as the file path
+            if [[ -z "$CUSTOM_FILE" && -f "$arg" ]]; then
+                CUSTOM_FILE="$arg"
+            else
+                # Pass through unknown arguments to the app
+                EXTRA_ARGS+=("$arg")
+            fi
             ;;
     esac
 done

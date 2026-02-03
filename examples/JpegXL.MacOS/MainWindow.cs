@@ -33,9 +33,10 @@ public class MainWindow : NSWindow
     private NSTextField? _statusLabel;
     private NSTextField? _dimensionsLabel;
     private NSTextField? _profileLabel;
-    private NSTextField? _hdrLabel;
+    private NSButton? _hdrLabel;
     private NSTextField? _frameLabel;
     private NSButton? _playPauseButton;
+    private NSMenuItem? _hdrSdrMenuItem;
 
     // Animation support
     private float[]? _frameDurations;  // Only store durations, pixels are on GPU
@@ -52,6 +53,9 @@ public class MainWindow : NSWindow
 
     // Cached metadata for clipboard copy
     private JxlImageMetadata? _metadata;
+
+    // HDR/SDR display mode toggle
+    private bool _displayAsSdr;
 
     // Screen change notification observer
     private NSObject? _screenChangeObserver;
@@ -109,31 +113,35 @@ public class MainWindow : NSWindow
         var edrHeadroom = (float)(screen?.MaximumExtendedDynamicRangeColorComponentValue ?? 1.0);
         var intensityTarget = _metadata.BasicInfo.ToneMapping.IntensityTarget;
 
-        if (_metadata.IsHlg)
+        string title;
+        NSColor color;
+
+        if (_displayAsSdr)
         {
-            _hdrLabel!.StringValue = $"HDR HLG: {intensityTarget:F0} nits";
-            if (edrHeadroom > 1.0)
-            {
-                _hdrLabel.StringValue += $" | EDR: {edrHeadroom:F1}x";
-            }
+            var source = _metadata.IsHlg ? "HLG" : _metadata.IsPq ? "PQ" : "HDR";
+            title = $"SDR (from {source})";
+            color = NSColor.SystemBlue;
+            Console.WriteLine($"[HDR] Displaying as tone-mapped SDR (source: {source})");
+        }
+        else if (_metadata.IsHlg)
+        {
+            title = $"HDR HLG: {intensityTarget:F0} nits";
+            color = NSColor.Orange;
+            if (edrHeadroom > 1.0) title += $" | EDR: {edrHeadroom:F1}x";
             Console.WriteLine($"[HDR] HLG system tone mapping (EDR headroom: {edrHeadroom:F1}x)");
         }
         else if (_metadata.IsPq)
         {
-            _hdrLabel!.StringValue = $"HDR PQ: {intensityTarget:F0} nits";
-            if (edrHeadroom > 1.0)
-            {
-                _hdrLabel.StringValue += $" | EDR: {edrHeadroom:F1}x";
-            }
+            title = $"HDR PQ: {intensityTarget:F0} nits";
+            color = NSColor.Orange;
+            if (edrHeadroom > 1.0) title += $" | EDR: {edrHeadroom:F1}x";
             Console.WriteLine($"[HDR] PQ system tone mapping (max: {intensityTarget} nits, EDR headroom: {edrHeadroom:F1}x)");
         }
         else if (_metadata.BasicInfo.IsHdr)
         {
-            _hdrLabel!.StringValue = $"HDR: {intensityTarget:F0} nits";
-            if (edrHeadroom > 1.0)
-            {
-                _hdrLabel.StringValue += $" | EDR: {edrHeadroom:F1}x";
-            }
+            title = $"HDR: {intensityTarget:F0} nits";
+            color = NSColor.Orange;
+            if (edrHeadroom > 1.0) title += $" | EDR: {edrHeadroom:F1}x";
 
             // Manual HDR mode needs brightness scale recalculation
             // 203 nits is the SDR reference white level defined in ITU-R BT.2408
@@ -143,6 +151,16 @@ public class MainWindow : NSWindow
             _metalView!.HdrBrightnessScale = brightnessScale;
             Console.WriteLine($"[HDR] Linear mode with brightness scale: {brightnessScale:F2}x (EDR headroom: {edrHeadroom:F1}x)");
         }
+        else
+        {
+            return;
+        }
+
+        // Apply colored title to the button using attributed string
+        var attrs = new NSDictionary(
+            NSStringAttributeKey.ForegroundColor, color,
+            NSStringAttributeKey.Font, NSFont.SystemFontOfSize(12)!);
+        _hdrLabel!.AttributedTitle = new NSAttributedString(title, attrs);
     }
 
     private void StartMemoryMonitor()
@@ -177,6 +195,10 @@ public class MainWindow : NSWindow
         // Context menu for right-click
         var contextMenu = new NSMenu();
         contextMenu.AddItem(new NSMenuItem("Copy Metadata", (s, e) => CopyMetadata()));
+        contextMenu.AddItem(NSMenuItem.SeparatorItem);
+        _hdrSdrMenuItem = new NSMenuItem("Display as SDR", (s, e) => ToggleHdrSdr());
+        _hdrSdrMenuItem.Hidden = true;
+        contextMenu.AddItem(_hdrSdrMenuItem);
         _metalView.Menu = contextMenu;
 
         contentView.AddSubview(_metalView);
@@ -211,9 +233,20 @@ public class MainWindow : NSWindow
         _profileLabel = CreateStackLabel("", NSColor.Gray, hugging: false);
         statusBar.AddArrangedSubview(_profileLabel);
 
-        // HDR label (content-hugging, initially hidden)
-        _hdrLabel = CreateStackLabel("", NSColor.Orange, hugging: true);
-        _hdrLabel.Hidden = true;
+        // HDR label button (content-hugging, initially hidden, shows popup menu on click)
+        _hdrLabel = new NSButton
+        {
+            Title = "",
+            BezelStyle = NSBezelStyle.Recessed,
+            Bordered = true,
+            Font = NSFont.SystemFontOfSize(12)!,
+            Hidden = true,
+            TranslatesAutoresizingMaskIntoConstraints = false
+        };
+        _hdrLabel.SetButtonType(NSButtonType.MomentaryPushIn);
+        _hdrLabel.SetContentHuggingPriorityForOrientation(750f, NSLayoutConstraintOrientation.Horizontal);
+        _hdrLabel.SetContentCompressionResistancePriority(750f, NSLayoutConstraintOrientation.Horizontal);
+        _hdrLabel.Activated += (s, e) => ShowHdrMenu();
         statusBar.AddArrangedSubview(_hdrLabel);
 
         // Frame label (content-hugging, initially hidden)
@@ -716,10 +749,12 @@ public class MainWindow : NSWindow
 
             _currentFilePath = path;
             _currentFileModified = File.GetLastWriteTimeUtc(path);
+            _displayAsSdr = false;  // Reset to HDR mode for new images
             StopAnimation();
             var filename = Path.GetFileName(path);
             Subtitle = $"Loading {filename}";
             _hdrLabel!.Hidden = true;
+            _hdrSdrMenuItem!.Hidden = true;
             _frameLabel!.Hidden = true;
 
             Console.WriteLine($"[LoadImage] Loading image: {path}");
@@ -876,6 +911,7 @@ public class MainWindow : NSWindow
 
             // Update HDR label with current screen's EDR headroom
             UpdateHdrLabel();
+            UpdateHdrToggle();
 
             Subtitle = filename;
             _metalView.ResetView();  // Display at 1:1 pixel ratio
@@ -895,7 +931,152 @@ public class MainWindow : NSWindow
             _dimensionsLabel!.StringValue = "";
             _profileLabel!.StringValue = "";
             _hdrLabel!.Hidden = true;
+            _hdrSdrMenuItem!.Hidden = true;
         }
+    }
+
+    /// <summary>
+    /// Toggles between HDR and tone-mapped SDR display for the current image.
+    /// </summary>
+    private void ToggleHdrSdr()
+    {
+        if (_currentFilePath == null || _metadata == null) return;
+        if (!(_metadata.IsHlg || _metadata.IsPq || _metadata.BasicInfo.IsHdr)) return;
+
+        _displayAsSdr = !_displayAsSdr;
+        ReloadWithDisplayMode();
+    }
+
+    /// <summary>
+    /// Reloads the current image with the active display mode (HDR or tone-mapped SDR).
+    /// </summary>
+    private async void ReloadWithDisplayMode()
+    {
+        if (_currentFilePath == null || _metadata == null || _currentInfo == null) return;
+
+        try
+        {
+            var info = _currentInfo;
+            var isHlg = _metadata.IsHlg;
+            var isPq = _metadata.IsPq;
+
+            Console.WriteLine($"[DisplayMode] Reloading as {(_displayAsSdr ? "SDR" : "HDR")}");
+
+            var options = new JxlDecodeOptions
+            {
+                PremultiplyAlpha = true,
+                PixelFormat = JxlPixelFormat.Rgba32F
+            };
+
+            if (_displayAsSdr)
+            {
+                // Set desired intensity target to SDR reference white (100 nits)
+                // This tells jxl-rs to tone-map down to SDR
+                options.DesiredIntensityTarget = 100.0f;
+            }
+
+            using var decoder = new JxlDecoder(options);
+            await decoder.SetInputFileAsync(_currentFilePath);
+            decoder.ReadInfo();
+
+            if (!_displayAsSdr && (isHlg || isPq))
+            {
+                // HDR mode: keep native HLG/PQ encoding for system tone mapper
+                using var outputProfile = JxlColorProfile.FromEncoding(
+                    JxlProfileType.Rgb,
+                    whitePoint: JxlWhitePointType.D65,
+                    primaries: JxlPrimariesType.Bt2100,
+                    transferFunction: isHlg ? JxlTransferFunctionType.Hlg : JxlTransferFunctionType.Pq);
+                decoder.SetOutputColorProfile(outputProfile);
+            }
+            // SDR mode: don't set output profile, let jxl-rs tone-map to default sRGB
+
+            StopAnimation();
+            _frameDurations = null;
+
+            if (info.IsAnimated)
+            {
+                var animationMetadata = decoder.ParseFrameMetadata();
+                decoder.Rewind();
+                _frameDurations = DecodeAnimatedImageToGpu(decoder, info, animationMetadata);
+
+                if (_frameDurations.Length > 0)
+                {
+                    _currentFrameIndex = 0;
+                    if (_frameDurations.Length > 1)
+                        StartAnimation();
+                }
+            }
+            else
+            {
+                DecodeStaticImageToGpu(decoder, info);
+            }
+
+            // Configure Metal view for the display mode
+            if (_displayAsSdr)
+            {
+                _metalView!.ConfigureForSrgb();
+                _metalView.HdrBrightnessScale = 1.0f;
+            }
+            else if (isHlg)
+            {
+                _metalView!.ConfigureForHlg();
+            }
+            else if (isPq)
+            {
+                _metalView!.ConfigureForPq(info.ToneMapping.IntensityTarget);
+            }
+            else if (info.IsHdr)
+            {
+                _metalView!.ConfigureForLinear();
+            }
+
+            UpdateHdrLabel();
+            UpdateHdrToggle();
+            _metalView!.Render();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DisplayMode] Error: {ex.Message}");
+            _statusLabel!.StringValue = $"Error: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Updates the HDR/SDR toggle button and context menu item visibility and text.
+    /// </summary>
+    private void UpdateHdrToggle()
+    {
+        var isHdrImage = _metadata != null &&
+            (_metadata.IsHlg || _metadata.IsPq || _metadata.BasicInfo.IsHdr);
+
+        _hdrSdrMenuItem!.Hidden = !isHdrImage;
+
+        if (isHdrImage)
+        {
+            _hdrSdrMenuItem.Title = _displayAsSdr
+                ? "Display as HDR"
+                : "Display as SDR";
+        }
+    }
+
+    /// <summary>
+    /// Shows a popup menu from the HDR label button with display mode options.
+    /// </summary>
+    private void ShowHdrMenu()
+    {
+        if (_metadata == null) return;
+        var isHdrImage = _metadata.IsHlg || _metadata.IsPq || _metadata.BasicInfo.IsHdr;
+        if (!isHdrImage) return;
+
+        var menu = new NSMenu();
+        var toggleTitle = _displayAsSdr ? "Display as HDR" : "Display as SDR";
+        menu.AddItem(new NSMenuItem(toggleTitle, (s, e) => ToggleHdrSdr()));
+        menu.AddItem(NSMenuItem.SeparatorItem);
+        menu.AddItem(new NSMenuItem("Copy Metadata", (s, e) => CopyMetadata()));
+
+        // Show the menu below the HDR label button
+        menu.PopUpMenu(null, new CGPoint(0, _hdrLabel!.Frame.Height), _hdrLabel);
     }
 
     /// <summary>
