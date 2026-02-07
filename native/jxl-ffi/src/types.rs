@@ -349,6 +349,11 @@ pub struct JxlDecodeOptions {
     pub PixelLimit: usize,
     /// Progressive decoding mode.
     pub ProgressiveMode: JxlProgressiveMode,
+    /// Desired display luminance for HDR→SDR tone mapping, in cd/m² (nits).
+    /// 0 = no tone mapping (default). Typical SDR value: 203 (ITU-R BT.2408 reference white).
+    /// When set to a positive value and the image has a higher intensity target,
+    /// BT.2446 Method A tone mapping compresses the HDR luminance range.
+    pub DesiredIntensityTarget: f32,
     /// Whether to adjust image orientation based on EXIF data.
     pub AdjustOrientation: bool,
     /// Whether to render spot colors.
@@ -376,6 +381,7 @@ impl Default for JxlDecodeOptions {
         Self {
             PixelLimit: 0,
             ProgressiveMode: JxlProgressiveMode::Pass,
+            DesiredIntensityTarget: 0.0,
             AdjustOrientation: true,
             RenderSpotColors: true,
             Coalescing: true,

@@ -17,6 +17,7 @@ public class AppDelegate : NSApplicationDelegate
 
         _mainWindow = new MainWindow();
         _mainWindow.MakeKeyAndOrderFront(this);
+        _mainWindow.MakeFirstResponder(_mainWindow.ContentView);
 
         // Load file: prefer file received via OpenFile (e.g. Finder "Open With"),
         // fall back to command line argument

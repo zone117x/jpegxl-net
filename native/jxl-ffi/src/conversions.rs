@@ -47,6 +47,11 @@ pub(crate) fn convert_options_to_upstream(c_options: &JxlDecodeOptions) -> JxlDe
     };
     options.high_precision = c_options.HighPrecision;
     options.premultiply_output = c_options.PremultiplyAlpha;
+    options.desired_intensity_target = if c_options.DesiredIntensityTarget > 0.0 {
+        Some(c_options.DesiredIntensityTarget)
+    } else {
+        None
+    };
     options.metadata_capture = convert_metadata_capture(&c_options.MetadataCapture);
     options
 }

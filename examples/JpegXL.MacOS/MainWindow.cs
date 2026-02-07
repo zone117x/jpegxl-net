@@ -6,6 +6,7 @@ using CoreGraphics;
 using Foundation;
 using ImageIO;
 using JpegXL.Net;
+using Metal;
 using UniformTypeIdentifiers;
 
 namespace JpegXL.MacOS;
@@ -57,6 +58,16 @@ public class MainWindow : NSWindow
     // HDR/SDR display mode toggle
     private bool _displayAsSdr;
 
+    // HDR vs SDR comparison mode
+    private bool _comparisonMode;
+    private HdrMetalView? _sdrMetalView;
+    private ComparisonDividerView? _comparisonDivider;
+    private nfloat _dividerPosition = 0.5f;
+    private bool _wasPlayingBeforeComparison;
+    private NSMenuItem? _comparisonMenuItem;
+    private NSTextField? _hdrSideLabel;
+    private NSTextField? _sdrSideLabel;
+
     // Screen change notification observer
     private NSObject? _screenChangeObserver;
 
@@ -99,7 +110,9 @@ public class MainWindow : NSWindow
     private void OnScreenChanged(NSNotification notification)
     {
         _metalView?.UpdateContentsScale();
+        _sdrMetalView?.UpdateContentsScale();
         UpdateHdrLabel();
+        if (_comparisonMode) UpdateComparisonLayout();
     }
 
     /// <summary>
@@ -199,6 +212,9 @@ public class MainWindow : NSWindow
         _hdrSdrMenuItem = new NSMenuItem("Display as SDR", (s, e) => ToggleHdrSdr());
         _hdrSdrMenuItem.Hidden = true;
         contextMenu.AddItem(_hdrSdrMenuItem);
+        _comparisonMenuItem = new NSMenuItem("Compare HDR vs SDR", (s, e) => ToggleComparisonMode());
+        _comparisonMenuItem.Hidden = true;
+        contextMenu.AddItem(_comparisonMenuItem);
         _metalView.Menu = contextMenu;
 
         contentView.AddSubview(_metalView);
@@ -750,6 +766,7 @@ public class MainWindow : NSWindow
             _currentFilePath = path;
             _currentFileModified = File.GetLastWriteTimeUtc(path);
             _displayAsSdr = false;  // Reset to HDR mode for new images
+            ExitComparisonMode();
             StopAnimation();
             var filename = Path.GetFileName(path);
             Subtitle = $"Loading {filename}";
@@ -966,6 +983,8 @@ public class MainWindow : NSWindow
             {
                 PremultiplyAlpha = true,
                 PixelFormat = JxlPixelFormat.Rgba32F,
+                // BT.2446a tone mapping for SDR mode (203 cd/m² = ITU-R BT.2408 SDR reference white)
+                DesiredIntensityTarget = _displayAsSdr ? 203f : 0f,
             };
 
             using var decoder = new JxlDecoder(options);
@@ -984,7 +1003,7 @@ public class MainWindow : NSWindow
             }
             else if (_displayAsSdr && (isHlg || isPq))
             {
-                // SDR mode: convert tone-mapped output to sRGB
+                // SDR mode: tone-mapped output to sRGB
                 using var srgbProfile = JxlColorProfile.FromEncoding(
                     JxlProfileType.Rgb,
                     whitePoint: JxlWhitePointType.D65,
@@ -1052,13 +1071,17 @@ public class MainWindow : NSWindow
         var isHdrImage = _metadata != null &&
             (_metadata.IsHlg || _metadata.IsPq || _metadata.BasicInfo.IsHdr);
 
-        _hdrSdrMenuItem!.Hidden = !isHdrImage;
+        _hdrSdrMenuItem!.Hidden = !isHdrImage || _comparisonMode;
+        _comparisonMenuItem!.Hidden = !isHdrImage;
 
         if (isHdrImage)
         {
             _hdrSdrMenuItem.Title = _displayAsSdr
                 ? "Display as HDR"
                 : "Display as SDR";
+            _comparisonMenuItem.Title = _comparisonMode
+                ? "Exit Comparison"
+                : "Compare HDR vs SDR";
         }
     }
 
@@ -1072,13 +1095,292 @@ public class MainWindow : NSWindow
         if (!isHdrImage) return;
 
         var menu = new NSMenu();
-        var toggleTitle = _displayAsSdr ? "Display as HDR" : "Display as SDR";
-        menu.AddItem(new NSMenuItem(toggleTitle, (s, e) => ToggleHdrSdr()));
+        if (!_comparisonMode)
+        {
+            var toggleTitle = _displayAsSdr ? "Display as HDR" : "Display as SDR";
+            menu.AddItem(new NSMenuItem(toggleTitle, (s, e) => ToggleHdrSdr()));
+        }
+        var comparisonTitle = _comparisonMode ? "Exit Comparison" : "Compare HDR vs SDR";
+        menu.AddItem(new NSMenuItem(comparisonTitle, (s, e) => ToggleComparisonMode()));
         menu.AddItem(NSMenuItem.SeparatorItem);
         menu.AddItem(new NSMenuItem("Copy Metadata", (s, e) => CopyMetadata()));
 
         // Show the menu below the HDR label button
         menu.PopUpMenu(null, new CGPoint(0, _hdrLabel!.Frame.Height), _hdrLabel);
+    }
+
+    /// <summary>
+    /// Toggles comparison mode on/off.
+    /// </summary>
+    private void ToggleComparisonMode()
+    {
+        if (_comparisonMode)
+            ExitComparisonMode();
+        else
+            EnterComparisonMode();
+        UpdateHdrToggle();
+    }
+
+    /// <summary>
+    /// Enters HDR vs SDR comparison mode, showing HDR on the left and SDR on the right
+    /// with a draggable divider.
+    /// </summary>
+    private async void EnterComparisonMode()
+    {
+        if (_comparisonMode || _currentFilePath == null || _metadata == null || _currentInfo == null)
+            return;
+
+        var isHdrImage = _metadata.IsHlg || _metadata.IsPq || _metadata.BasicInfo.IsHdr;
+        if (!isHdrImage) return;
+
+        Console.WriteLine("[Comparison] Entering comparison mode");
+
+        // If currently showing SDR, reload as HDR first
+        if (_displayAsSdr)
+        {
+            _displayAsSdr = false;
+            ReloadWithDisplayMode();
+            // Wait briefly for the reload to complete
+            await Task.Delay(100);
+        }
+
+        // Pause animation if playing
+        _wasPlayingBeforeComparison = _isPlaying;
+        if (_isPlaying)
+        {
+            StopAnimation();
+            UpdatePlayPauseButton();
+        }
+
+        try
+        {
+            // Decode SDR version
+            var options = new JxlDecodeOptions
+            {
+                PremultiplyAlpha = true,
+                PixelFormat = JxlPixelFormat.Rgba32F,
+                DesiredIntensityTarget = 203f,  // BT.2446a tone mapping to SDR
+            };
+
+            using var decoder = new JxlDecoder(options);
+            await decoder.SetInputFileAsync(_currentFilePath);
+            decoder.ReadInfo();
+
+            // Set output to sRGB for SDR
+            if (_metadata.IsHlg || _metadata.IsPq)
+            {
+                using var srgbProfile = JxlColorProfile.FromEncoding(
+                    JxlProfileType.Rgb,
+                    whitePoint: JxlWhitePointType.D65,
+                    primaries: JxlPrimariesType.Srgb,
+                    transferFunction: JxlTransferFunctionType.Srgb);
+                decoder.SetOutputColorProfile(srgbProfile);
+            }
+
+            // Create SDR Metal view with same frame as HDR view
+            _sdrMetalView = new HdrMetalView(_metalView!.Frame)
+            {
+                AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.HeightSizable,
+                PassThroughEvents = true
+            };
+
+            // Decode SDR image to GPU
+            var width = (int)_currentInfo.Size.Width;
+            var height = (int)_currentInfo.Size.Height;
+            _sdrMetalView.DecodeDirectToGpu(width, height, pixelSpan =>
+            {
+                decoder.GetPixels(MemoryMarshal.AsBytes(pixelSpan));
+            });
+
+            // Configure for sRGB display
+            _sdrMetalView.ConfigureForSrgb();
+            _sdrMetalView.HdrBrightnessScale = 1.0f;
+
+            // Sync viewport to match HDR view
+            _sdrMetalView.SetViewportSilently(_metalView.Zoom, _metalView.Offset);
+
+            // Create divider
+            _dividerPosition = 0.5f;
+            _comparisonDivider = new ComparisonDividerView(_metalView.Frame)
+            {
+                AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.HeightSizable,
+                DividerPosition = _dividerPosition,
+                OnDividerMoved = OnDividerMoved
+            };
+
+            // Create side labels
+            _hdrSideLabel = CreateComparisonLabel("HDR");
+            _sdrSideLabel = CreateComparisonLabel("SDR");
+
+            // Add views: SDR on top of HDR, divider on top of both, labels on top
+            var contentView = ContentView!;
+            contentView.AddSubview(_sdrMetalView, NSWindowOrderingMode.Above, _metalView);
+            contentView.AddSubview(_comparisonDivider, NSWindowOrderingMode.Above, _sdrMetalView);
+            contentView.AddSubview(_hdrSideLabel, NSWindowOrderingMode.Above, _comparisonDivider);
+            contentView.AddSubview(_sdrSideLabel, NSWindowOrderingMode.Above, _comparisonDivider);
+
+            // Wire viewport sync: when HDR view changes, update SDR view
+            _metalView.OnViewportChanged = (zoom, offset) =>
+            {
+                _sdrMetalView?.SetViewportSilently(zoom, offset);
+                UpdateComparisonLayout();
+            };
+
+            _comparisonMode = true;
+            UpdateComparisonLayout();
+
+            // Defer window activation to the next run loop iteration.
+            // This is needed because comparison mode is entered from a popup menu handler;
+            // the menu's event tracking is still active, so hit testing and cursor tracking
+            // won't work until the current event cycle completes.
+            NSApplication.SharedApplication.BeginInvokeOnMainThread(() =>
+            {
+                MakeKeyAndOrderFront(this);
+                MakeFirstResponder(_metalView);
+                _comparisonDivider?.Window?.InvalidateCursorRectsForView(_comparisonDivider);
+            });
+
+            Console.WriteLine("[Comparison] Comparison mode active");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Comparison] Error entering comparison mode: {ex.Message}");
+            ExitComparisonMode();
+        }
+    }
+
+    /// <summary>
+    /// Exits comparison mode and cleans up the SDR view and divider.
+    /// </summary>
+    private void ExitComparisonMode()
+    {
+        if (!_comparisonMode && _sdrMetalView == null) return;
+
+        Console.WriteLine("[Comparison] Exiting comparison mode");
+
+        _metalView!.OnViewportChanged = null;
+
+        _hdrSideLabel?.RemoveFromSuperview();
+        _hdrSideLabel?.Dispose();
+        _hdrSideLabel = null;
+
+        _sdrSideLabel?.RemoveFromSuperview();
+        _sdrSideLabel?.Dispose();
+        _sdrSideLabel = null;
+
+        _comparisonDivider?.RemoveFromSuperview();
+        _comparisonDivider?.Dispose();
+        _comparisonDivider = null;
+
+        _sdrMetalView?.RemoveFromSuperview();
+        _sdrMetalView?.Dispose();
+        _sdrMetalView = null;
+
+        _comparisonMode = false;
+
+        // Resume animation if it was playing before
+        if (_wasPlayingBeforeComparison && _frameDurations != null && _frameDurations.Length > 1)
+        {
+            StartAnimation();
+            UpdatePlayPauseButton();
+        }
+        _wasPlayingBeforeComparison = false;
+
+        _metalView.Render();
+    }
+
+    /// <summary>
+    /// Called when the divider is dragged. Updates the scissor rect and label positions.
+    /// </summary>
+    private void OnDividerMoved(nfloat position)
+    {
+        _dividerPosition = position;
+        UpdateComparisonLayout();
+    }
+
+    /// <summary>
+    /// Updates the scissor rect on the SDR view and repositions the labels based on divider position.
+    /// </summary>
+    private void UpdateComparisonLayout()
+    {
+        if (_sdrMetalView == null || _comparisonDivider == null || _metalView == null) return;
+
+        var contentsScale = _metalView.Window?.Screen?.BackingScaleFactor
+            ?? NSScreen.MainScreen?.BackingScaleFactor
+            ?? (nfloat)2.0;
+
+        var viewWidth = _sdrMetalView.Bounds.Width;
+        var viewHeight = _sdrMetalView.Bounds.Height;
+        if (viewWidth <= 0 || viewHeight <= 0) return;
+
+        var drawableWidth = (nuint)(double)(viewWidth * contentsScale);
+        var drawableHeight = (nuint)(double)(viewHeight * contentsScale);
+        var dividerPixelX = (nuint)Math.Clamp(
+            (double)(_dividerPosition * viewWidth * contentsScale),
+            0, (double)(drawableWidth - 1));
+
+        var clipWidth = drawableWidth - dividerPixelX;
+        if (clipWidth == 0) clipWidth = 1;
+
+        _sdrMetalView.ScissorRect = new MTLScissorRect
+        {
+            X = dividerPixelX,
+            Y = 0,
+            Width = clipWidth,
+            Height = drawableHeight
+        };
+
+        _sdrMetalView.Render();
+
+        // Update side label positions: HDR to left of divider, SDR to right
+        var dividerX = viewWidth * _dividerPosition;
+        var labelY = _metalView.Frame.GetMaxY() - 30;
+
+        if (_hdrSideLabel != null)
+        {
+            var w = _hdrSideLabel.Frame.Width;
+            var h = _hdrSideLabel.Frame.Height;
+            _hdrSideLabel.Frame = new CGRect(dividerX - w - LabelGap, labelY, w, h);
+        }
+        if (_sdrSideLabel != null)
+        {
+            var w = _sdrSideLabel.Frame.Width;
+            var h = _sdrSideLabel.Frame.Height;
+            _sdrSideLabel.Frame = new CGRect(dividerX + LabelGap, labelY, w, h);
+        }
+    }
+
+    private const float LabelPaddingH = 5f;
+    private const float LabelGap = 6f;
+
+    private static NSTextField CreateComparisonLabel(string text)
+    {
+        var font = NSFont.BoldSystemFontOfSize(12)!;
+
+        var label = new NSTextField
+        {
+            StringValue = text,
+            Editable = false,
+            Selectable = false,
+            Bordered = false,
+            DrawsBackground = true,
+            BackgroundColor = NSColor.Black.ColorWithAlphaComponent(0.5f),
+            TextColor = NSColor.White,
+            Font = font,
+            Alignment = NSTextAlignment.Center,
+            TranslatesAutoresizingMaskIntoConstraints = true,
+        };
+
+        // SizeToFit gives the natural text height (vertically centered)
+        label.SizeToFit();
+        var fittedSize = label.Frame.Size;
+
+        // Add horizontal padding, keep the fitted height as-is
+        label.Frame = new CGRect(0, 0,
+            Math.Ceiling(fittedSize.Width) + LabelPaddingH * 2,
+            Math.Ceiling(fittedSize.Height));
+
+        return label;
     }
 
     /// <summary>
@@ -1357,6 +1659,7 @@ public class MainWindow : NSWindow
     {
         if (disposing)
         {
+            ExitComparisonMode();
             StopAnimation();
             _memoryTimer?.Invalidate();
             _memoryTimer?.Dispose();

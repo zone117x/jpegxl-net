@@ -23,6 +23,7 @@ public partial struct JxlDecodeOptions
     /// <item><description>HighPrecision: false</description></item>
     /// <item><description>PremultiplyAlpha: false</description></item>
     /// <item><description>DecodeExtraChannels: false</description></item>
+    /// <item><description>DesiredIntensityTarget: 0 (no tone mapping)</description></item>
     /// <item><description>PixelFormat: RGBA8 (default)</description></item>
     /// <item><description>MetadataCapture: Default (all enabled with limits)</description></item>
     /// <item><description>CmsType: Lcms2</description></item>
@@ -32,6 +33,7 @@ public partial struct JxlDecodeOptions
     {
         PixelLimit = UIntPtr.Zero,
         ProgressiveMode = JxlProgressiveMode.Pass,
+        DesiredIntensityTarget = 0,
         AdjustOrientation = true,
         RenderSpotColors = true,
         Coalescing = true,

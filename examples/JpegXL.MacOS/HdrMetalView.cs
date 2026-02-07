@@ -42,6 +42,24 @@ public class HdrMetalView : NSView
     public int ImageHeight => _imageHeight;
 
     /// <summary>
+    /// Optional scissor rect to clip rendering. When set, only the specified
+    /// portion of the drawable is rendered. Coordinates are in pixels (not points).
+    /// </summary>
+    public MTLScissorRect? ScissorRect { get; set; }
+
+    /// <summary>
+    /// When true, this view does not handle mouse/scroll events and is invisible to hit testing.
+    /// Used for the SDR overlay in comparison mode.
+    /// </summary>
+    public bool PassThroughEvents { get; set; }
+
+    /// <summary>
+    /// Called whenever zoom or offset changes from user interaction.
+    /// Used to sync another view's viewport in comparison mode.
+    /// </summary>
+    public Action<nfloat, CGPoint>? OnViewportChanged { get; set; }
+
+    /// <summary>
     /// Sets the HDR brightness scale for EDR display.
     /// For HDR content, this should be IntensityTarget / SDR_REFERENCE_WHITE (typically 203 nits).
     /// Values > 1.0 will use EDR headroom for brighter-than-SDR-white display.
@@ -151,6 +169,7 @@ public class HdrMetalView : NSView
             ClampOffset();
             Render();
             OnZoomChanged?.Invoke(_zoom);
+            OnViewportChanged?.Invoke(_zoom, _offset);
         }
     }
 
@@ -174,6 +193,7 @@ public class HdrMetalView : NSView
         _offset = CGPoint.Empty;
         Render();
         OnZoomChanged?.Invoke(_zoom);
+        OnViewportChanged?.Invoke(_zoom, _offset);
     }
 
     /// <summary>
@@ -194,6 +214,27 @@ public class HdrMetalView : NSView
         _offset = CGPoint.Empty;
         Render();
         OnZoomChanged?.Invoke(_zoom);
+        OnViewportChanged?.Invoke(_zoom, _offset);
+    }
+
+    /// <summary>
+    /// Sets zoom and offset without triggering OnViewportChanged callback.
+    /// Used for syncing from another view to prevent infinite callback loops.
+    /// </summary>
+    public void SetViewportSilently(nfloat zoom, CGPoint offset)
+    {
+        _zoom = (nfloat)Math.Clamp((double)zoom, 0.1, 100.0);
+        _offset = offset;
+        ClampOffset();
+        Render();
+    }
+
+    public override bool AcceptsFirstResponder() => true;
+    public override bool AcceptsFirstMouse(NSEvent? theEvent) => true;
+
+    public override NSView? HitTest(CGPoint point)
+    {
+        return PassThroughEvents ? null : base.HitTest(point);
     }
 
     public HdrMetalView(CGRect frame) : base(frame)
@@ -210,6 +251,7 @@ public class HdrMetalView : NSView
     {
         base.SetFrameSize(newSize);
         Render();
+        OnViewportChanged?.Invoke(_zoom, _offset);
     }
 
     private void Initialize()
@@ -736,6 +778,12 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
 
         encoder.SetVertexBuffer(_vertexBuffer, 0, 0);
 
+        // Apply scissor rect if set (for comparison mode clipping)
+        if (ScissorRect.HasValue)
+        {
+            encoder.SetScissorRect(ScissorRect.Value);
+        }
+
         // Calculate scale for 1:1 pixel ratio at zoom=1.0
         // The quad spans -1 to 1 in NDC, which maps to the full drawable
         // At zoom=1.0, we want 1 image pixel = 1 screen pixel
@@ -847,6 +895,7 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         ClampOffset();
         Render();
         OnZoomChanged?.Invoke(_zoom);
+        OnViewportChanged?.Invoke(_zoom, _offset);
     }
 
     // Mouse drag panning support
@@ -861,6 +910,7 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         _isDragging = true;
         _dragStartLocation = ConvertPointFromView(theEvent.LocationInWindow, null);
         _dragStartOffset = _offset;
+        NSCursor.ClosedHandCursor.Set();
     }
 
     public override void MouseDragged(NSEvent theEvent)
@@ -887,11 +937,13 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
 
         ClampOffset();
         Render();
+        OnViewportChanged?.Invoke(_zoom, _offset);
     }
 
     public override void MouseUp(NSEvent theEvent)
     {
         _isDragging = false;
+        NSCursor.ArrowCursor.Set();
         base.MouseUp(theEvent);
     }
 
