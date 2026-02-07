@@ -34,18 +34,12 @@ pub(crate) fn convert_options_to_upstream(c_options: &JxlDecodeOptions) -> JxlDe
     options.adjust_orientation = c_options.AdjustOrientation;
     options.render_spot_colors = c_options.RenderSpotColors;
     options.coalescing = c_options.Coalescing;
-    options.desired_intensity_target = if c_options.DesiredIntensityTarget > 0.0 {
-        Some(c_options.DesiredIntensityTarget)
-    } else {
-        None
-    };
     options.skip_preview = c_options.SkipPreview;
     options.progressive_mode = match c_options.ProgressiveMode {
         JxlProgressiveMode::Eager => UpstreamProgressiveMode::Eager,
         JxlProgressiveMode::Pass => UpstreamProgressiveMode::Pass,
         JxlProgressiveMode::FullFrame => UpstreamProgressiveMode::FullFrame,
     };
-    options.enable_output = c_options.EnableOutput;
     options.pixel_limit = if c_options.PixelLimit > 0 {
         Some(c_options.PixelLimit)
     } else {

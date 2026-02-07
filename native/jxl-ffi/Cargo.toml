@@ -12,12 +12,15 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 jxl = { path = "../jxl-rs/jxl" }
+lcms2 = { version = "6.1", default-features = false, features = ["static"], optional = true }
+bytemuck = { version = "1", optional = true }
 
 [build-dependencies]
 csbindgen = "1.9"
 
 [features]
-default = []
+default = ["cms-lcms2"]
+cms-lcms2 = ["dep:lcms2", "dep:bytemuck"]
 # SIMD features passthrough
 all-simd = ["jxl/all-simd"]
 sse42 = ["jxl/sse42"]

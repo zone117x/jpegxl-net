@@ -96,6 +96,8 @@ struct DecoderInner {
     pixel_format: JxlPixelFormat,
     /// Decoder options (stored for reset).
     options: JxlDecodeOptions,
+    /// CMS type to use for color management.
+    cms_type: JxlCmsType,
     /// Cached EXIF boxes (avoids re-cloning on repeated access).
     exif_boxes_cache: Option<Vec<CachedMetadataBox>>,
     /// Cached XML boxes (avoids re-cloning on repeated access).
@@ -110,14 +112,18 @@ impl DecoderInner {
     }
 
     fn with_options(options: JxlDecodeOptions) -> Self {
+        let cms_type = options.CmsType;
+        let mut upstream_opts = convert_options_to_upstream(&options);
+        upstream_opts.cms = create_cms(cms_type);
         Self {
-            state: DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&options))),
+            state: DecoderState::Initialized(UpstreamDecoder::new(upstream_opts)),
             data: Vec::new(),
             data_offset: 0,
             basic_info: None,
             extra_channels: Vec::new(),
             pixel_format: options.PixelFormat,
             options,
+            cms_type,
             exif_boxes_cache: None,
             xml_boxes_cache: None,
             jumbf_boxes_cache: None,
@@ -149,7 +155,23 @@ impl DecoderInner {
 
     /// Resets only the decoder state (used for error recovery).
     fn reset_state(&mut self) {
-        self.state = DecoderState::Initialized(UpstreamDecoder::new(convert_options_to_upstream(&self.options)));
+        let mut opts = convert_options_to_upstream(&self.options);
+        opts.cms = create_cms(self.cms_type);
+        self.state = DecoderState::Initialized(UpstreamDecoder::new(opts));
+    }
+}
+
+/// Creates a CMS implementation from the given type.
+fn create_cms(cms_type: JxlCmsType) -> Option<Box<dyn jxl::api::JxlCms>> {
+    match cms_type {
+        JxlCmsType::None => None,
+        #[cfg(feature = "cms-lcms2")]
+        JxlCmsType::Lcms2 => Some(Box::new(crate::cms::Lcms2Cms)),
+        #[cfg(not(feature = "cms-lcms2"))]
+        JxlCmsType::Lcms2 => {
+            set_last_error("lcms2 support not compiled in");
+            None
+        }
     }
 }
 
@@ -878,7 +900,6 @@ pub unsafe extern "C" fn jxl_decoder_set_pixel_format(
 
     JxlStatus::Success
 }
-
 
 /// Gets the number of extra channels.
 ///

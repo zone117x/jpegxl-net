@@ -965,15 +965,8 @@ public class MainWindow : NSWindow
             var options = new JxlDecodeOptions
             {
                 PremultiplyAlpha = true,
-                PixelFormat = JxlPixelFormat.Rgba32F
+                PixelFormat = JxlPixelFormat.Rgba32F,
             };
-
-            if (_displayAsSdr)
-            {
-                // Set desired intensity target to SDR reference white (100 nits)
-                // This tells jxl-rs to tone-map down to SDR
-                options.DesiredIntensityTarget = 100.0f;
-            }
 
             using var decoder = new JxlDecoder(options);
             await decoder.SetInputFileAsync(_currentFilePath);
@@ -989,7 +982,16 @@ public class MainWindow : NSWindow
                     transferFunction: isHlg ? JxlTransferFunctionType.Hlg : JxlTransferFunctionType.Pq);
                 decoder.SetOutputColorProfile(outputProfile);
             }
-            // SDR mode: don't set output profile, let jxl-rs tone-map to default sRGB
+            else if (_displayAsSdr && (isHlg || isPq))
+            {
+                // SDR mode: convert tone-mapped output to sRGB
+                using var srgbProfile = JxlColorProfile.FromEncoding(
+                    JxlProfileType.Rgb,
+                    whitePoint: JxlWhitePointType.D65,
+                    primaries: JxlPrimariesType.Srgb,
+                    transferFunction: JxlTransferFunctionType.Srgb);
+                decoder.SetOutputColorProfile(srgbProfile);
+            }
 
             StopAnimation();
             _frameDurations = null;

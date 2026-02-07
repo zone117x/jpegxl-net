@@ -10,18 +10,14 @@ use super::*;
 #[test]
 fn test_convert_to_jxl_pixel_format_rgba_with_alpha() {
     let format = JxlPixelFormat {
-        color_type: JxlColorType::Rgba,
-        data_format: JxlDataFormat::Uint8,
-        endianness: JxlEndianness::Native,
+        ColorType: JxlColorType::Rgba,
+        DataFormat: JxlDataFormat::Uint8,
+        Endianness: JxlEndianness::Native,
     };
 
     let extra_channels = vec![JxlExtraChannelInfo {
-        channel_type: JxlExtraChannelType::Alpha,
-        bits_per_sample: 8,
-        exponent_bits_per_sample: 0,
-        name_length: 0,
-        spot_color: [0.0; 4],
-        alpha_premultiplied: false,
+        ChannelType: JxlExtraChannelType::Alpha,
+        AlphaAssociated: false,
     }];
 
     // When using RGBA with alpha as extra channel, alpha should be None
@@ -38,18 +34,14 @@ fn test_convert_to_jxl_pixel_format_rgba_with_alpha() {
 #[test]
 fn test_convert_to_jxl_pixel_format_rgb_with_alpha() {
     let format = JxlPixelFormat {
-        color_type: JxlColorType::Rgb,
-        data_format: JxlDataFormat::Uint8,
-        endianness: JxlEndianness::Native,
+        ColorType: JxlColorType::Rgb,
+        DataFormat: JxlDataFormat::Uint8,
+        Endianness: JxlEndianness::Native,
     };
 
     let extra_channels = vec![JxlExtraChannelInfo {
-        channel_type: JxlExtraChannelType::Alpha,
-        bits_per_sample: 8,
-        exponent_bits_per_sample: 0,
-        name_length: 0,
-        spot_color: [0.0; 4],
-        alpha_premultiplied: false,
+        ChannelType: JxlExtraChannelType::Alpha,
+        AlphaAssociated: false,
     }];
 
     // When using RGB (no alpha in color), alpha should be Some

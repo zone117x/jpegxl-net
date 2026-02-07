@@ -123,7 +123,6 @@ public partial class MainWindow : Window
             var options = new JxlDecodeOptions
             {
                 PremultiplyAlpha = true,
-                DesiredIntensityTarget = 255f
             };
             using var decoder = new JxlDecoder(options);
 

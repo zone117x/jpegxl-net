@@ -347,9 +347,6 @@ pub struct JxlDecodeOptions {
     /// Maximum number of pixels to decode.
     /// 0 = no limit.
     pub PixelLimit: usize,
-    /// Desired intensity target for HDR content.
-    /// 0 = use default (image's native intensity target).
-    pub DesiredIntensityTarget: f32,
     /// Progressive decoding mode.
     pub ProgressiveMode: JxlProgressiveMode,
     /// Whether to adjust image orientation based on EXIF data.
@@ -360,8 +357,6 @@ pub struct JxlDecodeOptions {
     pub Coalescing: bool,
     /// Whether to skip the preview image.
     pub SkipPreview: bool,
-    /// Whether to enable output rendering.
-    pub EnableOutput: bool,
     /// Whether to use high precision mode for decoding.
     pub HighPrecision: bool,
     /// Whether to premultiply alpha in the output.
@@ -372,24 +367,25 @@ pub struct JxlDecodeOptions {
     pub PixelFormat: JxlPixelFormat,
     /// Options for capturing metadata boxes (EXIF, XML, JUMBF).
     pub MetadataCapture: JxlMetadataCaptureOptions,
+    /// Color management system to use for color space conversions.
+    pub CmsType: JxlCmsType,
 }
 
 impl Default for JxlDecodeOptions {
     fn default() -> Self {
         Self {
             PixelLimit: 0,
-            DesiredIntensityTarget: 0.0,
             ProgressiveMode: JxlProgressiveMode::Pass,
             AdjustOrientation: true,
             RenderSpotColors: true,
             Coalescing: true,
             SkipPreview: true,
-            EnableOutput: true,
             HighPrecision: false,
             PremultiplyAlpha: false,
             DecodeExtraChannels: false,
             PixelFormat: JxlPixelFormat::default(),
             MetadataCapture: JxlMetadataCaptureOptions::default(),
+            CmsType: JxlCmsType::None,
         }
     }
 }
@@ -653,4 +649,23 @@ impl Default for JxlColorProfileRaw {
             Encoding: JxlColorEncodingRaw::default(),
         }
     }
+}
+
+// ============================================================================
+// CMS Types
+// ============================================================================
+
+/// Color Management System type.
+///
+/// Specifies which CMS implementation to use for color space conversions
+/// during decoding. Without a CMS, the decoder can only output to color
+/// profiles that match the image's internal encoding.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlCmsType {
+    /// No CMS. Color space conversion is limited to built-in transforms.
+    None = 0,
+    /// Use lcms2 (Little CMS) for color management.
+    /// Enables conversion between arbitrary ICC color profiles.
+    Lcms2 = 1,
 }

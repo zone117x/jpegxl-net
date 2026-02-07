@@ -960,11 +960,6 @@ namespace JpegXL.Net
         /// </summary>
         public System.UIntPtr PixelLimit;
         /// <summary>
-        ///  Desired intensity target for HDR content.
-        ///  0 = use default (image's native intensity target).
-        /// </summary>
-        public float DesiredIntensityTarget;
-        /// <summary>
         ///  Progressive decoding mode.
         /// </summary>
         public JxlProgressiveMode ProgressiveMode;
@@ -985,10 +980,6 @@ namespace JpegXL.Net
         /// </summary>
         [MarshalAs(UnmanagedType.U1)] public bool SkipPreview;
         /// <summary>
-        ///  Whether to enable output rendering.
-        /// </summary>
-        [MarshalAs(UnmanagedType.U1)] public bool EnableOutput;
-        /// <summary>
         ///  Whether to use high precision mode for decoding.
         /// </summary>
         [MarshalAs(UnmanagedType.U1)] public bool HighPrecision;
@@ -1008,6 +999,10 @@ namespace JpegXL.Net
         ///  Options for capturing metadata boxes (EXIF, XML, JUMBF).
         /// </summary>
         public JxlMetadataCaptureOptions MetadataCapture;
+        /// <summary>
+        ///  Color management system to use for color space conversions.
+        /// </summary>
+        public JxlCmsType CmsType;
     }
 
     /// <summary>
@@ -1561,6 +1556,26 @@ namespace JpegXL.Net
         ///  Simple parameterized color encoding.
         /// </summary>
         Simple = 1,
+    }
+
+    /// <summary>
+    ///  Color Management System type.
+    ///
+    ///  Specifies which CMS implementation to use for color space conversions
+    ///  during decoding. Without a CMS, the decoder can only output to color
+    ///  profiles that match the image's internal encoding.
+    /// </summary>
+    public enum JxlCmsType : uint
+    {
+        /// <summary>
+        ///  No CMS. Color space conversion is limited to built-in transforms.
+        /// </summary>
+        None = 0,
+        /// <summary>
+        ///  Use lcms2 (Little CMS) for color management.
+        ///  Enables conversion between arbitrary ICC color profiles.
+        /// </summary>
+        Lcms2 = 1,
     }
 
 
