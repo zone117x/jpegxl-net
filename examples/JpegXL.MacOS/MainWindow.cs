@@ -37,6 +37,7 @@ public class MainWindow : NSWindow
     private NSButton? _hdrLabel;
     private NSTextField? _frameLabel;
     private NSButton? _playPauseButton;
+    private NSButton? _fitButton;
     private NSMenuItem? _hdrSdrMenuItem;
 
     // Animation support
@@ -202,7 +203,7 @@ public class MainWindow : NSWindow
         _metalView = new HdrMetalView(new CGRect(0, 40, 900, 660))
         {
             AutoresizingMask = NSViewResizingMask.WidthSizable | NSViewResizingMask.HeightSizable,
-            OnZoomChanged = _ => UpdateStatus()
+            OnZoomChanged = _ => { UpdateStatus(); UpdateFitButton(); }
         };
 
         // Context menu for right-click
@@ -351,13 +352,19 @@ public class MainWindow : NSWindow
         }
     }
 
-    private void ZoomToFit()
+    private void ToggleFitMode()
     {
-        if (_metalView != null)
-        {
+        if (_metalView == null) return;
+        _metalView.FitMode = _fitButton?.State == NSCellStateValue.On;
+        if (_metalView.FitMode)
             _metalView.ZoomToFit();
-            UpdateStatus();
-        }
+        UpdateStatus();
+    }
+
+    private void UpdateFitButton()
+    {
+        if (_fitButton == null || _metalView == null) return;
+        _fitButton.State = _metalView.FitMode ? NSCellStateValue.On : NSCellStateValue.Off;
     }
 
     private void PlayPause()
@@ -931,8 +938,10 @@ public class MainWindow : NSWindow
             UpdateHdrToggle();
 
             Subtitle = filename;
-            _metalView.ResetView();  // Display at 1:1 pixel ratio
-            UpdateStatus();  // Show zoom level
+            _metalView.FitMode = true;
+            _metalView.ZoomToFit();
+            UpdateFitButton();
+            UpdateStatus();
             UpdatePlayPauseButton();
 
             // Handle command-line export if requested
@@ -1783,9 +1792,16 @@ public class MainWindow : NSWindow
                     item.View = NSButton.CreateButton("1:1", _window.ActualSize);
                     break;
                 case "Fit":
+                    _window._fitButton = new NSButton
+                    {
+                        Title = "Fit",
+                        BezelStyle = NSBezelStyle.Toolbar,
+                    };
+                    _window._fitButton.SetButtonType(NSButtonType.Toggle);
+                    _window._fitButton.Activated += (s, e) => _window.ToggleFitMode();
                     item.Label = "Fit";
                     item.ToolTip = "Fit image to window";
-                    item.View = NSButton.CreateButton("Fit", _window.ZoomToFit);
+                    item.View = _window._fitButton;
                     break;
             }
 

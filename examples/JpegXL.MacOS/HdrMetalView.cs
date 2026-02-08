@@ -54,6 +54,12 @@ public class HdrMetalView : NSView
     public bool PassThroughEvents { get; set; }
 
     /// <summary>
+    /// When true, the view auto-fits the image on window resize.
+    /// Disabled automatically when the user changes zoom manually (scroll, zoom buttons, 1:1).
+    /// </summary>
+    public bool FitMode { get; set; }
+
+    /// <summary>
     /// Called whenever zoom or offset changes from user interaction.
     /// Used to sync another view's viewport in comparison mode.
     /// </summary>
@@ -165,6 +171,7 @@ public class HdrMetalView : NSView
         get => _zoom;
         set
         {
+            FitMode = false;
             _zoom = (nfloat)Math.Clamp((double)value, 0.1, 100.0);
             ClampOffset();
             Render();
@@ -189,6 +196,7 @@ public class HdrMetalView : NSView
     /// </summary>
     public void ResetView()
     {
+        FitMode = false;
         _zoom = 1.0f;
         _offset = CGPoint.Empty;
         Render();
@@ -250,7 +258,10 @@ public class HdrMetalView : NSView
     public override void SetFrameSize(CGSize newSize)
     {
         base.SetFrameSize(newSize);
-        Render();
+        if (FitMode && _imageWidth > 0)
+            ZoomToFit();
+        else
+            Render();
         OnViewportChanged?.Invoke(_zoom, _offset);
     }
 
@@ -865,6 +876,8 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         var delta = theEvent.ScrollingDeltaY;
         if (Math.Abs(delta) < 0.01) return;
 
+        FitMode = false;
+
         // Calculate zoom factor (positive delta = zoom in)
         // Use a smaller multiplier for smoother zooming
         var zoomFactor = 1.0 + delta * 0.005;
@@ -964,9 +977,10 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         var imageScaleY = (nfloat)_imageHeight / viewHeightPixels * _zoom;
 
         // Maximum offset allows the image edge to reach the opposite view edge
-        // If image is smaller than view, don't allow offset
-        var maxOffsetX = Math.Max(0, (double)(imageScaleX - 1));
-        var maxOffsetY = Math.Max(0, (double)(imageScaleY - 1));
+        // When image is larger than view: edge can reach the opposite view edge
+        // When image is smaller than view: image can slide until its edge meets the view edge
+        var maxOffsetX = Math.Abs((double)(imageScaleX - 1));
+        var maxOffsetY = Math.Abs((double)(imageScaleY - 1));
 
         _offset = new CGPoint(
             Math.Clamp((double)_offset.X, -maxOffsetX, maxOffsetX),
