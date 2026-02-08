@@ -410,28 +410,6 @@ public sealed unsafe class JxlDecoder : IDisposable
         }
     }
 
-    /// <summary>
-    /// Sets the output color profile to sRGB.
-    /// </summary>
-    /// <param name="grayscale">If true, uses grayscale sRGB; otherwise RGB sRGB.</param>
-    /// <exception cref="JxlException">Thrown if setting the profile fails.</exception>
-    public void SetOutputColorProfileSrgb(bool grayscale = false)
-    {
-        using var profile = JxlColorProfile.CreateSrgb(grayscale);
-        SetOutputColorProfile(profile);
-    }
-
-    /// <summary>
-    /// Sets the output color profile to linear sRGB.
-    /// </summary>
-    /// <param name="grayscale">If true, uses grayscale linear sRGB; otherwise RGB linear sRGB.</param>
-    /// <exception cref="JxlException">Thrown if setting the profile fails.</exception>
-    public void SetOutputColorProfileLinearSrgb(bool grayscale = false)
-    {
-        using var profile = JxlColorProfile.CreateLinearSrgb(grayscale);
-        SetOutputColorProfile(profile);
-    }
-
     // ========================================================================
     // Decoder State
     // ========================================================================

@@ -119,10 +119,9 @@ public partial class MainWindow : Window
             ClearFrames();
 
             // Single decoder for entire operation
-            var options = new JxlDecodeOptions
-            {
-                PremultiplyAlpha = true,
-            };
+            var options = JxlDecodeOptions.Default;
+            options.PremultiplyAlpha = true; // Premultiply alpha for correct blending in viewer
+
             using var decoder = new JxlDecoder(options);
 
             // Async file I/O keeps UI responsive

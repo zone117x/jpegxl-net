@@ -267,7 +267,8 @@ public class ColorProfileTests
         decoder.ReadInfo();
 
         // Act & Assert (should not throw)
-        decoder.SetOutputColorProfileSrgb();
+        using var profile = JxlColorProfile.CreateSrgb();
+        decoder.SetOutputColorProfile(profile);
 
         // Verify output profile is sRGB
         using var outputProfile = decoder.GetOutputColorProfile();
@@ -285,7 +286,8 @@ public class ColorProfileTests
         decoder.ReadInfo();
 
         // Act & Assert (should not throw)
-        decoder.SetOutputColorProfileLinearSrgb();
+        using var profile = JxlColorProfile.CreateLinearSrgb();
+        decoder.SetOutputColorProfile(profile);
 
         // Verify output profile is linear sRGB
         using var outputProfile = decoder.GetOutputColorProfile();

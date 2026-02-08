@@ -648,6 +648,35 @@ public class MainWindow : NSWindow
         if (utType != null) panel.AllowedContentTypes = [utType];
     }
 
+    /// <summary>
+    /// Creates a JxlDecoder configured for sRGB Rgba8 output with optional tone mapping.
+    /// Caller is responsible for disposing the returned decoder.
+    /// </summary>
+    private static JxlDecoder CreateSrgbDecoder(string filePath, JxlToneMappingMethod toneMapping)
+    {
+        var options = JxlDecodeOptions.Default;
+        options.PremultiplyAlpha = false;
+        options.PixelFormat = JxlPixelFormat.Rgba8;
+        if (toneMapping != JxlToneMappingMethod.None)
+            options.ToneMappingMethod = toneMapping;
+
+        var decoder = new JxlDecoder(options);
+        decoder.SetInputFile(filePath);
+        decoder.ReadInfo();
+
+        if (toneMapping != JxlToneMappingMethod.None)
+        {
+            using var srgbProfile = JxlColorProfile.FromEncoding(
+                JxlProfileType.Rgb,
+                whitePoint: JxlWhitePointType.D65,
+                primaries: JxlPrimariesType.Srgb,
+                transferFunction: JxlTransferFunctionType.Srgb);
+            decoder.SetOutputColorProfile(srgbProfile);
+        }
+
+        return decoder;
+    }
+
     private void PerformExport(string path, string format, float quality, JxlToneMappingMethod toneMapping)
     {
         if (_currentFilePath == null || _currentInfo == null) return;
@@ -668,32 +697,10 @@ public class MainWindow : NSWindow
         var width = (int)_currentInfo.Size.Width;
         var height = (int)_currentInfo.Size.Height;
 
-        // Create fresh decoder with Rgba8 format for export
-        var exportOptions = JxlDecodeOptions.Default;
-        exportOptions.PremultiplyAlpha = false;  // Straight alpha for PNG/TIFF
-        exportOptions.PixelFormat = JxlPixelFormat.Rgba8;
-        if (toneMapping != JxlToneMappingMethod.None)
-            exportOptions.ToneMappingMethod = toneMapping;
-
-        using var exportDecoder = new JxlDecoder(exportOptions);
-        exportDecoder.SetInputFile(_currentFilePath);
-        exportDecoder.ReadInfo();
-
-        // For tone-mapped export, set sRGB output profile
-        if (toneMapping != JxlToneMappingMethod.None)
-        {
-            using var srgbProfile = JxlColorProfile.FromEncoding(
-                JxlProfileType.Rgb,
-                whitePoint: JxlWhitePointType.D65,
-                primaries: JxlPrimariesType.Srgb,
-                transferFunction: JxlTransferFunctionType.Srgb);
-            exportDecoder.SetOutputColorProfile(srgbProfile);
-        }
+        using var exportDecoder = CreateSrgbDecoder(_currentFilePath, toneMapping);
 
         // Decode to Rgba8 bytes
         var pixels = new byte[width * height * 4];
-
-        // GetPixels decodes the first frame (works for both static and animated)
         exportDecoder.GetPixels(pixels);
 
         // Create CGImage from sRGB RGBA8 data
@@ -765,27 +772,7 @@ public class MainWindow : NSWindow
         );
         destination.SetProperties(gifFileProperties);
 
-        // Create decoder for export - decode frames sequentially using streaming API
-        var exportOptions = JxlDecodeOptions.Default;
-        exportOptions.PremultiplyAlpha = false;
-        exportOptions.PixelFormat = JxlPixelFormat.Rgba8;
-        if (toneMapping != JxlToneMappingMethod.None)
-            exportOptions.ToneMappingMethod = toneMapping;
-
-        using var exportDecoder = new JxlDecoder(exportOptions);
-        exportDecoder.SetInputFile(_currentFilePath);
-        exportDecoder.ReadInfo();
-
-        // For tone-mapped export, set sRGB output profile
-        if (toneMapping != JxlToneMappingMethod.None)
-        {
-            using var srgbProfile = JxlColorProfile.FromEncoding(
-                JxlProfileType.Rgb,
-                whitePoint: JxlWhitePointType.D65,
-                primaries: JxlPrimariesType.Srgb,
-                transferFunction: JxlTransferFunctionType.Srgb);
-            exportDecoder.SetOutputColorProfile(srgbProfile);
-        }
+        using var exportDecoder = CreateSrgbDecoder(_currentFilePath, toneMapping);
 
         // Decode and add each frame using streaming API
         using var colorSpace = CGColorSpace.CreateSrgb();
@@ -906,10 +893,9 @@ public class MainWindow : NSWindow
 
             Console.WriteLine($"[LoadImage] Loading image: {path}");
 
-            var options = new JxlDecodeOptions {
-                PremultiplyAlpha = true,
-                PixelFormat = JxlPixelFormat.Rgba32F
-            };
+            var options = JxlDecodeOptions.Default;
+            options.PremultiplyAlpha = true;
+            options.PixelFormat = JxlPixelFormat.Rgba32F;
 
             // Single decoder for entire load operation
             // Using SetInputFileAsync reads directly into native memory on a background thread,
@@ -976,18 +962,19 @@ public class MainWindow : NSWindow
             {
                 // Create output profile that keeps the native HLG/PQ transfer function
                 // Use Bt2100 primaries (Rec.2020) which is standard for HDR content
-                using var outputProfile = JxlColorProfile.FromEncoding(
+                using var profile = JxlColorProfile.FromEncoding(
                     JxlProfileType.Rgb,
                     whitePoint: JxlWhitePointType.D65,
                     primaries: JxlPrimariesType.Bt2100,
                     transferFunction: isHlg ? JxlTransferFunctionType.Hlg : JxlTransferFunctionType.Pq);
-                decoder.SetOutputColorProfile(outputProfile);
+                decoder.SetOutputColorProfile(profile);
                 Console.WriteLine($"[ColorProfile] Set output to {(isHlg ? "HLG" : "PQ")} Rec.2100 for system tone mapping");
             }
             else
             {
                 // SDR/other: explicit linear sRGB output for consistent Metal linear color space rendering
-                decoder.SetOutputColorProfileLinearSrgb();
+                using var profile = JxlColorProfile.CreateLinearSrgb();
+                decoder.SetOutputColorProfile(profile);
             }
 
             _frameDurations = null;
@@ -1116,13 +1103,11 @@ public class MainWindow : NSWindow
 
             Console.WriteLine($"[DisplayMode] Reloading as {(_displayAsSdr ? "SDR" : "HDR")}");
 
-            var options = new JxlDecodeOptions
-            {
-                PremultiplyAlpha = true,
-                PixelFormat = JxlPixelFormat.Rgba32F,
-                // BT.2446a tone mapping for SDR mode (default 203 cd/m² = ITU-R BT.2408 SDR reference white)
-                ToneMappingMethod = _displayAsSdr ? JxlToneMappingMethod.Bt2446aPerceptual : JxlToneMappingMethod.None,
-            };
+            var options = JxlDecodeOptions.Default;
+            options.PremultiplyAlpha = true;
+            options.PixelFormat = JxlPixelFormat.Rgba32F;
+            // BT.2446a tone mapping for SDR mode (default 203 cd/m² = ITU-R BT.2408 SDR reference white)
+            options.ToneMappingMethod = _displayAsSdr ? JxlToneMappingMethod.Bt2446aPerceptual : JxlToneMappingMethod.None;
 
             using var decoder = new JxlDecoder(options);
             await decoder.SetInputFileAsync(_currentFilePath);
@@ -1131,17 +1116,18 @@ public class MainWindow : NSWindow
             if (!_displayAsSdr && (isHlg || isPq))
             {
                 // HDR mode: keep native HLG/PQ encoding for system tone mapper
-                using var outputProfile = JxlColorProfile.FromEncoding(
+                using var profile = JxlColorProfile.FromEncoding(
                     JxlProfileType.Rgb,
                     whitePoint: JxlWhitePointType.D65,
                     primaries: JxlPrimariesType.Bt2100,
                     transferFunction: isHlg ? JxlTransferFunctionType.Hlg : JxlTransferFunctionType.Pq);
-                decoder.SetOutputColorProfile(outputProfile);
+                decoder.SetOutputColorProfile(profile);
             }
             else if (_displayAsSdr && (isHlg || isPq))
             {
                 // SDR mode: tone-mapped output to linear sRGB (same as regular SDR images)
-                decoder.SetOutputColorProfileLinearSrgb();
+                using var profile = JxlColorProfile.CreateLinearSrgb();
+                decoder.SetOutputColorProfile(profile);
             }
 
             StopAnimation();
@@ -1301,12 +1287,10 @@ public class MainWindow : NSWindow
         try
         {
             // Decode SDR version
-            var options = new JxlDecodeOptions
-            {
-                PremultiplyAlpha = true,
-                PixelFormat = JxlPixelFormat.Rgba32F,
-                ToneMappingMethod = JxlToneMappingMethod.Bt2446aPerceptual,  // BT.2446a tone mapping to SDR
-            };
+            var options = JxlDecodeOptions.Default;
+            options.PremultiplyAlpha = true;
+            options.PixelFormat = JxlPixelFormat.Rgba32F;
+            options.ToneMappingMethod = JxlToneMappingMethod.Bt2446aPerceptual; // BT.2446a tone mapping to SDR
 
             using var decoder = new JxlDecoder(options);
             await decoder.SetInputFileAsync(_currentFilePath);
@@ -1315,7 +1299,8 @@ public class MainWindow : NSWindow
             // Set output to linear sRGB for SDR (same as regular SDR images)
             if (_metadata.IsHlg || _metadata.IsPq)
             {
-                decoder.SetOutputColorProfileLinearSrgb();
+                using var profile = JxlColorProfile.CreateLinearSrgb();
+                decoder.SetOutputColorProfile(profile);
             }
 
             // Create SDR Metal view with same frame as HDR view
@@ -1826,25 +1811,8 @@ public class MainWindow : NSWindow
 
         Task.Run(() =>
         {
-            var options = JxlDecodeOptions.Default;
-            options.PremultiplyAlpha = false;
-            options.PixelFormat = JxlPixelFormat.Rgba8;
-            if (isHdr)
-                options.ToneMappingMethod = JxlToneMappingMethod.Bt2446aPerceptual;
-
-            using var decoder = new JxlDecoder(options);
-            decoder.SetInputFile(filePath);
-            decoder.ReadInfo();
-
-            if (isHdr)
-            {
-                using var srgbProfile = JxlColorProfile.FromEncoding(
-                    JxlProfileType.Rgb,
-                    whitePoint: JxlWhitePointType.D65,
-                    primaries: JxlPrimariesType.Srgb,
-                    transferFunction: JxlTransferFunctionType.Srgb);
-                decoder.SetOutputColorProfile(srgbProfile);
-            }
+            var toneMapping = isHdr ? JxlToneMappingMethod.Bt2446aPerceptual : JxlToneMappingMethod.None;
+            using var decoder = CreateSrgbDecoder(filePath, toneMapping);
 
             if (frameIndex > 0)
                 decoder.SeekToFrame(frameIndex);
