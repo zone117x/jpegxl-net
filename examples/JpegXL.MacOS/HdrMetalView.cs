@@ -93,7 +93,8 @@ public class HdrMetalView : NSView
         var hlgColorSpace = CGColorSpace.CreateWithName(CGColorSpaceNames.Itur_2100_Hlg);
         _metalLayer.ColorSpace = hlgColorSpace;
 
-        // Enable system tone mapping for HLG
+        // Enable EDR and system tone mapping for HLG
+        _metalLayer.WantsExtendedDynamicRangeContent = true;
         _metalLayer.EdrMetadata = CAEdrMetadata.HlgMetadata;
 
         // Brightness scale not needed - system handles tone mapping
@@ -115,8 +116,9 @@ public class HdrMetalView : NSView
         var pqColorSpace = CGColorSpace.CreateWithName(CGColorSpaceNames.Itur_2100_PQ);
         _metalLayer.ColorSpace = pqColorSpace;
 
-        // Enable system tone mapping for PQ/HDR10
+        // Enable EDR and system tone mapping for PQ/HDR10
         // opticalOutputScale is SDR reference white in nits (typically 100)
+        _metalLayer.WantsExtendedDynamicRangeContent = true;
         _metalLayer.EdrMetadata = CAEdrMetadata.GetHdr10Metadata(0f, maxLuminance, 100f);
 
         // Brightness scale not needed - system handles tone mapping
@@ -137,10 +139,29 @@ public class HdrMetalView : NSView
         var srgbColorSpace = CGColorSpace.CreateWithName(CGColorSpaceNames.ExtendedSrgb);
         _metalLayer.ColorSpace = srgbColorSpace;
 
-        // No EDR metadata for SDR content
+        // Disable EDR - SDR content should not use extended dynamic range
+        _metalLayer.WantsExtendedDynamicRangeContent = false;
         _metalLayer.EdrMetadata = null;
 
         Console.WriteLine("[HdrMetalView] Configured for sRGB color space");
+    }
+
+    /// <summary>
+    /// Configures the Metal layer for SDR content with linear sRGB encoding.
+    /// Uses extended linear sRGB color space, matching Apple's recommendation for float pixel formats.
+    /// </summary>
+    public void ConfigureForLinearSrgb()
+    {
+        if (_metalLayer == null) return;
+
+        var linearSrgbColorSpace = CGColorSpace.CreateWithName(CGColorSpaceNames.ExtendedLinearSrgb);
+        _metalLayer.ColorSpace = linearSrgbColorSpace;
+
+        // Disable EDR - SDR content should not use extended dynamic range
+        _metalLayer.WantsExtendedDynamicRangeContent = false;
+        _metalLayer.EdrMetadata = null;
+
+        Console.WriteLine("[HdrMetalView] Configured for linear sRGB color space");
     }
 
     /// <summary>
@@ -155,7 +176,8 @@ public class HdrMetalView : NSView
         var linearP3ColorSpace = CGColorSpace.CreateWithName(CGColorSpaceNames.ExtendedLinearDisplayP3);
         _metalLayer.ColorSpace = linearP3ColorSpace;
 
-        // Disable system tone mapping - we'll handle brightness manually if needed
+        // Enable EDR for HDR content, but disable system tone mapping - we'll handle brightness manually
+        _metalLayer.WantsExtendedDynamicRangeContent = true;
         _metalLayer.EdrMetadata = null;
 
         Console.WriteLine("[HdrMetalView] Configured for linear color space");
@@ -653,10 +675,10 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
     }
 
     /// <summary>
-    /// Reads current frame pixels from GPU texture and converts to SDR RGBA8.
-    /// Used for export to PNG/JPEG.
+    /// Reads current frame raw pixels from GPU texture as RGBA32Float.
+    /// Returns the original pixel data without any conversion.
     /// </summary>
-    public byte[]? ReadbackPixelsAsSdr()
+    public float[]? ReadbackPixels()
     {
         var texture = _animationTextureArray ?? _imageTexture;
         if (texture == null || _imageWidth == 0 || _imageHeight == 0) return null;
@@ -665,21 +687,17 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
         var height = _imageHeight;
         var floatBytesPerRow = width * 4 * sizeof(float);  // RGBA32Float
 
-        // Allocate managed array for float pixels
-        var floatPixels = new float[width * height * 4];
+        var pixels = new float[width * height * 4];
 
-        // Copy from GPU texture to CPU
         var region = new MTLRegion(new MTLOrigin(0, 0, 0), new MTLSize(width, height, 1));
 
-        // Pin the array and get bytes
-        var handle = GCHandle.Alloc(floatPixels, GCHandleType.Pinned);
+        var handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
         try
         {
             var ptr = handle.AddrOfPinnedObject();
 
             if (_animationTextureArray != null)
             {
-                // Read current frame from texture array
                 texture.GetBytes(ptr, (nuint)floatBytesPerRow, (nuint)0, region,
                     (nuint)_currentArrayFrameIndex, 0);
             }
@@ -693,48 +711,7 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
             handle.Free();
         }
 
-        // Convert RGBA32Float (HDR, linear P3) to RGBA8 (SDR, sRGB)
-        var sdrPixels = new byte[width * height * 4];
-        for (int i = 0; i < width * height; i++)
-        {
-            var r = floatPixels[i * 4 + 0];
-            var g = floatPixels[i * 4 + 1];
-            var b = floatPixels[i * 4 + 2];
-            var a = floatPixels[i * 4 + 3];
-
-            // Un-premultiply alpha
-            if (a > 0.001f)
-            {
-                r /= a;
-                g /= a;
-                b /= a;
-            }
-
-            // Simple tone mapping: clamp HDR to [0,1]
-            r = Math.Clamp(r, 0f, 1f);
-            g = Math.Clamp(g, 0f, 1f);
-            b = Math.Clamp(b, 0f, 1f);
-
-            // Linear to sRGB gamma
-            r = LinearToSrgb(r);
-            g = LinearToSrgb(g);
-            b = LinearToSrgb(b);
-
-            // Convert to 8-bit
-            sdrPixels[i * 4 + 0] = (byte)(r * 255f + 0.5f);
-            sdrPixels[i * 4 + 1] = (byte)(g * 255f + 0.5f);
-            sdrPixels[i * 4 + 2] = (byte)(b * 255f + 0.5f);
-            sdrPixels[i * 4 + 3] = (byte)(a * 255f + 0.5f);
-        }
-
-        return sdrPixels;
-    }
-
-    private static float LinearToSrgb(float linear)
-    {
-        if (linear <= 0.0031308f)
-            return linear * 12.92f;
-        return 1.055f * MathF.Pow(linear, 1f / 2.4f) - 0.055f;
+        return pixels;
     }
 
     /// <summary>
@@ -754,8 +731,8 @@ fragment float4 fragmentShaderArray(VertexOut in [[stage_in]],
 
         // Update drawable size
         _metalLayer.DrawableSize = new CGSize(
-            Bounds.Width * (_metalLayer.ContentsScale),
-            Bounds.Height * (_metalLayer.ContentsScale));
+            Bounds.Width * _metalLayer.ContentsScale,
+            Bounds.Height * _metalLayer.ContentsScale);
 
         using var drawable = _metalLayer.NextDrawable();
         if (drawable == null) return;

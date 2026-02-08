@@ -39,6 +39,8 @@ public class MainWindow : NSWindow
     private NSButton? _playPauseButton;
     private NSButton? _fitButton;
     private NSMenuItem? _hdrSdrMenuItem;
+    private NSMenuItem? _hdrSdrMenuBarItem;
+    private NSMenuItem? _comparisonMenuBarItem;
 
     // Animation support
     private float[]? _frameDurations;  // Only store durations, pixels are on GPU
@@ -92,6 +94,7 @@ public class MainWindow : NSWindow
         TitleVisibility = NSWindowTitleVisibility.Visible;
 
         CreateUI();
+        CreateMainMenu();
 
         // Subscribe to screen change notifications to update HDR/EDR when moving between monitors
         _screenChangeObserver = NSNotificationCenter.DefaultCenter.AddObserver(
@@ -209,6 +212,7 @@ public class MainWindow : NSWindow
         // Context menu for right-click
         var contextMenu = new NSMenu();
         contextMenu.AddItem(new NSMenuItem("Copy Metadata", (s, e) => CopyMetadata()));
+        contextMenu.AddItem(new NSMenuItem("Copy Image", (s, e) => CopyImageToClipboard()));
         contextMenu.AddItem(NSMenuItem.SeparatorItem);
         _hdrSdrMenuItem = new NSMenuItem("Display as SDR", (s, e) => ToggleHdrSdr());
         _hdrSdrMenuItem.Hidden = true;
@@ -306,6 +310,65 @@ public class MainWindow : NSWindow
             NSLayoutConstraintOrientation.Horizontal);
 
         return label;
+    }
+
+    private void CreateMainMenu()
+    {
+        var mainMenu = new NSMenu();
+
+        // App menu
+        var appMenuItem = new NSMenuItem();
+        mainMenu.AddItem(appMenuItem);
+        var appMenu = new NSMenu();
+        appMenu.AddItem(new NSMenuItem("About JPEG XL Viewer",
+            new ObjCRuntime.Selector("orderFrontStandardAboutPanel:"), ""));
+        appMenu.AddItem(NSMenuItem.SeparatorItem);
+        appMenu.AddItem(new NSMenuItem("Quit JPEG XL Viewer",
+            new ObjCRuntime.Selector("terminate:"), "q"));
+        appMenuItem.Submenu = appMenu;
+
+        // File menu
+        var fileMenuItem = new NSMenuItem();
+        mainMenu.AddItem(fileMenuItem);
+        var fileMenu = new NSMenu("File");
+        fileMenu.AddItem(new NSMenuItem("Open...", (s, e) => OpenFile()) { KeyEquivalent = "o" });
+        fileMenu.AddItem(new NSMenuItem("Export...", (s, e) => ExportImage()) { KeyEquivalent = "e" });
+        fileMenu.AddItem(NSMenuItem.SeparatorItem);
+        fileMenu.AddItem(new NSMenuItem("Close Window",
+            new ObjCRuntime.Selector("performClose:"), "w"));
+        fileMenuItem.Submenu = fileMenu;
+
+        // Edit menu
+        var editMenuItem = new NSMenuItem();
+        mainMenu.AddItem(editMenuItem);
+        var editMenu = new NSMenu("Edit");
+        editMenu.AddItem(new NSMenuItem("Copy Image", (s, e) => CopyImageToClipboard())
+            { KeyEquivalent = "c" });
+        var copyMetadataItem = new NSMenuItem("Copy Metadata", (s, e) => CopyMetadata())
+            { KeyEquivalent = "c" };
+        copyMetadataItem.KeyEquivalentModifierMask =
+            NSEventModifierMask.CommandKeyMask | NSEventModifierMask.ShiftKeyMask;
+        editMenu.AddItem(copyMetadataItem);
+        editMenuItem.Submenu = editMenu;
+
+        // View menu
+        var viewMenuItem = new NSMenuItem();
+        mainMenu.AddItem(viewMenuItem);
+        var viewMenu = new NSMenu("View");
+        viewMenu.AddItem(new NSMenuItem("Zoom In", (s, e) => ZoomIn()) { KeyEquivalent = "=" });
+        viewMenu.AddItem(new NSMenuItem("Zoom Out", (s, e) => ZoomOut()) { KeyEquivalent = "-" });
+        viewMenu.AddItem(new NSMenuItem("Actual Size", (s, e) => ActualSize()) { KeyEquivalent = "1" });
+        viewMenu.AddItem(new NSMenuItem("Fit to Window", (s, e) => ToggleFitMode()) { KeyEquivalent = "0" });
+        viewMenu.AddItem(NSMenuItem.SeparatorItem);
+        _hdrSdrMenuBarItem = new NSMenuItem("Display as SDR", (s, e) => ToggleHdrSdr());
+        _hdrSdrMenuBarItem.Enabled = false;
+        viewMenu.AddItem(_hdrSdrMenuBarItem);
+        _comparisonMenuBarItem = new NSMenuItem("Compare HDR vs SDR", (s, e) => ToggleComparisonMode());
+        _comparisonMenuBarItem.Enabled = false;
+        viewMenu.AddItem(_comparisonMenuBarItem);
+        viewMenuItem.Submenu = viewMenu;
+
+        NSApplication.SharedApplication.MainMenu = mainMenu;
     }
 
     private void OpenFile()
@@ -435,11 +498,14 @@ public class MainWindow : NSWindow
         panel.Title = "Export Image";
         panel.NameFieldStringValue = GetExportFilename();
 
-        // Create accessory view with format selector and quality slider (like Preview.app)
-        var accessoryView = new NSView(new CGRect(0, 0, 280, 80));
+        // Create accessory view with format selector, tone mapping, and quality slider
+        var isHdr = _metadata is { IsHlg: true } or { IsPq: true };
+        var accessoryHeight = isHdr ? 110 : 80;
+        var accessoryView = new NSView(new CGRect(0, 0, 280, accessoryHeight));
 
-        // Format row
-        var formatLabel = new NSTextField(new CGRect(0, 52, 60, 20))
+        // Format row (shifts up when tone mapping row is visible)
+        var formatY = isHdr ? 82 : 52;
+        var formatLabel = new NSTextField(new CGRect(0, formatY, 60, 20))
         {
             StringValue = "Format:",
             Editable = false,
@@ -448,15 +514,42 @@ public class MainWindow : NSWindow
         };
         accessoryView.AddSubview(formatLabel);
 
-        var formatPopup = new NSPopUpButton(new CGRect(65, 48, 120, 26), pullsDown: false);
+        var formatPopup = new NSPopUpButton(new CGRect(65, formatY - 4, 120, 26), pullsDown: false);
         var exportFormats = new List<string> { "PNG", "JPEG", "TIFF" };
         // Only offer GIF export for animated images
         if (isAnimated) {
             exportFormats.Add("GIF");
         }
-        formatPopup.AddItems(exportFormats.ToArray());   
+        formatPopup.AddItems([.. exportFormats]);
         formatPopup.SelectItem(0);  // Default to PNG
         accessoryView.AddSubview(formatPopup);
+
+        // Tone mapping row (HDR images only)
+        NSPopUpButton? toneMappingPopup = null;
+        if (isHdr)
+        {
+            var toneMapLabel = new NSTextField(new CGRect(0, 52, 70, 20))
+            {
+                StringValue = "Tone Map:",
+                Editable = false,
+                Bordered = false,
+                DrawsBackground = false
+            };
+            accessoryView.AddSubview(toneMapLabel);
+
+            toneMappingPopup = new NSPopUpButton(new CGRect(75, 48, 190, 26), pullsDown: false);
+            foreach (var (title, method) in new[] {
+                ("BT.2446a Perceptual", JxlToneMappingMethod.Bt2446aPerceptual),
+                ("BT.2446a", JxlToneMappingMethod.Bt2446a),
+                ("BT.2446a Linear", JxlToneMappingMethod.Bt2446aLinear),
+            })
+            {
+                var item = new NSMenuItem(title) { Tag = (nint)method };
+                toneMappingPopup.Menu!.AddItem(item);
+            }
+            toneMappingPopup.SelectItem(0);
+            accessoryView.AddSubview(toneMappingPopup);
+        }
 
         // Quality row (for JPEG only)
         var qualityLabel = new NSTextField(new CGRect(0, 22, 60, 20))
@@ -527,7 +620,10 @@ public class MainWindow : NSWindow
             var exportPath = panel.Url.Path;
             var format = formatPopup.TitleOfSelectedItem;
             var quality = (float)qualitySlider.DoubleValue;
-            PerformExport(exportPath, format!, quality);
+            var toneMapping = toneMappingPopup?.SelectedItem is { } selectedItem
+                ? (JxlToneMappingMethod)(int)selectedItem.Tag
+                : JxlToneMappingMethod.None;
+            PerformExport(exportPath, format!, quality, toneMapping);
         }
     }
 
@@ -552,7 +648,7 @@ public class MainWindow : NSWindow
         if (utType != null) panel.AllowedContentTypes = [utType];
     }
 
-    private void PerformExport(string path, string format, float quality)
+    private void PerformExport(string path, string format, float quality, JxlToneMappingMethod toneMapping)
     {
         if (_currentFilePath == null || _currentInfo == null) return;
 
@@ -565,7 +661,7 @@ public class MainWindow : NSWindow
                 Console.WriteLine("GIF export is only supported for animated images");
                 return;
             }
-            ExportAnimatedGif(path);
+            ExportAnimatedGif(path, toneMapping);
             return;
         }
 
@@ -576,10 +672,23 @@ public class MainWindow : NSWindow
         var exportOptions = JxlDecodeOptions.Default;
         exportOptions.PremultiplyAlpha = false;  // Straight alpha for PNG/TIFF
         exportOptions.PixelFormat = JxlPixelFormat.Rgba8;
+        if (toneMapping != JxlToneMappingMethod.None)
+            exportOptions.ToneMappingMethod = toneMapping;
 
         using var exportDecoder = new JxlDecoder(exportOptions);
         exportDecoder.SetInputFile(_currentFilePath);
         exportDecoder.ReadInfo();
+
+        // For tone-mapped export, set sRGB output profile
+        if (toneMapping != JxlToneMappingMethod.None)
+        {
+            using var srgbProfile = JxlColorProfile.FromEncoding(
+                JxlProfileType.Rgb,
+                whitePoint: JxlWhitePointType.D65,
+                primaries: JxlPrimariesType.Srgb,
+                transferFunction: JxlTransferFunctionType.Srgb);
+            exportDecoder.SetOutputColorProfile(srgbProfile);
+        }
 
         // Decode to Rgba8 bytes
         var pixels = new byte[width * height * 4];
@@ -625,7 +734,7 @@ public class MainWindow : NSWindow
         outputData?.Save(NSUrl.FromFilename(path), atomically: true);
     }
 
-    private void ExportAnimatedGif(string path)
+    private void ExportAnimatedGif(string path, JxlToneMappingMethod toneMapping)
     {
         if (_currentFilePath == null || _currentInfo == null || _frameDurations == null) return;
 
@@ -660,10 +769,23 @@ public class MainWindow : NSWindow
         var exportOptions = JxlDecodeOptions.Default;
         exportOptions.PremultiplyAlpha = false;
         exportOptions.PixelFormat = JxlPixelFormat.Rgba8;
+        if (toneMapping != JxlToneMappingMethod.None)
+            exportOptions.ToneMappingMethod = toneMapping;
 
         using var exportDecoder = new JxlDecoder(exportOptions);
         exportDecoder.SetInputFile(_currentFilePath);
         exportDecoder.ReadInfo();
+
+        // For tone-mapped export, set sRGB output profile
+        if (toneMapping != JxlToneMappingMethod.None)
+        {
+            using var srgbProfile = JxlColorProfile.FromEncoding(
+                JxlProfileType.Rgb,
+                whitePoint: JxlWhitePointType.D65,
+                primaries: JxlPrimariesType.Srgb,
+                transferFunction: JxlTransferFunctionType.Srgb);
+            exportDecoder.SetOutputColorProfile(srgbProfile);
+        }
 
         // Decode and add each frame using streaming API
         using var colorSpace = CGColorSpace.CreateSrgb();
@@ -747,7 +869,8 @@ public class MainWindow : NSWindow
 
         try
         {
-            PerformExport(exportPath, format, 0.85f);
+            var isHdr = _metadata is { IsHlg: true } or { IsPq: true };
+            PerformExport(exportPath, format, 0.85f, isHdr ? JxlToneMappingMethod.Bt2446aPerceptual : JxlToneMappingMethod.None);
             NSApplication.SharedApplication.Terminate(null);
         }
         catch (Exception ex)
@@ -861,6 +984,11 @@ public class MainWindow : NSWindow
                 decoder.SetOutputColorProfile(outputProfile);
                 Console.WriteLine($"[ColorProfile] Set output to {(isHlg ? "HLG" : "PQ")} Rec.2100 for system tone mapping");
             }
+            else
+            {
+                // SDR/other: explicit linear sRGB output for consistent Metal linear color space rendering
+                decoder.SetOutputColorProfileLinearSrgb();
+            }
 
             _frameDurations = null;
 
@@ -928,8 +1056,8 @@ public class MainWindow : NSWindow
             }
             else
             {
-                // SDR: Use sRGB color space for standard gamma-encoded content
-                _metalView!.ConfigureForSrgb();
+                // SDR: Use linear sRGB color space to match decoder's linear float output
+                _metalView!.ConfigureForLinearSrgb();
                 _metalView.HdrBrightnessScale = 1.0f;
             }
 
@@ -992,8 +1120,8 @@ public class MainWindow : NSWindow
             {
                 PremultiplyAlpha = true,
                 PixelFormat = JxlPixelFormat.Rgba32F,
-                // BT.2446a tone mapping for SDR mode (203 cd/m² = ITU-R BT.2408 SDR reference white)
-                DesiredIntensityTarget = _displayAsSdr ? 203f : 0f,
+                // BT.2446a tone mapping for SDR mode (default 203 cd/m² = ITU-R BT.2408 SDR reference white)
+                ToneMappingMethod = _displayAsSdr ? JxlToneMappingMethod.Bt2446aPerceptual : JxlToneMappingMethod.None,
             };
 
             using var decoder = new JxlDecoder(options);
@@ -1012,13 +1140,8 @@ public class MainWindow : NSWindow
             }
             else if (_displayAsSdr && (isHlg || isPq))
             {
-                // SDR mode: tone-mapped output to sRGB
-                using var srgbProfile = JxlColorProfile.FromEncoding(
-                    JxlProfileType.Rgb,
-                    whitePoint: JxlWhitePointType.D65,
-                    primaries: JxlPrimariesType.Srgb,
-                    transferFunction: JxlTransferFunctionType.Srgb);
-                decoder.SetOutputColorProfile(srgbProfile);
+                // SDR mode: tone-mapped output to linear sRGB (same as regular SDR images)
+                decoder.SetOutputColorProfileLinearSrgb();
             }
 
             StopAnimation();
@@ -1045,7 +1168,7 @@ public class MainWindow : NSWindow
             // Configure Metal view for the display mode
             if (_displayAsSdr)
             {
-                _metalView!.ConfigureForSrgb();
+                _metalView!.ConfigureForLinearSrgb();
                 _metalView.HdrBrightnessScale = 1.0f;
             }
             else if (isHlg)
@@ -1089,6 +1212,22 @@ public class MainWindow : NSWindow
                 ? "Display as HDR"
                 : "Display as SDR";
             _comparisonMenuItem.Title = _comparisonMode
+                ? "Exit Comparison"
+                : "Compare HDR vs SDR";
+        }
+
+        // Sync menu bar items (disabled/greyed when not HDR, vs hidden in context menu)
+        if (_hdrSdrMenuBarItem != null)
+        {
+            _hdrSdrMenuBarItem.Enabled = !_hdrSdrMenuItem!.Hidden;
+            _hdrSdrMenuBarItem.Title = isHdrImage
+                ? (_displayAsSdr ? "Display as HDR" : "Display as SDR")
+                : "Display as SDR";
+        }
+        if (_comparisonMenuBarItem != null)
+        {
+            _comparisonMenuBarItem.Enabled = isHdrImage;
+            _comparisonMenuBarItem.Title = _comparisonMode
                 ? "Exit Comparison"
                 : "Compare HDR vs SDR";
         }
@@ -1149,8 +1288,6 @@ public class MainWindow : NSWindow
         {
             _displayAsSdr = false;
             ReloadWithDisplayMode();
-            // Wait briefly for the reload to complete
-            await Task.Delay(100);
         }
 
         // Pause animation if playing
@@ -1168,22 +1305,17 @@ public class MainWindow : NSWindow
             {
                 PremultiplyAlpha = true,
                 PixelFormat = JxlPixelFormat.Rgba32F,
-                DesiredIntensityTarget = 203f,  // BT.2446a tone mapping to SDR
+                ToneMappingMethod = JxlToneMappingMethod.Bt2446aPerceptual,  // BT.2446a tone mapping to SDR
             };
 
             using var decoder = new JxlDecoder(options);
             await decoder.SetInputFileAsync(_currentFilePath);
             decoder.ReadInfo();
 
-            // Set output to sRGB for SDR
+            // Set output to linear sRGB for SDR (same as regular SDR images)
             if (_metadata.IsHlg || _metadata.IsPq)
             {
-                using var srgbProfile = JxlColorProfile.FromEncoding(
-                    JxlProfileType.Rgb,
-                    whitePoint: JxlWhitePointType.D65,
-                    primaries: JxlPrimariesType.Srgb,
-                    transferFunction: JxlTransferFunctionType.Srgb);
-                decoder.SetOutputColorProfile(srgbProfile);
+                decoder.SetOutputColorProfileLinearSrgb();
             }
 
             // Create SDR Metal view with same frame as HDR view
@@ -1201,8 +1333,8 @@ public class MainWindow : NSWindow
                 decoder.GetPixels(MemoryMarshal.AsBytes(pixelSpan));
             });
 
-            // Configure for sRGB display
-            _sdrMetalView.ConfigureForSrgb();
+            // Configure for linear sRGB display (same as regular SDR images)
+            _sdrMetalView.ConfigureForLinearSrgb();
             _sdrMetalView.HdrBrightnessScale = 1.0f;
 
             // Sync viewport to match HDR view
@@ -1652,6 +1784,98 @@ public class MainWindow : NSWindow
         pasteboard.SetStringForType(metadata, NSPasteboardType.String.GetConstant()!);
     }
 
+    private void CopyImageToClipboard()
+    {
+        if (_currentFilePath == null || _currentInfo == null) return;
+
+        // Show centered spinning indicator with backdrop
+        var backdrop = new NSView
+        {
+            WantsLayer = true,
+            TranslatesAutoresizingMaskIntoConstraints = false
+        };
+        backdrop.Layer!.BackgroundColor = new CGColor(0, 0, 0, 0.6f);
+        backdrop.Layer.CornerRadius = 16;
+
+        var spinner = new NSProgressIndicator(new CGRect(0, 0, 64, 64))
+        {
+            Style = NSProgressIndicatorStyle.Spinning,
+            ControlSize = NSControlSize.Large,
+            IsDisplayedWhenStopped = false,
+            TranslatesAutoresizingMaskIntoConstraints = false
+        };
+        backdrop.AddSubview(spinner);
+        ContentView!.AddSubview(backdrop);
+        NSLayoutConstraint.ActivateConstraints(
+        [
+            backdrop.CenterXAnchor.ConstraintEqualTo(ContentView.CenterXAnchor),
+            backdrop.CenterYAnchor.ConstraintEqualTo(ContentView.CenterYAnchor),
+            backdrop.WidthAnchor.ConstraintEqualTo(96),
+            backdrop.HeightAnchor.ConstraintEqualTo(96),
+            spinner.CenterXAnchor.ConstraintEqualTo(backdrop.CenterXAnchor),
+            spinner.CenterYAnchor.ConstraintEqualTo(backdrop.CenterYAnchor),
+        ]);
+        spinner.StartAnimation(null);
+
+        // Capture state for background thread
+        var filePath = _currentFilePath;
+        var width = (int)_currentInfo.Size.Width;
+        var height = (int)_currentInfo.Size.Height;
+        var isHdr = _metadata is { IsHlg: true } or { IsPq: true };
+        var frameIndex = _currentFrameIndex;
+
+        Task.Run(() =>
+        {
+            var options = JxlDecodeOptions.Default;
+            options.PremultiplyAlpha = false;
+            options.PixelFormat = JxlPixelFormat.Rgba8;
+            if (isHdr)
+                options.ToneMappingMethod = JxlToneMappingMethod.Bt2446aPerceptual;
+
+            using var decoder = new JxlDecoder(options);
+            decoder.SetInputFile(filePath);
+            decoder.ReadInfo();
+
+            if (isHdr)
+            {
+                using var srgbProfile = JxlColorProfile.FromEncoding(
+                    JxlProfileType.Rgb,
+                    whitePoint: JxlWhitePointType.D65,
+                    primaries: JxlPrimariesType.Srgb,
+                    transferFunction: JxlTransferFunctionType.Srgb);
+                decoder.SetOutputColorProfile(srgbProfile);
+            }
+
+            if (frameIndex > 0)
+                decoder.SeekToFrame(frameIndex);
+
+            var pixels = new byte[width * height * 4];
+            decoder.GetPixels(pixels);
+
+            NSApplication.SharedApplication.BeginInvokeOnMainThread(() =>
+            {
+                using var colorSpace = CGColorSpace.CreateSrgb();
+                using var dataProvider = new CGDataProvider(pixels);
+                using var cgImage = new CGImage(
+                    width, height, 8, 32, width * 4, colorSpace,
+                    CGBitmapFlags.ByteOrderDefault | CGBitmapFlags.Last,
+                    dataProvider, null, false, CGColorRenderingIntent.Default);
+                using var rep = new NSBitmapImageRep(cgImage);
+                var pngData = rep.RepresentationUsingTypeProperties(
+                    NSBitmapImageFileType.Png, new NSDictionary());
+
+                if (pngData != null)
+                {
+                    var pasteboard = NSPasteboard.GeneralPasteboard;
+                    pasteboard.ClearContents();
+                    pasteboard.SetDataForType(pngData, NSPasteboardType.Png.GetConstant()!);
+                }
+                spinner.StopAnimation(null);
+                backdrop.RemoveFromSuperview();
+            });
+        });
+    }
+
     private static void ShowAlert(string title, string message)
     {
         var alert = new NSAlert
@@ -1753,24 +1977,29 @@ public class MainWindow : NSWindow
 
                     // Create pull-down popup button
                     var popup = new NSPopUpButton(new CGRect(0, 0, 80, 24), pullsDown: true);
-                    ((NSPopUpButtonCell)popup.Cell).ArrowPosition = NSPopUpArrowPosition.None;
+                    popup.Cell.ArrowPosition = NSPopUpArrowPosition.None;
 
                     // First item is the button title (shown when closed)
                     popup.AddItem("File ⌵");
                     popup.AddItem("Open...");
                     popup.AddItem("Export...");
 
-                    // Handle selection
+                    // Handle selection — defer to next run loop iteration so the popup's
+                    // event tracking completes before the modal dialog starts, otherwise
+                    // the dialog UI is partially unresponsive.
                     var window = _window;  // Capture for closure
                     popup.Activated += (s, e) =>
                     {
                         var selectedIndex = popup.IndexOfSelectedItem;
-                        switch (selectedIndex)
-                        {
-                            case 1: window.OpenFile(); break;
-                            case 2: window.ExportImage(); break;
-                        }
                         popup.SelectItem(0);  // Reset to show "File"
+                        NSApplication.SharedApplication.BeginInvokeOnMainThread(() =>
+                        {
+                            switch (selectedIndex)
+                            {
+                                case 1: window.OpenFile(); break;
+                                case 2: window.ExportImage(); break;
+                            }
+                        });
                     };
 
                     item.View = popup;

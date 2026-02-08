@@ -964,10 +964,14 @@ namespace JpegXL.Net
         /// </summary>
         public JxlProgressiveMode ProgressiveMode;
         /// <summary>
-        ///  Desired display luminance for HDR→SDR tone mapping, in cd/m² (nits).
-        ///  0 = no tone mapping (default). Typical SDR value: 203 (ITU-R BT.2408 reference white).
-        ///  When set to a positive value and the image has a higher intensity target,
-        ///  BT.2446 Method A tone mapping compresses the HDR luminance range.
+        ///  Tone mapping method for HDR→SDR conversion.
+        ///  `None` = no tone mapping (default).
+        /// </summary>
+        public JxlToneMappingMethod ToneMappingMethod;
+        /// <summary>
+        ///  Desired display luminance for tone mapping, in cd/m² (nits).
+        ///  0 = use default SDR target (203 nits, ITU-R BT.2408 reference white).
+        ///  Only meaningful when `ToneMappingMethod` is not `None`.
         /// </summary>
         public float DesiredIntensityTarget;
         /// <summary>
@@ -1563,6 +1567,29 @@ namespace JpegXL.Net
         ///  Simple parameterized color encoding.
         /// </summary>
         Simple = 1,
+    }
+
+    /// <summary>
+    ///  Tone mapping method for HDR→SDR conversion.
+    /// </summary>
+    public enum JxlToneMappingMethod : uint
+    {
+        /// <summary>
+        ///  No tone mapping (default). HDR content is passed through unchanged.
+        /// </summary>
+        None = 0,
+        /// <summary>
+        ///  BT.2446 Method A in Y'CbCr' domain per ITU-R BT.2446-1 specification.
+        /// </summary>
+        Bt2446a = 1,
+        /// <summary>
+        ///  BT.2446a curve applied to linear RGB luminance. Fast approximation.
+        /// </summary>
+        Bt2446aLinear = 2,
+        /// <summary>
+        ///  BT.2446a curve in IPTPQc4 perceptual space (libplacebo-style).
+        /// </summary>
+        Bt2446aPerceptual = 3,
     }
 
     /// <summary>

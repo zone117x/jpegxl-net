@@ -6,7 +6,10 @@
 //! Type conversion functions between C API types and upstream jxl-rs types.
 
 use crate::types::*;
-use jxl::api::{Endianness, JxlDecoderOptions, MetadataCaptureOptions};
+use jxl::api::{
+    Endianness, JxlDecoderOptions, JxlToneMappingMethod as UpstreamToneMappingMethod,
+    JxlToneMappingOptions, MetadataCaptureOptions,
+};
 use jxl::api::JxlProgressiveMode as UpstreamProgressiveMode;
 use jxl::api::{
     JxlColorEncoding as UpstreamColorEncoding,
@@ -47,10 +50,23 @@ pub(crate) fn convert_options_to_upstream(c_options: &JxlDecodeOptions) -> JxlDe
     };
     options.high_precision = c_options.HighPrecision;
     options.premultiply_output = c_options.PremultiplyAlpha;
-    options.desired_intensity_target = if c_options.DesiredIntensityTarget > 0.0 {
-        Some(c_options.DesiredIntensityTarget)
-    } else {
-        None
+    options.tone_mapping = match c_options.ToneMappingMethod {
+        JxlToneMappingMethod::None => None,
+        method => Some(JxlToneMappingOptions {
+            desired_intensity_target: if c_options.DesiredIntensityTarget > 0.0 {
+                Some(c_options.DesiredIntensityTarget)
+            } else {
+                None
+            },
+            method: match method {
+                JxlToneMappingMethod::Bt2446a => UpstreamToneMappingMethod::Bt2446a,
+                JxlToneMappingMethod::Bt2446aLinear => UpstreamToneMappingMethod::Bt2446aLinear,
+                JxlToneMappingMethod::Bt2446aPerceptual => {
+                    UpstreamToneMappingMethod::Bt2446aPerceptual
+                }
+                JxlToneMappingMethod::None => unreachable!(),
+            },
+        }),
     };
     options.metadata_capture = convert_metadata_capture(&c_options.MetadataCapture);
     options

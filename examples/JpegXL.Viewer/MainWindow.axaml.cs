@@ -119,7 +119,6 @@ public partial class MainWindow : Window
             ClearFrames();
 
             // Single decoder for entire operation
-            // Set DesiredIntensityTarget for HDR→SDR tone mapping (only affects HDR images)
             var options = new JxlDecodeOptions
             {
                 PremultiplyAlpha = true,

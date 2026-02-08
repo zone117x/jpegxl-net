@@ -349,10 +349,12 @@ pub struct JxlDecodeOptions {
     pub PixelLimit: usize,
     /// Progressive decoding mode.
     pub ProgressiveMode: JxlProgressiveMode,
-    /// Desired display luminance for HDR→SDR tone mapping, in cd/m² (nits).
-    /// 0 = no tone mapping (default). Typical SDR value: 203 (ITU-R BT.2408 reference white).
-    /// When set to a positive value and the image has a higher intensity target,
-    /// BT.2446 Method A tone mapping compresses the HDR luminance range.
+    /// Tone mapping method for HDR→SDR conversion.
+    /// `None` = no tone mapping (default).
+    pub ToneMappingMethod: JxlToneMappingMethod,
+    /// Desired display luminance for tone mapping, in cd/m² (nits).
+    /// 0 = use default SDR target (203 nits, ITU-R BT.2408 reference white).
+    /// Only meaningful when `ToneMappingMethod` is not `None`.
     pub DesiredIntensityTarget: f32,
     /// Whether to adjust image orientation based on EXIF data.
     pub AdjustOrientation: bool,
@@ -381,6 +383,7 @@ impl Default for JxlDecodeOptions {
         Self {
             PixelLimit: 0,
             ProgressiveMode: JxlProgressiveMode::Pass,
+            ToneMappingMethod: JxlToneMappingMethod::None,
             DesiredIntensityTarget: 0.0,
             AdjustOrientation: true,
             RenderSpotColors: true,
@@ -391,7 +394,7 @@ impl Default for JxlDecodeOptions {
             DecodeExtraChannels: false,
             PixelFormat: JxlPixelFormat::default(),
             MetadataCapture: JxlMetadataCaptureOptions::default(),
-            CmsType: JxlCmsType::None,
+            CmsType: JxlCmsType::Lcms2,
         }
     }
 }
@@ -660,6 +663,20 @@ impl Default for JxlColorProfileRaw {
 // ============================================================================
 // CMS Types
 // ============================================================================
+
+/// Tone mapping method for HDR→SDR conversion.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JxlToneMappingMethod {
+    /// No tone mapping (default). HDR content is passed through unchanged.
+    None = 0,
+    /// BT.2446 Method A in Y'CbCr' domain per ITU-R BT.2446-1 specification.
+    Bt2446a = 1,
+    /// BT.2446a curve applied to linear RGB luminance. Fast approximation.
+    Bt2446aLinear = 2,
+    /// BT.2446a curve in IPTPQc4 perceptual space (libplacebo-style).
+    Bt2446aPerceptual = 3,
+}
 
 /// Color Management System type.
 ///
