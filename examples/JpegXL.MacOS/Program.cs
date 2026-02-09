@@ -6,7 +6,7 @@ namespace JpegXL.MacOS;
 public record ProgramArgs
 {
     public string? InputFile { get; init; }
-    public string? ExportFormat { get; init; }
+    public ImageFormat? ExportFormat { get; init; }
     public string? ExportFile { get; init; }
     public int? ExportFrameIndex { get; init; }
     public int? ExitAfterSeconds { get; init; }
@@ -137,15 +137,15 @@ static class Program
             }
 
             // Normalize and validate format
-            string? exportFormat = null;
+            ImageFormat? exportFormat = null;
             if (exportAs != null)
             {
                 exportFormat = exportAs.ToUpperInvariant() switch
                 {
-                    "PNG" => "PNG",
-                    "JPEG" or "JPG" => "JPEG",
-                    "TIFF" or "TIF" => "TIFF",
-                    "GIF" => "GIF",
+                    "PNG" => ImageFormat.Png,
+                    "JPEG" or "JPG" => ImageFormat.Jpeg,
+                    "TIFF" or "TIF" => ImageFormat.Tiff,
+                    "GIF" => ImageFormat.Gif,
                     _ => throw new ArgumentException($"Unknown format: {exportAs}. Use PNG, JPEG, TIFF, or GIF")
                 };
             }
@@ -155,10 +155,10 @@ static class Program
                 var ext = Path.GetExtension(exportFilePath).ToLowerInvariant();
                 exportFormat = ext switch
                 {
-                    ".png" => "PNG",
-                    ".jpg" or ".jpeg" => "JPEG",
-                    ".tiff" or ".tif" => "TIFF",
-                    ".gif" => "GIF",
+                    ".png" => ImageFormat.Png,
+                    ".jpg" or ".jpeg" => ImageFormat.Jpeg,
+                    ".tiff" or ".tif" => ImageFormat.Tiff,
+                    ".gif" => ImageFormat.Gif,
                     _ => throw new ArgumentException($"Cannot infer format from extension: {ext}. Use --export-as")
                 };
             }

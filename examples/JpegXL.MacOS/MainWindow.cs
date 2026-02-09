@@ -11,6 +11,8 @@ using UniformTypeIdentifiers;
 
 namespace JpegXL.MacOS;
 
+public enum ImageFormat { Png, Jpeg, Tiff, Gif }
+
 /// <summary>
 /// Cached metadata from the loaded JXL image for display and clipboard copy.
 /// </summary>
@@ -213,6 +215,7 @@ public class MainWindow : NSWindow
         var contextMenu = new NSMenu();
         contextMenu.AddItem(new NSMenuItem("Copy Metadata", (s, e) => CopyMetadata()));
         contextMenu.AddItem(new NSMenuItem("Copy Image", (s, e) => CopyImageToClipboard()));
+        contextMenu.AddItem(CreateCopyAsMenuItem());
         contextMenu.AddItem(NSMenuItem.SeparatorItem);
         _hdrSdrMenuItem = new NSMenuItem("Display as SDR", (s, e) => ToggleHdrSdr());
         _hdrSdrMenuItem.Hidden = true;
@@ -344,6 +347,7 @@ public class MainWindow : NSWindow
         var editMenu = new NSMenu("Edit");
         editMenu.AddItem(new NSMenuItem("Copy Image", (s, e) => CopyImageToClipboard())
             { KeyEquivalent = "c" });
+        editMenu.AddItem(CreateCopyAsMenuItem());
         var copyMetadataItem = new NSMenuItem("Copy Metadata", (s, e) => CopyMetadata())
             { KeyEquivalent = "c" };
         copyMetadataItem.KeyEquivalentModifierMask =
@@ -382,10 +386,13 @@ public class MainWindow : NSWindow
         panel.AllowsMultipleSelection = false;
         panel.CanChooseDirectories = false;
 
-        if (panel.RunModal() == 1 && panel.Url?.Path != null)
+        panel.BeginSheet(this, result =>
         {
-            LoadImage(panel.Url.Path);
-        }
+            if (result == 1 && panel.Url?.Path != null)
+            {
+                LoadImage(panel.Url.Path);
+            }
+        });
     }
 
     private void ZoomIn()
@@ -494,7 +501,7 @@ public class MainWindow : NSWindow
             return;
         }
 
-        using var panel = NSSavePanel.SavePanel;
+        var panel = NSSavePanel.SavePanel;
         panel.Title = "Export Image";
         panel.NameFieldStringValue = GetExportFilename();
 
@@ -515,13 +522,14 @@ public class MainWindow : NSWindow
         accessoryView.AddSubview(formatLabel);
 
         var formatPopup = new NSPopUpButton(new CGRect(65, formatY - 4, 120, 26), pullsDown: false);
-        var exportFormats = new List<string> { "PNG", "JPEG", "TIFF" };
-        // Only offer GIF export for animated images
-        if (isAnimated) {
-            exportFormats.Add("GIF");
-        }
-        formatPopup.AddItems([.. exportFormats]);
-        formatPopup.SelectItem(0);  // Default to PNG
+        var exportFormats = new (string Title, ImageFormat Format)[] {
+            ("PNG", ImageFormat.Png), ("JPEG", ImageFormat.Jpeg), ("TIFF", ImageFormat.Tiff)
+        };
+        foreach (var (title, fmt) in exportFormats)
+            formatPopup.Menu!.AddItem(new NSMenuItem(title) { Tag = (nint)fmt });
+        if (isAnimated)
+            formatPopup.Menu!.AddItem(new NSMenuItem("GIF") { Tag = (nint)ImageFormat.Gif });
+        formatPopup.SelectItem(0);
         accessoryView.AddSubview(formatPopup);
 
         // Tone mapping row (HDR images only)
@@ -598,7 +606,7 @@ public class MainWindow : NSWindow
         // Show/hide quality controls based on format
         void UpdateQualityVisibility()
         {
-            var isJpeg = formatPopup.TitleOfSelectedItem == "JPEG";
+            var isJpeg = (ImageFormat)(int)formatPopup.SelectedItem.Tag == ImageFormat.Jpeg;
             qualityLabel.Hidden = !isJpeg;
             qualitySlider.Hidden = !isJpeg;
             leastLabel.Hidden = !isJpeg;
@@ -612,45 +620,46 @@ public class MainWindow : NSWindow
         };
 
         panel.AccessoryView = accessoryView;
-        var pngType = UniformTypeIdentifiers.UTType.CreateFromExtension("png");
-        if (pngType != null) panel.AllowedContentTypes = [pngType];
+        UpdateSaveExtension(panel, formatPopup);
 
-        if (panel.RunModal() == 1 && panel.Url?.Path != null)
+        panel.BeginSheet(this, result =>
         {
-            var exportPath = panel.Url.Path;
-            var format = formatPopup.TitleOfSelectedItem;
-            var quality = (float)qualitySlider.DoubleValue;
-            var toneMapping = toneMappingPopup?.SelectedItem is { } selectedItem
-                ? (JxlToneMappingMethod)(int)selectedItem.Tag
-                : JxlToneMappingMethod.None;
-            var filePath = _currentFilePath!;
-            var info = _currentInfo!;
-            var fmt = format!;
+            if (result == 1 && panel.Url?.Path != null)
+            {
+                var exportPath = panel.Url.Path;
+                var fmt = (ImageFormat)(int)formatPopup.SelectedItem.Tag;
+                var quality = (float)qualitySlider.DoubleValue;
+                var toneMapping = toneMappingPopup?.SelectedItem is { } selectedItem
+                    ? (JxlToneMappingMethod)(int)selectedItem.Tag
+                    : JxlToneMappingMethod.None;
+                var filePath = _currentFilePath!;
+                var info = _currentInfo!;
 
-            if (fmt == "GIF")
-            {
-                // GIF uses CGImageDestination (ImageIO) — safe on background thread
-                RunWithSpinner(
-                    () => ExportAnimatedGif(filePath, info, _frameDurations, exportPath, toneMapping),
-                    message: "Exporting...");
+                if (fmt == ImageFormat.Gif)
+                {
+                    // GIF uses CGImageDestination (ImageIO) — safe on background thread
+                    RunWithSpinner(
+                        () => ExportAnimatedGif(filePath, info, _frameDurations, exportPath, toneMapping),
+                        message: "Exporting...");
+                }
+                else
+                {
+                    // Decode on background thread, NSBitmapImageRep on main thread
+                    var width = (int)info.Size.Width;
+                    var height = (int)info.Size.Height;
+                    RunWithSpinner(
+                        () =>
+                        {
+                            using var decoder = CreateSrgbDecoder(filePath, toneMapping);
+                            var pixels = new byte[width * height * 4];
+                            decoder.GetPixels(pixels);
+                            return pixels;
+                        },
+                        pixels => SaveImageFile(pixels, width, height, exportPath, fmt, quality),
+                        "Exporting...");
+                }
             }
-            else
-            {
-                // Decode on background thread, NSBitmapImageRep on main thread
-                var width = (int)info.Size.Width;
-                var height = (int)info.Size.Height;
-                RunWithSpinner(
-                    () =>
-                    {
-                        using var decoder = CreateSrgbDecoder(filePath, toneMapping);
-                        var pixels = new byte[width * height * 4];
-                        decoder.GetPixels(pixels);
-                        return pixels;
-                    },
-                    pixels => SaveImageFile(pixels, width, height, exportPath, fmt, quality),
-                    "Exporting...");
-            }
-        }
+        });
     }
 
     private string GetExportFilename()
@@ -661,13 +670,13 @@ public class MainWindow : NSWindow
 
     private static void UpdateSaveExtension(NSSavePanel panel, NSPopUpButton formatPopup)
     {
-        var format = formatPopup.TitleOfSelectedItem;
+        var format = (ImageFormat)(int)formatPopup.SelectedItem.Tag;
         var ext = format switch
         {
-            "PNG" => "png",
-            "JPEG" => "jpg",
-            "TIFF" => "tiff",
-            "GIF" => "gif",
+            ImageFormat.Png => "png",
+            ImageFormat.Jpeg => "jpg",
+            ImageFormat.Tiff => "tiff",
+            ImageFormat.Gif => "gif",
             _ => "png"
         };
         var utType = UniformTypeIdentifiers.UTType.CreateFromExtension(ext);
@@ -703,11 +712,11 @@ public class MainWindow : NSWindow
         return decoder;
     }
 
-    private void PerformExport(string path, string format, float quality, JxlToneMappingMethod toneMapping)
+    private void PerformExport(string path, ImageFormat format, float quality, JxlToneMappingMethod toneMapping)
     {
         if (_currentFilePath == null || _currentInfo == null) return;
 
-        if (format == "GIF")
+        if (format == ImageFormat.Gif)
         {
             ExportAnimatedGif(_currentFilePath, _currentInfo, _frameDurations, path, toneMapping);
             return;
@@ -726,9 +735,9 @@ public class MainWindow : NSWindow
     }
 
     /// <summary>
-    /// Encodes pixel data to an image file. Must be called on the main thread (uses NSBitmapImageRep).
+    /// Encodes RGBA8 pixel data to image data. Must be called on the main thread (uses NSBitmapImageRep).
     /// </summary>
-    private static void SaveImageFile(byte[] pixels, int width, int height, string path, string format, float quality)
+    private static NSData? EncodePixels(byte[] pixels, int width, int height, ImageFormat format, float quality = 0f)
     {
         using var colorSpace = CGColorSpace.CreateSrgb();
         using var dataProvider = new CGDataProvider(pixels);
@@ -744,39 +753,42 @@ public class MainWindow : NSWindow
 
         var fileType = format switch
         {
-            "PNG" => NSBitmapImageFileType.Png,
-            "JPEG" => NSBitmapImageFileType.Jpeg,
-            "TIFF" => NSBitmapImageFileType.Tiff,
-            _ => NSBitmapImageFileType.Png
+            ImageFormat.Png => NSBitmapImageFileType.Png,
+            ImageFormat.Jpeg => NSBitmapImageFileType.Jpeg,
+            ImageFormat.Tiff => NSBitmapImageFileType.Tiff,
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported image format")
         };
 
-        NSDictionary properties = format == "JPEG"
+        NSDictionary properties = format == ImageFormat.Jpeg
             ? NSDictionary.FromObjectAndKey(
                 NSNumber.FromFloat(quality),
                 new NSString("NSImageCompressionFactor"))
             : new NSDictionary();
 
-        var outputData = rep.RepresentationUsingTypeProperties(fileType, properties);
-        outputData?.Save(NSUrl.FromFilename(path), atomically: true);
+        return rep.RepresentationUsingTypeProperties(fileType, properties);
     }
 
-    private static void ExportAnimatedGif(string filePath, JxlBasicInfo info, float[]? frameDurations, string path, JxlToneMappingMethod toneMapping)
+    private static void SaveImageFile(byte[] pixels, int width, int height, string path, ImageFormat format, float quality)
     {
-        if (frameDurations == null) return;
+        var data = EncodePixels(pixels, width, height, format, quality);
+        data?.Save(NSUrl.FromFilename(path), atomically: true);
+    }
 
+    /// <summary>
+    /// Encodes all frames to animated GIF data. Uses only CoreGraphics/ImageIO — safe on background thread.
+    /// </summary>
+    private static NSMutableData? EncodeAnimatedGif(string filePath, JxlBasicInfo info, float[] frameDurations, JxlToneMappingMethod toneMapping)
+    {
         var width = (int)info.Size.Width;
         var height = (int)info.Size.Height;
         var frameCount = frameDurations.Length;
 
-        var durations = frameDurations;
-
-        // Create CGImageDestination for animated GIF
-        using var url = NSUrl.FromFilename(path);
-        using var destination = CGImageDestination.Create(url, UTTypes.Gif.Identifier, frameCount);
+        var gifData = new NSMutableData();
+        using var destination = CGImageDestination.Create(gifData, UTTypes.Gif.Identifier, frameCount);
         if (destination == null)
         {
-            Console.WriteLine("Failed to create GIF destination");
-            return;
+            Console.Error.WriteLine("Failed to create GIF destination");
+            return null;
         }
 
         // Set GIF file properties (loop count = 0 means infinite loop)
@@ -792,7 +804,6 @@ public class MainWindow : NSWindow
 
         using var exportDecoder = CreateSrgbDecoder(filePath, toneMapping);
 
-        // Decode and add each frame using streaming API
         using var colorSpace = CGColorSpace.CreateSrgb();
         int frameIndex = 0;
 
@@ -800,7 +811,6 @@ public class MainWindow : NSWindow
         {
             var evt = exportDecoder.Process();
 
-            // Handle state transitions
             while (evt == JxlDecoderEvent.NeedMoreInput || evt == JxlDecoderEvent.HaveBasicInfo)
                 evt = exportDecoder.Process();
 
@@ -812,11 +822,9 @@ public class MainWindow : NSWindow
 
             if (evt == JxlDecoderEvent.NeedOutputBuffer)
             {
-                // Allocate new buffer for each frame (CGDataProvider doesn't copy data)
                 var pixels = new byte[width * height * 4];
                 exportDecoder.ReadPixels(pixels);
 
-                // Create CGImage for this frame
                 using var dataProvider = new CGDataProvider(pixels);
                 using var cgImage = new CGImage(
                     width, height,
@@ -826,10 +834,7 @@ public class MainWindow : NSWindow
                     dataProvider, null, false, CGColorRenderingIntent.Default
                 );
 
-                // Frame delay in seconds (GIF uses centiseconds internally)
-                var delaySeconds = durations[frameIndex] / 1000.0;
-
-                // Set frame properties with delay time
+                var delaySeconds = frameDurations[frameIndex] / 1000.0;
                 var delayDict = NSDictionary.FromObjectAndKey(
                     NSNumber.FromFloat((float)delaySeconds),
                     ImageIO.CGImageProperties.GIFDelayTime
@@ -844,21 +849,30 @@ public class MainWindow : NSWindow
             }
         }
 
-        // Finalize the GIF
         if (!destination.Close())
         {
-            Console.WriteLine("Failed to finalize GIF");
+            Console.Error.WriteLine("Failed to finalize GIF");
+            return null;
         }
+
+        return gifData;
+    }
+
+    private static void ExportAnimatedGif(string filePath, JxlBasicInfo info, float[]? frameDurations, string path, JxlToneMappingMethod toneMapping)
+    {
+        if (frameDurations == null) return;
+        var gifData = EncodeAnimatedGif(filePath, info, frameDurations, toneMapping);
+        gifData?.Save(NSUrl.FromFilename(path), atomically: true);
     }
 
     private void PerformCommandLineExport()
     {
         var exportPath = Program.Args.ExportFile!;
-        var format = Program.Args.ExportFormat!;
+        var format = Program.Args.ExportFormat!.Value;
 
         // GIF export is only supported for animated images
         var isAnimated = _frameDurations != null && _frameDurations.Length > 1;
-        if (format == "GIF" && !isAnimated)
+        if (format == ImageFormat.Gif && !isAnimated)
         {
             Console.Error.WriteLine("Export failed: GIF export is only supported for animated images");
             NSApplication.SharedApplication.Terminate(null);
@@ -1789,46 +1803,110 @@ public class MainWindow : NSWindow
 
     private void CopyImageToClipboard()
     {
+        var isAnimated = _frameDurations is { Length: > 1 };
+        CopyImageToClipboard(isAnimated ? ImageFormat.Gif : ImageFormat.Png);
+    }
+
+    private void CopyImageToClipboard(ImageFormat format)
+    {
         if (_currentFilePath == null || _currentInfo == null) return;
 
         var filePath = _currentFilePath;
-        var width = (int)_currentInfo.Size.Width;
-        var height = (int)_currentInfo.Size.Height;
+        var info = _currentInfo;
         var isHdr = _metadata is { IsHlg: true } or { IsPq: true };
-        var frameIndex = _currentFrameIndex;
+        var toneMapping = isHdr ? JxlToneMappingMethod.Bt2446aPerceptual : JxlToneMappingMethod.None;
 
-        RunWithSpinner(() =>
+        if (format == ImageFormat.Gif)
         {
-            var toneMapping = isHdr ? JxlToneMappingMethod.Bt2446aPerceptual : JxlToneMappingMethod.None;
-            using var decoder = CreateSrgbDecoder(filePath, toneMapping);
+            var frameDurations = _frameDurations;
+            if (frameDurations == null || frameDurations.Length <= 1) return;
 
-            if (frameIndex > 0)
-                decoder.SeekToFrame(frameIndex);
-
-            var pixels = new byte[width * height * 4];
-            decoder.GetPixels(pixels);
-            return (pixels, width, height);
-        },
-        result =>
+            // GIF encoding uses only CoreGraphics/ImageIO — all safe on background thread
+            RunWithSpinner(
+                () => EncodeAnimatedGif(filePath, info, frameDurations, toneMapping),
+                gifData => CopyToPasteboard(gifData, format, filePath),
+                "Copying...");
+        }
+        else
         {
-            var (pixels, w, h) = result;
-            using var colorSpace = CGColorSpace.CreateSrgb();
-            using var dataProvider = new CGDataProvider(pixels);
-            using var cgImage = new CGImage(
-                w, h, 8, 32, w * 4, colorSpace,
-                CGBitmapFlags.ByteOrderDefault | CGBitmapFlags.Last,
-                dataProvider, null, false, CGColorRenderingIntent.Default);
-            using var rep = new NSBitmapImageRep(cgImage);
-            var pngData = rep.RepresentationUsingTypeProperties(
-                NSBitmapImageFileType.Png, new NSDictionary());
+            var width = (int)info.Size.Width;
+            var height = (int)info.Size.Height;
+            var frameIndex = _currentFrameIndex;
 
-            if (pngData != null)
+            RunWithSpinner(() =>
             {
-                var pasteboard = NSPasteboard.GeneralPasteboard;
-                pasteboard.ClearContents();
-                pasteboard.SetDataForType(pngData, NSPasteboardType.Png.GetConstant()!);
-            }
-        }, "Copying image to clipboard...");
+                using var decoder = CreateSrgbDecoder(filePath, toneMapping);
+                if (frameIndex > 0)
+                    decoder.SeekToFrame(frameIndex);
+                var pixels = new byte[width * height * 4];
+                decoder.GetPixels(pixels);
+                return pixels;
+            },
+            pixels =>
+            {
+                var quality = format == ImageFormat.Jpeg ? 0.85f : 0f;
+                var data = EncodePixels(pixels, width, height, format, quality);
+                CopyToPasteboard(data, format, filePath);
+            }, "Copying...");
+        }
+    }
+
+    private static void CopyToPasteboard(NSData? data, ImageFormat format, string sourceFilePath)
+    {
+        if (data == null) return;
+
+        var ext = format switch
+        {
+            ImageFormat.Png => "png",
+            ImageFormat.Jpeg => "jpg",
+            ImageFormat.Tiff => "tiff",
+            ImageFormat.Gif => "gif",
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported clipboard format")
+        };
+        var pasteboardType = format switch
+        {
+            ImageFormat.Png => NSPasteboardType.Png.GetConstant()!,
+            ImageFormat.Jpeg => UTTypes.Jpeg.Identifier,
+            ImageFormat.Tiff => NSPasteboardType.Tiff.GetConstant()!,
+            ImageFormat.Gif => UTTypes.Gif.Identifier,
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported clipboard format")
+        };
+
+        // Write to temp file so the file URL can be placed on the pasteboard.
+        // Apps like Messages, Slack, and Discord handle file URLs better than
+        // raw image data (especially for animated GIFs).
+        var fileName = Path.GetFileNameWithoutExtension(sourceFilePath);
+        var tempPath = Path.Combine(Path.GetTempPath(), $"{fileName}.{ext}");
+        data.Save(NSUrl.FromFilename(tempPath), atomically: true);
+
+        var pasteboard = NSPasteboard.GeneralPasteboard;
+        pasteboard.ClearContents();
+        pasteboard.SetDataForType(data, pasteboardType);
+        pasteboard.SetStringForType(NSUrl.FromFilename(tempPath).AbsoluteString!, NSPasteboardType.FileUrl.GetConstant()!);
+        Console.WriteLine($"[Clipboard] Copied {data.Length} bytes as {pasteboardType} + file URL ({tempPath})");
+    }
+
+    private NSMenuItem CreateCopyAsMenuItem()
+    {
+        var copyAsItem = new NSMenuItem("Copy As");
+        var copyAsMenu = new NSMenu();
+        copyAsMenu.Delegate = new CopyAsMenuDelegate(this);
+        copyAsItem.Submenu = copyAsMenu;
+        return copyAsItem;
+    }
+
+    private sealed class CopyAsMenuDelegate(MainWindow window) : NSMenuDelegate
+    {
+        public override void NeedsUpdate(NSMenu menu)
+        {
+            menu.RemoveAllItems();
+            menu.AddItem(new NSMenuItem("PNG", (s, e) => window.CopyImageToClipboard(ImageFormat.Png)));
+            menu.AddItem(new NSMenuItem("JPEG", (s, e) => window.CopyImageToClipboard(ImageFormat.Jpeg)));
+            menu.AddItem(new NSMenuItem("TIFF", (s, e) => window.CopyImageToClipboard(ImageFormat.Tiff)));
+            var isAnimated = window._frameDurations != null && window._frameDurations.Length > 1;
+            if (isAnimated)
+                menu.AddItem(new NSMenuItem("GIF", (s, e) => window.CopyImageToClipboard(ImageFormat.Gif)));
+        }
     }
 
     private void RunWithSpinner(Action backgroundWork, Action? onComplete = null, string? message = null)
