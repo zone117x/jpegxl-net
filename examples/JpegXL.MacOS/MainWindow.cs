@@ -623,7 +623,33 @@ public class MainWindow : NSWindow
             var toneMapping = toneMappingPopup?.SelectedItem is { } selectedItem
                 ? (JxlToneMappingMethod)(int)selectedItem.Tag
                 : JxlToneMappingMethod.None;
-            PerformExport(exportPath, format!, quality, toneMapping);
+            var filePath = _currentFilePath!;
+            var info = _currentInfo!;
+            var fmt = format!;
+
+            if (fmt == "GIF")
+            {
+                // GIF uses CGImageDestination (ImageIO) — safe on background thread
+                RunWithSpinner(
+                    () => ExportAnimatedGif(filePath, info, _frameDurations, exportPath, toneMapping),
+                    message: "Exporting...");
+            }
+            else
+            {
+                // Decode on background thread, NSBitmapImageRep on main thread
+                var width = (int)info.Size.Width;
+                var height = (int)info.Size.Height;
+                RunWithSpinner(
+                    () =>
+                    {
+                        using var decoder = CreateSrgbDecoder(filePath, toneMapping);
+                        var pixels = new byte[width * height * 4];
+                        decoder.GetPixels(pixels);
+                        return pixels;
+                    },
+                    pixels => SaveImageFile(pixels, width, height, exportPath, fmt, quality),
+                    "Exporting...");
+            }
         }
     }
 
@@ -681,16 +707,9 @@ public class MainWindow : NSWindow
     {
         if (_currentFilePath == null || _currentInfo == null) return;
 
-        // GIF export is only supported for animated images
-        var isAnimated = _frameDurations != null && _frameDurations.Length > 1;
         if (format == "GIF")
         {
-            if (!isAnimated)
-            {
-                Console.WriteLine("GIF export is only supported for animated images");
-                return;
-            }
-            ExportAnimatedGif(path, toneMapping);
+            ExportAnimatedGif(_currentFilePath, _currentInfo, _frameDurations, path, toneMapping);
             return;
         }
 
@@ -703,24 +722,24 @@ public class MainWindow : NSWindow
         var pixels = new byte[width * height * 4];
         exportDecoder.GetPixels(pixels);
 
-        // Create CGImage from sRGB RGBA8 data
+        SaveImageFile(pixels, width, height, path, format, quality);
+    }
+
+    /// <summary>
+    /// Encodes pixel data to an image file. Must be called on the main thread (uses NSBitmapImageRep).
+    /// </summary>
+    private static void SaveImageFile(byte[] pixels, int width, int height, string path, string format, float quality)
+    {
         using var colorSpace = CGColorSpace.CreateSrgb();
         using var dataProvider = new CGDataProvider(pixels);
-
         using var cgImage = new CGImage(
             width, height,
-            8,              // bits per component
-            32,             // bits per pixel
-            width * 4,      // bytes per row
+            8, 32, width * 4,
             colorSpace,
-            CGBitmapFlags.ByteOrderDefault | CGBitmapFlags.Last, // RGBA with alpha last
-            dataProvider,
-            null,           // decode array
-            false,          // should interpolate
-            CGColorRenderingIntent.Default
+            CGBitmapFlags.ByteOrderDefault | CGBitmapFlags.Last,
+            dataProvider, null, false, CGColorRenderingIntent.Default
         );
 
-        // Create NSBitmapImageRep from CGImage
         using var rep = new NSBitmapImageRep(cgImage);
 
         var fileType = format switch
@@ -741,16 +760,15 @@ public class MainWindow : NSWindow
         outputData?.Save(NSUrl.FromFilename(path), atomically: true);
     }
 
-    private void ExportAnimatedGif(string path, JxlToneMappingMethod toneMapping)
+    private static void ExportAnimatedGif(string filePath, JxlBasicInfo info, float[]? frameDurations, string path, JxlToneMappingMethod toneMapping)
     {
-        if (_currentFilePath == null || _currentInfo == null || _frameDurations == null) return;
+        if (frameDurations == null) return;
 
-        var width = (int)_currentInfo.Size.Width;
-        var height = (int)_currentInfo.Size.Height;
-        var frameCount = _frameDurations.Length;
+        var width = (int)info.Size.Width;
+        var height = (int)info.Size.Height;
+        var frameCount = frameDurations.Length;
 
-        // Use the already-known frame durations from when the image was loaded
-        var durations = _frameDurations;
+        var durations = frameDurations;
 
         // Create CGImageDestination for animated GIF
         using var url = NSUrl.FromFilename(path);
@@ -772,7 +790,7 @@ public class MainWindow : NSWindow
         );
         destination.SetProperties(gifFileProperties);
 
-        using var exportDecoder = CreateSrgbDecoder(_currentFilePath, toneMapping);
+        using var exportDecoder = CreateSrgbDecoder(filePath, toneMapping);
 
         // Decode and add each frame using streaming API
         using var colorSpace = CGColorSpace.CreateSrgb();
@@ -1773,7 +1791,53 @@ public class MainWindow : NSWindow
     {
         if (_currentFilePath == null || _currentInfo == null) return;
 
-        // Show centered spinning indicator with backdrop
+        var filePath = _currentFilePath;
+        var width = (int)_currentInfo.Size.Width;
+        var height = (int)_currentInfo.Size.Height;
+        var isHdr = _metadata is { IsHlg: true } or { IsPq: true };
+        var frameIndex = _currentFrameIndex;
+
+        RunWithSpinner(() =>
+        {
+            var toneMapping = isHdr ? JxlToneMappingMethod.Bt2446aPerceptual : JxlToneMappingMethod.None;
+            using var decoder = CreateSrgbDecoder(filePath, toneMapping);
+
+            if (frameIndex > 0)
+                decoder.SeekToFrame(frameIndex);
+
+            var pixels = new byte[width * height * 4];
+            decoder.GetPixels(pixels);
+            return (pixels, width, height);
+        },
+        result =>
+        {
+            var (pixels, w, h) = result;
+            using var colorSpace = CGColorSpace.CreateSrgb();
+            using var dataProvider = new CGDataProvider(pixels);
+            using var cgImage = new CGImage(
+                w, h, 8, 32, w * 4, colorSpace,
+                CGBitmapFlags.ByteOrderDefault | CGBitmapFlags.Last,
+                dataProvider, null, false, CGColorRenderingIntent.Default);
+            using var rep = new NSBitmapImageRep(cgImage);
+            var pngData = rep.RepresentationUsingTypeProperties(
+                NSBitmapImageFileType.Png, new NSDictionary());
+
+            if (pngData != null)
+            {
+                var pasteboard = NSPasteboard.GeneralPasteboard;
+                pasteboard.ClearContents();
+                pasteboard.SetDataForType(pngData, NSPasteboardType.Png.GetConstant()!);
+            }
+        }, "Copying image to clipboard...");
+    }
+
+    private void RunWithSpinner(Action backgroundWork, Action? onComplete = null, string? message = null)
+    {
+        RunWithSpinner(() => { backgroundWork(); return true; }, _ => onComplete?.Invoke(), message);
+    }
+
+    private void RunWithSpinner<T>(Func<T> backgroundWork, Action<T> onComplete, string? message = null)
+    {
         var backdrop = new NSView
         {
             WantsLayer = true,
@@ -1790,57 +1854,76 @@ public class MainWindow : NSWindow
             TranslatesAutoresizingMaskIntoConstraints = false
         };
         backdrop.AddSubview(spinner);
-        ContentView!.AddSubview(backdrop);
-        NSLayoutConstraint.ActivateConstraints(
-        [
-            backdrop.CenterXAnchor.ConstraintEqualTo(ContentView.CenterXAnchor),
-            backdrop.CenterYAnchor.ConstraintEqualTo(ContentView.CenterYAnchor),
-            backdrop.WidthAnchor.ConstraintEqualTo(96),
-            backdrop.HeightAnchor.ConstraintEqualTo(96),
-            spinner.CenterXAnchor.ConstraintEqualTo(backdrop.CenterXAnchor),
-            spinner.CenterYAnchor.ConstraintEqualTo(backdrop.CenterYAnchor),
-        ]);
-        spinner.StartAnimation(null);
 
-        // Capture state for background thread
-        var filePath = _currentFilePath;
-        var width = (int)_currentInfo.Size.Width;
-        var height = (int)_currentInfo.Size.Height;
-        var isHdr = _metadata is { IsHlg: true } or { IsPq: true };
-        var frameIndex = _currentFrameIndex;
+        NSTextField? label = null;
+        if (message != null)
+        {
+            label = new NSTextField
+            {
+                StringValue = message,
+                Editable = false,
+                Selectable = false,
+                Bordered = false,
+                DrawsBackground = false,
+                Font = NSFont.SystemFontOfSize(12, NSFontWeight.Medium)!,
+                TextColor = NSColor.White,
+                Alignment = NSTextAlignment.Center,
+                TranslatesAutoresizingMaskIntoConstraints = false,
+            };
+            backdrop.AddSubview(label);
+        }
+
+        var contentView = ContentView!;
+        contentView.AddSubview(backdrop);
+        var constraints = new List<NSLayoutConstraint>
+        {
+            backdrop.CenterXAnchor.ConstraintEqualTo(contentView.CenterXAnchor),
+            backdrop.CenterYAnchor.ConstraintEqualTo(contentView.CenterYAnchor),
+            backdrop.WidthAnchor.ConstraintGreaterThanOrEqualTo(96),
+            backdrop.HeightAnchor.ConstraintGreaterThanOrEqualTo(96),
+            spinner.CenterXAnchor.ConstraintEqualTo(backdrop.CenterXAnchor),
+            spinner.TopAnchor.ConstraintEqualTo(backdrop.TopAnchor, 16),
+        };
+        if (label != null)
+        {
+            constraints.Add(label.TopAnchor.ConstraintEqualTo(spinner.BottomAnchor, 8));
+            constraints.Add(label.CenterXAnchor.ConstraintEqualTo(backdrop.CenterXAnchor));
+            constraints.Add(label.LeadingAnchor.ConstraintGreaterThanOrEqualTo(backdrop.LeadingAnchor, 12));
+            constraints.Add(label.TrailingAnchor.ConstraintLessThanOrEqualTo(backdrop.TrailingAnchor, -12));
+            constraints.Add(label.BottomAnchor.ConstraintEqualTo(backdrop.BottomAnchor, -12));
+        }
+        else
+        {
+            constraints.Add(spinner.BottomAnchor.ConstraintEqualTo(backdrop.BottomAnchor, -16));
+        }
+        NSLayoutConstraint.ActivateConstraints(constraints.ToArray());
+        spinner.StartAnimation(null);
 
         Task.Run(() =>
         {
-            var toneMapping = isHdr ? JxlToneMappingMethod.Bt2446aPerceptual : JxlToneMappingMethod.None;
-            using var decoder = CreateSrgbDecoder(filePath, toneMapping);
-
-            if (frameIndex > 0)
-                decoder.SeekToFrame(frameIndex);
-
-            var pixels = new byte[width * height * 4];
-            decoder.GetPixels(pixels);
-
-            NSApplication.SharedApplication.BeginInvokeOnMainThread(() =>
+            try
             {
-                using var colorSpace = CGColorSpace.CreateSrgb();
-                using var dataProvider = new CGDataProvider(pixels);
-                using var cgImage = new CGImage(
-                    width, height, 8, 32, width * 4, colorSpace,
-                    CGBitmapFlags.ByteOrderDefault | CGBitmapFlags.Last,
-                    dataProvider, null, false, CGColorRenderingIntent.Default);
-                using var rep = new NSBitmapImageRep(cgImage);
-                var pngData = rep.RepresentationUsingTypeProperties(
-                    NSBitmapImageFileType.Png, new NSDictionary());
-
-                if (pngData != null)
+                var result = backgroundWork();
+                NSApplication.SharedApplication.BeginInvokeOnMainThread(() =>
                 {
-                    var pasteboard = NSPasteboard.GeneralPasteboard;
-                    pasteboard.ClearContents();
-                    pasteboard.SetDataForType(pngData, NSPasteboardType.Png.GetConstant()!);
-                }
-                spinner.StopAnimation(null);
-                backdrop.RemoveFromSuperview();
-            });
+                    try { onComplete(result); }
+                    finally
+                    {
+                        spinner.StopAnimation(null);
+                        backdrop.RemoveFromSuperview();
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(ex);
+                NSApplication.SharedApplication.BeginInvokeOnMainThread(() =>
+                {
+                    spinner.StopAnimation(null);
+                    backdrop.RemoveFromSuperview();
+                    ShowAlert("Error", ex.Message);
+                });
+            }
         });
     }
 

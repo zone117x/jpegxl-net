@@ -27,3 +27,9 @@ sse42 = ["jxl/sse42"]
 avx = ["jxl/avx"]
 avx512 = ["jxl/avx512"]
 neon = ["jxl/neon"]
+
+[profile.release]
+lto = "fat"           # Cross-crate dead code elimination
+codegen-units = 1     # Better optimization (works with LTO)
+# strip = true        # Remove symbol table (~300 KB savings, but loses backtraces)
+# panic = "abort"     # Eliminate unwind tables (~160 KB savings, but loses unwinding)
