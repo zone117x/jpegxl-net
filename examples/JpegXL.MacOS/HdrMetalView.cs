@@ -108,7 +108,8 @@ public class HdrMetalView : NSView
     /// Uses system tone mapping via CAEdrMetadata for correct display.
     /// </summary>
     /// <param name="maxLuminance">Maximum content luminance in nits (e.g., 1000 for typical HDR).</param>
-    public void ConfigureForPq(float maxLuminance = 1000f)
+    /// <param name="minNits">Minimum content luminance in nits (e.g., 0.0 for typical HDR).</param>
+    public void ConfigureForPq(float maxLuminance, float minNits)
     {
         if (_metalLayer == null) return;
 
@@ -119,7 +120,11 @@ public class HdrMetalView : NSView
         // Enable EDR and system tone mapping for PQ/HDR10
         // opticalOutputScale is SDR reference white in nits (typically 100)
         _metalLayer.WantsExtendedDynamicRangeContent = true;
-        _metalLayer.EdrMetadata = CAEdrMetadata.GetHdr10Metadata(0f, maxLuminance, 100f);
+        _metalLayer.EdrMetadata = CAEdrMetadata.GetHdr10Metadata(
+            minNits: minNits,
+            maxNits: maxLuminance,
+            scale: 100f
+        );
 
         // Brightness scale not needed - system handles tone mapping
         _hdrBrightnessScale = 1.0f;

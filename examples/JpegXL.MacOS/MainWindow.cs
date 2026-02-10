@@ -334,8 +334,10 @@ public class MainWindow : NSWindow
         var fileMenuItem = new NSMenuItem();
         mainMenu.AddItem(fileMenuItem);
         var fileMenu = new NSMenu("File");
-        fileMenu.AddItem(new NSMenuItem("Open...", (s, e) => OpenFile()) { KeyEquivalent = "o" });
-        fileMenu.AddItem(new NSMenuItem("Export...", (s, e) => ExportImage()) { KeyEquivalent = "e" });
+        fileMenu.AddItem(new NSMenuItem("Open...", (s, e) =>
+            NSApplication.SharedApplication.BeginInvokeOnMainThread(OpenFile)) { KeyEquivalent = "o" });
+        fileMenu.AddItem(new NSMenuItem("Export...", (s, e) =>
+            NSApplication.SharedApplication.BeginInvokeOnMainThread(ExportImage)) { KeyEquivalent = "e" });
         fileMenu.AddItem(NSMenuItem.SeparatorItem);
         fileMenu.AddItem(new NSMenuItem("Close Window",
             new ObjCRuntime.Selector("performClose:"), "w"));
@@ -1066,7 +1068,7 @@ public class MainWindow : NSWindow
             else if (isPq)
             {
                 // PQ: Use system tone mapping via CAEdrMetadata
-                _metalView!.ConfigureForPq(info.ToneMapping.IntensityTarget);
+                _metalView!.ConfigureForPq(info.ToneMapping.IntensityTarget, info.ToneMapping.MinNits);
             }
             else if (isHdr)
             {
@@ -1195,7 +1197,7 @@ public class MainWindow : NSWindow
             }
             else if (isPq)
             {
-                _metalView!.ConfigureForPq(info.ToneMapping.IntensityTarget);
+                _metalView!.ConfigureForPq(info.ToneMapping.IntensityTarget, info.ToneMapping.MinNits);
             }
             else if (info.IsHdr)
             {
