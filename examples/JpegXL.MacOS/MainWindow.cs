@@ -507,13 +507,11 @@ public class MainWindow : NSWindow
         panel.Title = "Export Image";
         panel.NameFieldStringValue = GetExportFilename();
 
-        // Create accessory view with format selector, tone mapping, and quality slider
-        var isHdr = _metadata is { IsHlg: true } or { IsPq: true };
-        var accessoryHeight = isHdr ? 110 : 80;
-        var accessoryView = new NSView(new CGRect(0, 0, 280, accessoryHeight));
+        // Create accessory view with format selector and quality slider
+        var accessoryView = new NSView(new CGRect(0, 0, 280, 80));
 
-        // Format row (shifts up when tone mapping row is visible)
-        var formatY = isHdr ? 82 : 52;
+        // Format row
+        var formatY = 52;
         var formatLabel = new NSTextField(new CGRect(0, formatY, 60, 20))
         {
             StringValue = "Format:",
@@ -533,33 +531,6 @@ public class MainWindow : NSWindow
             formatPopup.Menu!.AddItem(new NSMenuItem("GIF") { Tag = (nint)ImageFormat.Gif });
         formatPopup.SelectItem(0);
         accessoryView.AddSubview(formatPopup);
-
-        // Tone mapping row (HDR images only)
-        NSPopUpButton? toneMappingPopup = null;
-        if (isHdr)
-        {
-            var toneMapLabel = new NSTextField(new CGRect(0, 52, 70, 20))
-            {
-                StringValue = "Tone Map:",
-                Editable = false,
-                Bordered = false,
-                DrawsBackground = false
-            };
-            accessoryView.AddSubview(toneMapLabel);
-
-            toneMappingPopup = new NSPopUpButton(new CGRect(75, 48, 190, 26), pullsDown: false);
-            foreach (var (title, method) in new[] {
-                ("BT.2446a Perceptual", JxlToneMappingMethod.Bt2446aPerceptual),
-                ("BT.2446a", JxlToneMappingMethod.Bt2446a),
-                ("BT.2446a Linear", JxlToneMappingMethod.Bt2446aLinear),
-            })
-            {
-                var item = new NSMenuItem(title) { Tag = (nint)method };
-                toneMappingPopup.Menu!.AddItem(item);
-            }
-            toneMappingPopup.SelectItem(0);
-            accessoryView.AddSubview(toneMappingPopup);
-        }
 
         // Quality row (for JPEG only)
         var qualityLabel = new NSTextField(new CGRect(0, 22, 60, 20))
@@ -631,9 +602,6 @@ public class MainWindow : NSWindow
                 var exportPath = panel.Url.Path;
                 var fmt = (ImageFormat)(int)formatPopup.SelectedItem.Tag;
                 var quality = (float)qualitySlider.DoubleValue;
-                var toneMapping = toneMappingPopup?.SelectedItem is { } selectedItem
-                    ? (JxlToneMappingMethod)(int)selectedItem.Tag
-                    : JxlToneMappingMethod.None;
                 var filePath = _currentFilePath!;
                 var info = _currentInfo!;
 
@@ -641,7 +609,7 @@ public class MainWindow : NSWindow
                 {
                     // GIF uses CGImageDestination (ImageIO) — safe on background thread
                     RunWithSpinner(
-                        () => ExportAnimatedGif(filePath, info, _frameDurations, exportPath, toneMapping),
+                        () => ExportAnimatedGif(filePath, info, _frameDurations, exportPath),
                         message: "Exporting...");
                 }
                 else
@@ -652,7 +620,7 @@ public class MainWindow : NSWindow
                     RunWithSpinner(
                         () =>
                         {
-                            using var decoder = CreateSrgbDecoder(filePath, toneMapping);
+                            using var decoder = CreateSrgbDecoder(filePath);
                             var pixels = new byte[width * height * 4];
                             decoder.GetPixels(pixels);
                             return pixels;
@@ -686,48 +654,47 @@ public class MainWindow : NSWindow
     }
 
     /// <summary>
-    /// Creates a JxlDecoder configured for sRGB Rgba8 output with optional tone mapping.
+    /// Creates a JxlDecoder configured for 8-bit sRGB RGBA output.
+    /// Uses BT.2446a tone mapping for HDR→SDR conversion, then lcms2 for color space conversion.
     /// Caller is responsible for disposing the returned decoder.
     /// </summary>
-    private static JxlDecoder CreateSrgbDecoder(string filePath, JxlToneMappingMethod toneMapping)
+    private static JxlDecoder CreateSrgbDecoder(string filePath)
     {
         var options = JxlDecodeOptions.Default;
         options.PremultiplyAlpha = false;
         options.PixelFormat = JxlPixelFormat.Rgba8;
-        if (toneMapping != JxlToneMappingMethod.None)
-            options.ToneMappingMethod = toneMapping;
+        options.CmsType = JxlCmsType.Bt2446a;
 
         var decoder = new JxlDecoder(options);
         decoder.SetInputFile(filePath);
         decoder.ReadInfo();
 
-        if (toneMapping != JxlToneMappingMethod.None)
-        {
-            using var srgbProfile = JxlColorProfile.FromEncoding(
-                JxlProfileType.Rgb,
-                whitePoint: JxlWhitePointType.D65,
-                primaries: JxlPrimariesType.Srgb,
-                transferFunction: JxlTransferFunctionType.Srgb);
-            decoder.SetOutputColorProfile(srgbProfile);
-        }
+        // Set output to standard sRGB — BT.2446a tone mapping handles HDR→SDR
+        // compression when needed, then lcms2 converts to sRGB
+        using var srgbProfile = JxlColorProfile.FromEncoding(
+            JxlProfileType.Rgb,
+            whitePoint: JxlWhitePointType.D65,
+            primaries: JxlPrimariesType.Srgb,
+            transferFunction: JxlTransferFunctionType.Srgb);
+        decoder.SetOutputColorProfile(srgbProfile);
 
         return decoder;
     }
 
-    private void PerformExport(string path, ImageFormat format, float quality, JxlToneMappingMethod toneMapping)
+    private void PerformExport(string path, ImageFormat format, float quality)
     {
         if (_currentFilePath == null || _currentInfo == null) return;
 
         if (format == ImageFormat.Gif)
         {
-            ExportAnimatedGif(_currentFilePath, _currentInfo, _frameDurations, path, toneMapping);
+            ExportAnimatedGif(_currentFilePath, _currentInfo, _frameDurations, path);
             return;
         }
 
         var width = (int)_currentInfo.Size.Width;
         var height = (int)_currentInfo.Size.Height;
 
-        using var exportDecoder = CreateSrgbDecoder(_currentFilePath, toneMapping);
+        using var exportDecoder = CreateSrgbDecoder(_currentFilePath);
 
         // Decode to Rgba8 bytes
         var pixels = new byte[width * height * 4];
@@ -779,7 +746,7 @@ public class MainWindow : NSWindow
     /// <summary>
     /// Encodes all frames to animated GIF data. Uses only CoreGraphics/ImageIO — safe on background thread.
     /// </summary>
-    private static NSMutableData? EncodeAnimatedGif(string filePath, JxlBasicInfo info, float[] frameDurations, JxlToneMappingMethod toneMapping)
+    private static NSMutableData? EncodeAnimatedGif(string filePath, JxlBasicInfo info, float[] frameDurations)
     {
         var width = (int)info.Size.Width;
         var height = (int)info.Size.Height;
@@ -804,7 +771,7 @@ public class MainWindow : NSWindow
         );
         destination.SetProperties(gifFileProperties);
 
-        using var exportDecoder = CreateSrgbDecoder(filePath, toneMapping);
+        using var exportDecoder = CreateSrgbDecoder(filePath);
 
         using var colorSpace = CGColorSpace.CreateSrgb();
         int frameIndex = 0;
@@ -860,10 +827,10 @@ public class MainWindow : NSWindow
         return gifData;
     }
 
-    private static void ExportAnimatedGif(string filePath, JxlBasicInfo info, float[]? frameDurations, string path, JxlToneMappingMethod toneMapping)
+    private static void ExportAnimatedGif(string filePath, JxlBasicInfo info, float[]? frameDurations, string path)
     {
         if (frameDurations == null) return;
-        var gifData = EncodeAnimatedGif(filePath, info, frameDurations, toneMapping);
+        var gifData = EncodeAnimatedGif(filePath, info, frameDurations);
         gifData?.Save(NSUrl.FromFilename(path), atomically: true);
     }
 
@@ -890,8 +857,7 @@ public class MainWindow : NSWindow
 
         try
         {
-            var isHdr = _metadata is { IsHlg: true } or { IsPq: true };
-            PerformExport(exportPath, format, 0.85f, isHdr ? JxlToneMappingMethod.Bt2446aPerceptual : JxlToneMappingMethod.None);
+            PerformExport(exportPath, format, 0.85f);
             NSApplication.SharedApplication.Terminate(null);
         }
         catch (Exception ex)
@@ -1140,8 +1106,6 @@ public class MainWindow : NSWindow
             var options = JxlDecodeOptions.Default;
             options.PremultiplyAlpha = true;
             options.PixelFormat = JxlPixelFormat.Rgba32F;
-            // BT.2446a tone mapping for SDR mode (default 203 cd/m² = ITU-R BT.2408 SDR reference white)
-            options.ToneMappingMethod = _displayAsSdr ? JxlToneMappingMethod.Bt2446aPerceptual : JxlToneMappingMethod.None;
 
             using var decoder = new JxlDecoder(options);
             await decoder.SetInputFileAsync(_currentFilePath);
@@ -1159,7 +1123,7 @@ public class MainWindow : NSWindow
             }
             else if (_displayAsSdr && (isHlg || isPq))
             {
-                // SDR mode: tone-mapped output to linear sRGB (same as regular SDR images)
+                // SDR mode: Lcms2 CMS converts HDR to linear sRGB (same as regular SDR images)
                 using var profile = JxlColorProfile.CreateLinearSrgb();
                 decoder.SetOutputColorProfile(profile);
             }
@@ -1320,17 +1284,16 @@ public class MainWindow : NSWindow
 
         try
         {
-            // Decode SDR version
+            // Decode SDR version — Lcms2 CMS converts HDR to linear sRGB
             var options = JxlDecodeOptions.Default;
             options.PremultiplyAlpha = true;
             options.PixelFormat = JxlPixelFormat.Rgba32F;
-            options.ToneMappingMethod = JxlToneMappingMethod.Bt2446aPerceptual; // BT.2446a tone mapping to SDR
 
             using var decoder = new JxlDecoder(options);
             await decoder.SetInputFileAsync(_currentFilePath);
             decoder.ReadInfo();
 
-            // Set output to linear sRGB for SDR (same as regular SDR images)
+            // Set output to linear sRGB for SDR (Lcms2 CMS handles HDR-to-SDR conversion)
             if (_metadata.IsHlg || _metadata.IsPq)
             {
                 using var profile = JxlColorProfile.CreateLinearSrgb();
@@ -1815,8 +1778,6 @@ public class MainWindow : NSWindow
 
         var filePath = _currentFilePath;
         var info = _currentInfo;
-        var isHdr = _metadata is { IsHlg: true } or { IsPq: true };
-        var toneMapping = isHdr ? JxlToneMappingMethod.Bt2446aPerceptual : JxlToneMappingMethod.None;
 
         if (format == ImageFormat.Gif)
         {
@@ -1825,7 +1786,7 @@ public class MainWindow : NSWindow
 
             // GIF encoding uses only CoreGraphics/ImageIO — all safe on background thread
             RunWithSpinner(
-                () => EncodeAnimatedGif(filePath, info, frameDurations, toneMapping),
+                () => EncodeAnimatedGif(filePath, info, frameDurations),
                 gifData => CopyToPasteboard(gifData, format, filePath),
                 "Copying...");
         }
@@ -1837,7 +1798,7 @@ public class MainWindow : NSWindow
 
             RunWithSpinner(() =>
             {
-                using var decoder = CreateSrgbDecoder(filePath, toneMapping);
+                using var decoder = CreateSrgbDecoder(filePath);
                 if (frameIndex > 0)
                     decoder.SeekToFrame(frameIndex);
                 var pixels = new byte[width * height * 4];

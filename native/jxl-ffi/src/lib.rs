@@ -12,6 +12,8 @@ mod cms;
 mod conversions;
 mod decoder;
 mod error;
+#[cfg(feature = "tone-mapping")]
+mod tone_mapping;
 mod types;
 
 pub use decoder::*;

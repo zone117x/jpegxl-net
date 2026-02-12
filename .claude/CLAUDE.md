@@ -153,6 +153,11 @@ Check `docs/csbindgen-README.md` for how the Rust↔C# interop works.
 
 Tests are in `test/JpegXL.Net.Tests/`. The rebuild script runs them automatically.
 
+When making changes to `jxl-rs` code and running its tests directly, skip the slow tests:
+```bash
+cargo test -p jxl -- --skip tirr_photo --skip progressive --skip bike --skip animation_spline --skip grayscale_public_university --skip multiple_layers_noise_spline
+```
+
 ## Test Files
 
 **Sample files for manual testing** (`examples/sample-files/`):

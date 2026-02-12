@@ -172,6 +172,26 @@ fn create_cms(cms_type: JxlCmsType) -> Option<Box<dyn jxl::api::JxlCms>> {
             set_last_error("lcms2 support not compiled in");
             None
         }
+        #[cfg(feature = "tone-mapping")]
+        JxlCmsType::Bt2446a => Some(Box::new(crate::cms::ToneMappingLcms2Cms {
+            desired_intensity_target: 203.0,
+            method: crate::tone_mapping::ToneMapMethod::Bt2446a,
+        })),
+        #[cfg(feature = "tone-mapping")]
+        JxlCmsType::Bt2446aLinear => Some(Box::new(crate::cms::ToneMappingLcms2Cms {
+            desired_intensity_target: 203.0,
+            method: crate::tone_mapping::ToneMapMethod::Bt2446aLinear,
+        })),
+        #[cfg(feature = "tone-mapping")]
+        JxlCmsType::Bt2446aPerceptual => Some(Box::new(crate::cms::ToneMappingLcms2Cms {
+            desired_intensity_target: 203.0,
+            method: crate::tone_mapping::ToneMapMethod::Bt2446aPerceptual,
+        })),
+        #[cfg(not(feature = "tone-mapping"))]
+        JxlCmsType::Bt2446a | JxlCmsType::Bt2446aLinear | JxlCmsType::Bt2446aPerceptual => {
+            set_last_error("tone-mapping support not compiled in");
+            None
+        }
     }
 }
 
@@ -1510,7 +1530,7 @@ pub unsafe extern "C" fn jxl_decoder_get_xml_box_count(
 
     match &inner.state {
         DecoderState::WithImageInfo(d) => {
-            d.xml_boxes().map_or(0, |boxes| boxes.len() as u32)
+            d.xmp_boxes().map_or(0, |boxes| boxes.len() as u32)
         }
         _ => 0,
     }
@@ -1661,7 +1681,7 @@ pub unsafe extern "C" fn jxl_decoder_get_xml_box_at(
     // Populate cache if needed
     if inner.xml_boxes_cache.is_none() {
         let boxes = match &inner.state {
-            DecoderState::WithImageInfo(d) => d.xml_boxes(),
+            DecoderState::WithImageInfo(d) => d.xmp_boxes(),
             _ => {
                 set_last_error("XML data not accessible - call jxl_decoder_process until HaveBasicInfo");
                 return JxlStatus::InvalidState;

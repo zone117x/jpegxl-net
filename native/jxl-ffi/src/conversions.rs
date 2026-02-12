@@ -7,8 +7,7 @@
 
 use crate::types::*;
 use jxl::api::{
-    Endianness, JxlDecoderOptions, JxlToneMappingMethod as UpstreamToneMappingMethod,
-    JxlToneMappingOptions, MetadataCaptureOptions,
+    Endianness, JxlDecoderOptions, JxlMetadataCaptureOptions as UpstreamMetadataCaptureOptions,
 };
 use jxl::api::JxlProgressiveMode as UpstreamProgressiveMode;
 use jxl::api::{
@@ -50,40 +49,22 @@ pub(crate) fn convert_options_to_upstream(c_options: &JxlDecodeOptions) -> JxlDe
     };
     options.high_precision = c_options.HighPrecision;
     options.premultiply_output = c_options.PremultiplyAlpha;
-    options.tone_mapping = match c_options.ToneMappingMethod {
-        JxlToneMappingMethod::None => None,
-        method => Some(JxlToneMappingOptions {
-            desired_intensity_target: if c_options.DesiredIntensityTarget > 0.0 {
-                Some(c_options.DesiredIntensityTarget)
-            } else {
-                None
-            },
-            method: match method {
-                JxlToneMappingMethod::Bt2446a => UpstreamToneMappingMethod::Bt2446a,
-                JxlToneMappingMethod::Bt2446aLinear => UpstreamToneMappingMethod::Bt2446aLinear,
-                JxlToneMappingMethod::Bt2446aPerceptual => {
-                    UpstreamToneMappingMethod::Bt2446aPerceptual
-                }
-                JxlToneMappingMethod::None => unreachable!(),
-            },
-        }),
-    };
     options.metadata_capture = convert_metadata_capture(&c_options.MetadataCapture);
     options
 }
 
 /// Converts C-compatible metadata capture options to upstream type.
-fn convert_metadata_capture(c_opts: &JxlMetadataCaptureOptions) -> MetadataCaptureOptions {
-    MetadataCaptureOptions {
+fn convert_metadata_capture(c_opts: &JxlMetadataCaptureOptions) -> UpstreamMetadataCaptureOptions {
+    UpstreamMetadataCaptureOptions {
         capture_exif: c_opts.CaptureExif,
-        capture_xml: c_opts.CaptureXml,
+        capture_xmp: c_opts.CaptureXml,
         capture_jumbf: c_opts.CaptureJumbf,
         exif_size_limit: if c_opts.ExifSizeLimit == 0 {
             None
         } else {
             Some(c_opts.ExifSizeLimit)
         },
-        xml_size_limit: if c_opts.XmlSizeLimit == 0 {
+        xmp_size_limit: if c_opts.XmlSizeLimit == 0 {
             None
         } else {
             Some(c_opts.XmlSizeLimit)

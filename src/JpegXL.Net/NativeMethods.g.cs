@@ -964,17 +964,6 @@ namespace JpegXL.Net
         /// </summary>
         public JxlProgressiveMode ProgressiveMode;
         /// <summary>
-        ///  Tone mapping method for HDR→SDR conversion.
-        ///  `None` = no tone mapping (default).
-        /// </summary>
-        public JxlToneMappingMethod ToneMappingMethod;
-        /// <summary>
-        ///  Desired display luminance for tone mapping, in cd/m² (nits).
-        ///  0 = use default SDR target (203 nits, ITU-R BT.2408 reference white).
-        ///  Only meaningful when `ToneMappingMethod` is not `None`.
-        /// </summary>
-        public float DesiredIntensityTarget;
-        /// <summary>
         ///  Whether to adjust image orientation based on EXIF data.
         /// </summary>
         [MarshalAs(UnmanagedType.U1)] public bool AdjustOrientation;
@@ -1570,29 +1559,6 @@ namespace JpegXL.Net
     }
 
     /// <summary>
-    ///  Tone mapping method for HDR→SDR conversion.
-    /// </summary>
-    public enum JxlToneMappingMethod : uint
-    {
-        /// <summary>
-        ///  No tone mapping (default). HDR content is passed through unchanged.
-        /// </summary>
-        None = 0,
-        /// <summary>
-        ///  BT.2446 Method A in Y'CbCr' domain per ITU-R BT.2446-1 specification.
-        /// </summary>
-        Bt2446a = 1,
-        /// <summary>
-        ///  BT.2446a curve applied to linear RGB luminance. Fast approximation.
-        /// </summary>
-        Bt2446aLinear = 2,
-        /// <summary>
-        ///  BT.2446a curve in IPTPQc4 perceptual space (libplacebo-style).
-        /// </summary>
-        Bt2446aPerceptual = 3,
-    }
-
-    /// <summary>
     ///  Color Management System type.
     ///
     ///  Specifies which CMS implementation to use for color space conversions
@@ -1610,6 +1576,21 @@ namespace JpegXL.Net
         ///  Enables conversion between arbitrary ICC color profiles.
         /// </summary>
         Lcms2 = 1,
+        /// <summary>
+        ///  BT.2446a tone mapping (Y'CbCr' domain, spec-compliant ITU-R BT.2446-1 Method A)
+        ///  with lcms2 color management. Reference implementation.
+        /// </summary>
+        Bt2446a = 2,
+        /// <summary>
+        ///  BT.2446a tone mapping (fast linear approximation) with lcms2 color management.
+        ///  Same curve as Bt2446a but computed in linear domain. ~40% faster.
+        /// </summary>
+        Bt2446aLinear = 3,
+        /// <summary>
+        ///  BT.2446a tone mapping (IPTPQc4 perceptual space) with lcms2 color management.
+        ///  Best color preservation for saturated HDR content.
+        /// </summary>
+        Bt2446aPerceptual = 4,
     }
 
 

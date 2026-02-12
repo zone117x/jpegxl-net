@@ -19,8 +19,9 @@ bytemuck = { version = "1", optional = true }
 csbindgen = "1.9"
 
 [features]
-default = ["cms-lcms2"]
+default = ["cms-lcms2", "tone-mapping"]
 cms-lcms2 = ["dep:lcms2", "dep:bytemuck"]
+tone-mapping = ["cms-lcms2"]
 # SIMD features passthrough
 all-simd = ["jxl/all-simd"]
 sse42 = ["jxl/sse42"]
